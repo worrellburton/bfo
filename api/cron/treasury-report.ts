@@ -2,14 +2,31 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { computeLoans, type Loan } from "../../lib/books-loans.js";
 import { anticipateInflows, renderInflowsCard, renderInflowsText, type Anticipated, type InflowRow, type InflowStream, type PlannedInflow } from "../../lib/books-inflows.js";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { cronAuth, currentUser, formatPhone, handleError, isEmailOnly, isPartner, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
+import { audit } from "../../lib/audit.js";
+import { cronAuth, currentUser, fail, formatPhone, handleError, isAdmin, isEmailOnly, isPartner, refuseCron, sb, sendEmail, type AppUser } from "../../lib/auth.js";
 import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { fetchAll } from "../../lib/db-pages.js";
 
 /**
- * The Treasury report email. GET = the daily Vercel cron (sends to whoever's
- * schedule says today); POST = a signed-in user asking for an immediate
- * sample sent to them alone.
+ * The Treasury report email: every connected account's balances, the
+ * movement since the person's last report, loans and expected income.
+ *
+ *   GET                        the daily Vercel cron (Bearer $CRON_SECRET):
+ *                              sends to whoever's schedule says today
+ *   POST {}                    a sample to the signed-in person alone
+ *   POST { broadcast: true }   the real report to the person's whole
+ *                              Send-to list now (owners and admins only)
+ *
+ * Who receives it: the schedule's owner, plus the extra addresses on their
+ * Send-to list. An owner's or admin's list may include addresses outside
+ * BFO; anyone else's list reaches BFO's own staff only. Each recipient gets
+ * their own message (no shared To line), with a confidentiality notice, and
+ * every send is written to the audit log with who received it.
+ *
+ * Who may call it: the cron; staff for a sample (partners and email-only
+ * members are refused); owners and admins for a send to the list.
+ * Env: CRON_SECRET, BIRD_* (sendEmail), Supabase through sb(),
+ * REPORT_ACTIVITY_MASK (optional).
  */
 
 type Prefs = {
@@ -23,6 +40,45 @@ type Prefs = {
 };
 
 type DailyTotal = { day: string; cash: number; invested: number; credit: number };
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * Who a schedule's report goes to: its owner, then the extra addresses. An
+ * owner's or admin's extras may be outside BFO (flagged); anyone else's
+ * extras reach BFO staff only, and the rest are left off. Pure.
+ */
+export function reportRecipients(owner: Pick<AppUser, "email" | "role">, extra: unknown, staffEmails: Set<string>): { send: string[]; outside: string[]; dropped: string[] } {
+  const own = (owner.email ?? "").trim().toLowerCase();
+  const list = (Array.isArray(extra) ? extra : []).map((e) => String(e).trim().toLowerCase()).filter((e) => EMAIL.test(e) && e !== own);
+  const unique = [...new Set(list)];
+  const mayAddOutside = owner.role === "owner" || owner.role === "admin";
+  const outside = unique.filter((e) => !staffEmails.has(e));
+  const dropped = mayAddOutside ? [] : outside;
+  return { send: [...(own ? [own] : []), ...unique.filter((e) => !dropped.includes(e))], outside: mayAddOutside ? outside : [], dropped };
+}
+
+/**
+ * The change in cash plus investments since the person's last report, from
+ * the daily totals: today's against the day of the last delivery (or the
+ * closest day before it). Null when there's no earlier report or no total
+ * from then. Pure.
+ */
+export function movementSince(history: DailyTotal[], lastSentIso: string | null): { movement: number; sinceDay: string } | null {
+  if (!lastSentIso || history.length < 2) return null;
+  const sinceDay = new Date(lastSentIso).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const sorted = [...history].sort((a, b) => a.day.localeCompare(b.day));
+  const latest = sorted[sorted.length - 1];
+  const then = [...sorted].reverse().find((d) => d.day <= sinceDay && d.day < latest.day);
+  if (!then) return null;
+  const total = (d: DailyTotal) => Number(d.cash) + Number(d.invested);
+  return { movement: Math.round((total(latest) - total(then)) * 100) / 100, sinceDay: then.day };
+}
+
+/** "Oct 30", for the "since" line. */
+const shortDay = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+const CONFIDENTIAL = "Confidential: nonpublic financial information of the family office and its entities. If this reached you in error, delete it and tell the sender.";
 
 type Account = {
   item_id: string;
@@ -87,22 +143,6 @@ function tint(hex: string | null): string {
   if (!m) return fallback;
   const n = parseInt(m[1], 16);
   return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
-}
-
-/** The date of the most recent delivered report, for the "since" line. */
-async function lastDeliveryDate(): Promise<string | null> {
-  try {
-    const rows = await sb<Array<{ sent_at: string }>>("report_deliveries?report=eq.treasury&select=sent_at&order=sent_at.desc&limit=1");
-    if (!rows?.[0]) return null;
-    return new Date(rows[0].sent_at).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: "America/New_York",
-    });
-  } catch (err) {
-    console.error("treasury-report: couldn't read the last delivery date", err);
-    return null;
-  }
 }
 
 async function loadHistory(): Promise<DailyTotal[]> {
@@ -450,7 +490,16 @@ function subjectLine(movement: number, sample: boolean, now: Date, withTime = fa
 
 // ── Plain-text body ───────────────────────────────────────────────────
 
-function renderText(s: Shaped, movement: number, now: Date, activity: Array<{ account: Account; txns: Txn[] }> = [], loans: Loan[] = [], inflows: Anticipated | null = null): string {
+function renderText(
+  s: Shaped,
+  movement: number,
+  now: Date,
+  activity: Array<{ account: Account; txns: Txn[] }> = [],
+  loans: Loan[] = [],
+  inflows: Anticipated | null = null,
+  since: string | null = null,
+  footer: string[] = [],
+): string {
   const line = (a: Account) => {
     const delta = a.change ? ` (${signed(a.change, a.currency ?? "USD")})` : "";
     const detail = accountDetail(a);
@@ -459,7 +508,7 @@ function renderText(s: Shaped, movement: number, now: Date, activity: Array<{ ac
   const out = [
     `BFO Treasury — ${reportDate(now)}, ${reportTime(now)} ET`,
     `Total value ${money(s.totalValue + loans.reduce((sum, l) => sum + l.outstanding, 0))} · Cash ${money(s.cash)} · Investments ${money(s.invested)} · Loans ${money(loans.reduce((sum, l) => sum + l.outstanding, 0))}`,
-    movement === 0 ? "No movement since the last report." : `${signed(movement)} since the last report.`,
+    since ? (movement === 0 ? `No movement since ${since}.` : `${signed(movement)} in cash and investments since ${since}.`) : "First report: no earlier one to compare with.",
     "",
   ];
   if (s.cashAccounts.length) out.push("CASH", ...s.cashAccounts.map(line));
@@ -484,7 +533,7 @@ function renderText(s: Shaped, movement: number, now: Date, activity: Array<{ ac
     const owed = owedLoans.reduce((sum, l) => sum + l.outstanding, 0);
     out.push(`  Total owed: ${money(owed)}`);
   }
-  out.push("", `Open Treasury: ${APP_URL}/treasury`);
+  out.push("", `Open Treasury: ${APP_URL}/treasury`, "", ...footer, CONFIDENTIAL);
   return out.join("\n");
 }
 
@@ -604,8 +653,11 @@ function renderHtml(
   connections: Connection[] = [],
   activity: Array<{ account: Account; txns: Txn[] }> = [],
   extras: {
+    /** "Oct 30": the day the movement is measured from; null on a first report. */
     lastReportDate?: string | null;
     footerNote?: string | null;
+    /** A line for a recipient outside BFO: why they get it and how to stop. */
+    outsideNote?: string | null;
     preparedFor?: string | null;
     loans?: Loan[];
     inflows?: Anticipated | null;
@@ -742,6 +794,13 @@ function renderHtml(
             return money(s.totalValue + owed);
           })()}${movement === 0 ? "" : ` <span style="font-size:15px;vertical-align:middle;color:${movement > 0 ? "#34d399" : "#fb7185"};">${movement > 0 ? "▲" : "▼"}</span>`}${isAllTimeHigh(history) ? ` <span style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.4);border-radius:999px;padding:3px 8px;vertical-align:middle;">Record high</span>` : ""}
         </div>
+        <div style="margin-top:4px;font-size:12px;color:rgba(255,255,255,0.55);">${
+          extras.lastReportDate
+            ? movement === 0
+              ? `No movement since ${extras.lastReportDate}`
+              : `${movement > 0 ? "Up" : "Down"} ${money(Math.abs(movement))} in cash and investments since ${extras.lastReportDate}`
+            : "First report: no earlier one to compare with"
+        }</div>
         ${(() => {
           const loans = (extras.loans ?? []).filter((l) => Math.abs(l.outstanding) >= 0.005);
           if (!loans.length) return "";
@@ -861,8 +920,9 @@ function renderHtml(
             </a><!--<![endif]-->
             <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);">
               ${extras.footerNote ? `${extras.footerNote} · ` : ""}${reportTime(now)} ET ·
-              <a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>
+              ${extras.outsideNote ? escapeHtml(extras.outsideNote) : `<a href="${APP_URL}/notifications" style="color:rgba(255,255,255,0.45);text-decoration:underline;">manage schedule</a>`}
             </div>
+            <div style="margin-top:10px;font-size:11px;line-height:1.5;color:rgba(255,255,255,0.45);">${CONFIDENTIAL}</div>
           </td></tr>
         </table>
       </td></tr>
@@ -873,6 +933,50 @@ function renderHtml(
       // this report far under it as sections accumulate.
       .replace(/\n\s*/g, "")
   );
+}
+
+const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** The emails of BFO's staff: who a non-admin's report may reach. */
+async function staffEmails(): Promise<Set<string>> {
+  const rows = await sb<Array<{ email: string | null }>>("app_users?status=eq.approved&role=in.(owner,admin,member,viewer)&select=email");
+  return new Set((rows ?? []).map((r) => (r.email ?? "").trim().toLowerCase()).filter(Boolean));
+}
+
+/** When each person was last sent the report (report_deliveries keeps one row per person). */
+async function lastSentByUser(): Promise<Map<string, string>> {
+  try {
+    const rows = await sb<Array<{ user_id: string; sent_at: string }>>("report_deliveries?report=eq.treasury&select=user_id,sent_at");
+    return new Map((rows ?? []).map((r) => [r.user_id, r.sent_at]));
+  } catch (err) {
+    console.error("treasury-report: couldn't read past deliveries", err);
+    return new Map();
+  }
+}
+
+/**
+ * The report to each recipient on its own, so no one sees the others'
+ * addresses; an outside recipient's copy says who added them and how to stop
+ * it, and carries no link to BFO's settings. Returns who it reached.
+ */
+async function sendToEach(
+  recipients: { send: string[]; outside: string[] },
+  owner: { name: string | null; email: string },
+  build: (outsideNote: string | null) => { subject: string; text: string; html: string },
+  idempotency: string | null,
+): Promise<string[]> {
+  const reached: string[] = [];
+  for (const to of recipients.send) {
+    const outside = recipients.outside.includes(to);
+    const note = outside ? `You get this report because ${owner.name ?? owner.email} added you. To stop it, reply and ask them to remove you.` : null;
+    const m = build(note);
+    await sendEmailWithRetry(to, m.subject, m.text, m.html, outside ? undefined : { "List-Unsubscribe": `<${APP_URL}/notifications>` }, undefined, {
+      replyTo: owner.email,
+      ...(idempotency ? { idempotencyKey: `${idempotency}/${to}` } : {}),
+    });
+    reached.push(to);
+  }
+  return reached;
 }
 
 /** One retry on a transient Bird 5xx; validation errors fail straight out. */
@@ -944,52 +1048,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "POST") {
     try {
       const me = await currentUser(req);
-      if (!me) return res.status(401).json({ error: "unauthorized" });
-      if (!me.email) return res.status(400).json({ error: "no_email", message: "Your account has no email on file." });
+      if (!me) return fail(res, 401, "unauthorized");
+      if (isEmailOnly(me)) return fail(res, 403, "forbidden", "The Treasury report is for the office's staff.");
+      if (!me.email) return fail(res, 400, "no_email", "Your account has no email on file.");
 
       // broadcast:true sends the real report to the whole Send-to list now;
       // otherwise it's a sample to the requester alone.
       const broadcast = req.body?.broadcast === true;
+      if (broadcast && !isAdmin(me)) return fail(res, 403, "forbidden", "Only an owner or admin can send the report to the list.");
 
       const authHeaders = { Authorization: req.headers.authorization ?? "" };
       const { accounts, connections } = await fetchTreasury(origin, authHeaders);
       const s = shape(accounts);
-      const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-      const [history, activity, lastReportDate, loans, inflows] = await Promise.all([
+      const [history, activity, loans, inflows, sent] = await Promise.all([
         loadHistory(),
         fetchRecentActivity(origin, authHeaders, accounts),
-        lastDeliveryDate(),
         loadLoans(),
         loadAnticipatedInflows(now),
+        lastSentByUser(),
       ]);
+      const moved = movementSince(history, sent.get(me.id) ?? null);
+      const movement = moved?.movement ?? 0;
+      const since = moved ? shortDay(moved.sinceDay) : null;
 
-      let recipients = [me.email];
+      let recipients: { send: string[]; outside: string[]; dropped: string[] } = { send: [me.email], outside: [], dropped: [] };
       if (broadcast) {
         const rows = await sb<Array<{ notification_prefs: Prefs }>>(`app_users?id=eq.${me.id}&select=notification_prefs&limit=1`);
-        const extra = (rows?.[0]?.notification_prefs?.treasuryReport?.recipients ?? []).map((e) => String(e).trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
-        recipients = [...new Set([me.email, ...extra])];
+        recipients = reportRecipients(me, rows?.[0]?.notification_prefs?.treasuryReport?.recipients, await staffEmails());
       }
-
-      // One message with every recipient visible on the To line, so any of
-      // them can Reply All to the whole group.
-      {
-        await sendEmailWithRetry(
-          recipients,
-          subjectLine(movement, !broadcast, now, true),
-          renderText(s, movement, now, activity, loans, inflows),
-          renderHtml(s, movement, history, now, connections, activity, {
-            loans,
-            inflows,
-            lastReportDate,
-            footerNote: broadcast ? `Sent manually by ${me.name ?? me.email}` : "This was a sample — it doesn't affect your schedule",
-            preparedFor: me.name ?? me.email,
-          }),
-          { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-          undefined,
-          { replyTo: me.email },
-        );
-      }
-      return res.status(200).json({ sent: true, to: recipients.join(", "), count: recipients.length, loans: loans.length });
+      const footerNote = broadcast ? `Sent by ${me.name ?? me.email}` : "A sample: it doesn't change your schedule";
+      const reached = await sendToEach(
+        recipients,
+        { name: me.name ?? null, email: me.email },
+        (outsideNote) => ({
+          subject: subjectLine(movement, !broadcast, now, true),
+          text: renderText(s, movement, now, activity, loans, inflows, since, [footerNote, ...(outsideNote ? [outsideNote] : [])]),
+          html: renderHtml(s, movement, history, now, connections, activity, { loans, inflows, lastReportDate: since, footerNote, outsideNote, preparedFor: me.name ?? me.email }),
+        }),
+        null,
+      );
+      await audit({
+        actor: me,
+        action: broadcast ? "treasury_report.send" : "treasury_report.sample",
+        target: { type: "report", id: "treasury", label: "Treasury report" },
+        count: reached.length,
+        summary: broadcast ? `Sent the Treasury report to ${reached.length} ${reached.length === 1 ? "person" : "people"}` : "Sent themselves a sample Treasury report",
+        detail: { recipients: reached, outside: recipients.outside, leftOff: recipients.dropped, cash: s.cash, invested: s.invested, since: moved?.sinceDay ?? null },
+      });
+      return res.status(200).json({ sent: true, to: reached.join(", "), count: reached.length, outside: recipients.outside.length, leftOff: recipients.dropped.length, loans: loans.length });
     } catch (err) {
       // A partner (currentUser refuses them) gets 403; anything else is logged
       // there and answered with a plain line, not the raw error.
@@ -1077,45 +1183,48 @@ async function scheduled(res: VercelResponse, run: CronRun, ctx: { secret: strin
     }
     const { accounts, connections } = pulled;
     const s = shape(accounts);
-    const movement = accounts.reduce((sum, a) => sum + (a.change ?? 0), 0);
-    const [history, activity, lastReportDate, loans, inflows] = await Promise.all([
+    const [history, activity, loans, inflows, sent] = await Promise.all([
       loadHistory(),
       fetchRecentActivity(origin, cronHeaders, accounts),
-      lastDeliveryDate(),
       loadLoans(),
       loadAnticipatedInflows(now),
+      lastSentByUser(),
     ]);
+    const staff = new Set(users.map((u) => (u.email ?? "").trim().toLowerCase()).filter(Boolean));
 
     const results: Array<{ user: string; ok: boolean; error?: string }> = [];
     for (const user of due) {
       try {
-        const extra = (user.notification_prefs?.treasuryReport?.recipients ?? []).map((e) => String(e).trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e));
-        const recipients = [...new Set([user.email, ...extra].filter(Boolean))] as string[];
-        if (recipients.length === 0) throw new Error("no email on file");
+        if (!user.email) throw new Error("no email on file");
+        const recipients = reportRecipients(user, user.notification_prefs?.treasuryReport?.recipients, staff);
         const nextLabel = nextReportLabel(user.notification_prefs ?? {}, now);
-        // Everyone on one To line so the group can Reply All to each other.
-        await sendEmailWithRetry(
+        // Movement since this person's own last report, not since the last balance read.
+        const moved = movementSince(history, sent.get(user.id) ?? null);
+        const movement = moved?.movement ?? 0;
+        const since = moved ? shortDay(moved.sinceDay) : null;
+        const footerNote = nextLabel ? `Next report ${nextLabel}` : null;
+        const reached = await sendToEach(
           recipients,
-          subjectLine(movement, false, now),
-          renderText(s, movement, now, activity, loans, inflows),
-          renderHtml(s, movement, history, now, connections, activity, {
-            loans,
-            inflows,
-            lastReportDate,
-            footerNote: nextLabel ? `Next report ${nextLabel}` : null,
-            preparedFor: user.name ?? "the Burton Family Office",
+          { name: user.name ?? null, email: user.email },
+          (outsideNote) => ({
+            subject: subjectLine(movement, false, now),
+            text: renderText(s, movement, now, activity, loans, inflows, since, [...(footerNote ? [footerNote] : []), ...(outsideNote ? [outsideNote] : [])]),
+            html: renderHtml(s, movement, history, now, connections, activity, { loans, inflows, lastReportDate: since, footerNote, outsideNote, preparedFor: user.name ?? "the family office" }),
           }),
-          { "List-Unsubscribe": `<${APP_URL}/notifications>` },
-          undefined,
-          {
-            idempotencyKey: `treasury-report/${user.id}/${now.toISOString().slice(0, 10)}`,
-            replyTo: user.email ?? undefined,
-          },
+          `treasury-report/${user.id}/${now.toISOString().slice(0, 10)}`,
         );
         await sb("report_deliveries", {
           method: "POST",
           prefer: "resolution=merge-duplicates",
           body: [{ user_id: user.id, report: "treasury", sent_at: now.toISOString() }],
+        });
+        await audit({
+          actor: "cron",
+          action: "treasury_report.scheduled",
+          target: { type: "report", id: "treasury", label: `Treasury report for ${user.name ?? user.email}` },
+          count: reached.length,
+          summary: `Sent ${user.name ?? user.email}'s scheduled Treasury report to ${reached.length} ${reached.length === 1 ? "person" : "people"}`,
+          detail: { schedule_owner: user.id, recipients: reached, outside: recipients.outside, leftOff: recipients.dropped, cash: s.cash, invested: s.invested, since: moved?.sinceDay ?? null },
         });
         results.push({ user: user.email ?? user.id, ok: true });
       } catch (err) {

@@ -11,6 +11,15 @@ import { storageRead } from "./storage.js";
  * per envelope and again when a scan arrives. A reading that fails after the
  * model has run is remembered too (reading_from "failed:…"), so opening the
  * piece doesn't pay for it again; only an explicit "Try again" does.
+ *
+ * Legal, government and tax mail is never marked junk or "for your
+ * information": it always reads "needs action", whatever the model said, so a
+ * notice with a deadline is never filed away as a welcome letter. A reading
+ * is a proposal: the page labels it "Read by AI" and asks for dates and
+ * amounts to be checked against the scan.
+ *
+ * HTTP surface: none; used by api/stable.ts. Who may call it: server code,
+ * after api/stable.ts's access check. Env: ANTHROPIC_API_KEY.
  */
 
 const MODEL = "claude-opus-5-5";
@@ -33,6 +42,10 @@ type PaperReading = {
   /** What to do about it, when the scan says. */
   action: string | null;
   dueDate: string | null;
+  /** The tax form, for tax mail: "1099-DIV", "K-1 (Form 1065)", "CP2000". */
+  taxForm: string | null;
+  /** The tax year it covers, e.g. "2025". */
+  taxYear: string | null;
   amounts: { label: string; amount: string }[];
   dates: { label: string; date: string }[];
   /** Account, invoice, case or notice numbers; account numbers only by their last four. */
@@ -54,7 +67,7 @@ const party = { type: "object", additionalProperties: false, required: ["name", 
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["headline", "kind", "urgency", "sender", "recipient", "postage", "mailClass", "action", "dueDate", "amounts", "dates", "references", "contents", "envelopeText"],
+  required: ["headline", "kind", "urgency", "sender", "recipient", "postage", "mailClass", "action", "dueDate", "taxForm", "taxYear", "amounts", "dates", "references", "contents", "envelopeText"],
   properties: {
     headline: { type: "string" },
     kind: { type: "string", enum: [...KINDS] },
@@ -65,6 +78,8 @@ const SCHEMA = {
     mailClass: { type: ["string", "null"] },
     action: { type: ["string", "null"] },
     dueDate: { type: ["string", "null"] },
+    taxForm: { type: ["string", "null"] },
+    taxYear: { type: ["string", "null"] },
     amounts: pair("label", "amount"),
     dates: pair("label", "date"),
     references: pair("label", "value"),
@@ -81,7 +96,8 @@ const SYSTEM = [
   "- envelopeText: every legible line on the envelope, top to bottom, as printed. Leave out barcode strings you can't read as text.",
   "- kind: bill (asks for payment), statement (account or periodic statement), check (a check or payment enclosed), tax (IRS or state tax), government (other agencies, licenses, courts' administrative notices), legal (lawyers, lawsuits, service of process), bank, insurance, notice (other notices or letters), personal, marketing (ads, solicitations, offers), other.",
   "- With only an envelope, judge kind from the sender and envelope markings, and say in the headline that it's from the envelope (e.g. 'Likely a statement from Stable, judging by the envelope').",
-  "- urgency: action when the piece asks for payment, a reply, a signature or has a deadline; junk for marketing; fyi otherwise.",
+  "- urgency: action when the piece asks for payment, a reply, a signature or has a deadline, and always for legal, government and tax mail; junk only for marketing; fyi otherwise.",
+  "- taxForm and taxYear, for tax mail only: the form as printed (1099-NEC, 1099-INT, 1099-DIV, 1099-B, Schedule K-1 (Form 1065), 1098, W-2, or an IRS notice number such as CP2000) and the tax year it covers (e.g. '2025'); null otherwise.",
   "- From the scan: action (what someone should do, one sentence), dueDate as YYYY-MM-DD, amounts with what each is (e.g. 'Amount due', '$1,240.00'), dates with labels, references (account, invoice, policy, case, notice numbers).",
   "- Account and card numbers: give only the last four digits, as '••1234'. Never write out a full account, card or Social Security number.",
   "- contents: two to four plain sentences on what the scan says, or null without a scan.",
@@ -120,6 +136,15 @@ async function blockFor(path: string): Promise<Block | null> {
   return img ? { type: "image", source: { type: "base64", media_type: img as "image/png" | "image/jpeg" | "image/gif" | "image/webp", data } } : null;
 }
 
+/** Mail that can carry a deadline with legal weight. */
+export const SERIOUS_KINDS: readonly string[] = ["legal", "government", "tax"];
+
+/** The urgency to show: legal, government and tax mail always needs action, whatever the model said. Pure. */
+export function urgencyFor(kind: string, said: unknown): "action" | "fyi" | "junk" {
+  if (SERIOUS_KINDS.includes(kind)) return "action";
+  return said === "action" || said === "junk" ? said : "fyi";
+}
+
 /** Shapes the model's JSON into a reading, dropping anything malformed. */
 export function toReading(raw: unknown, fromScan: boolean): PaperReading {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -135,8 +160,9 @@ export function toReading(raw: unknown, fromScan: boolean): PaperReading {
       .map((x) => ({ [a]: str(x[a])!, [b]: str(x[b])! }) as Record<A | B, string>)
       .slice(0, 20);
   const kind = KINDS.includes(o.kind as PaperKind) ? (o.kind as PaperKind) : "other";
-  const urgency = o.urgency === "action" || o.urgency === "junk" ? o.urgency : "fyi";
+  const urgency = urgencyFor(kind, o.urgency);
   const due = str(o.dueDate);
+  const year = str(o.taxYear);
   return {
     headline: str(o.headline) ?? "A piece of mail",
     kind,
@@ -147,6 +173,8 @@ export function toReading(raw: unknown, fromScan: boolean): PaperReading {
     mailClass: str(o.mailClass),
     action: str(o.action),
     dueDate: due && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null,
+    taxForm: kind === "tax" ? (str(o.taxForm)?.slice(0, 60) ?? null) : null,
+    taxYear: kind === "tax" && year && /^(19|20)\d{2}$/.test(year) ? year : null,
     amounts: pairs(o.amounts, "label", "amount"),
     dates: pairs(o.dates, "label", "date"),
     references: pairs(o.references, "label", "value"),

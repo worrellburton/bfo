@@ -65,6 +65,11 @@ export function applyTheme(theme: Theme) {
   statusBarFor(theme === "dark");
 }
 
+/** Applies the saved setting outside the provider: the root error boundary, which replaces the app (and React's fresh <html> loses what the boot script set). */
+export function applySavedTheme() {
+  applyTheme(resolveTheme(readSetting(), prefersDark()));
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [setting, setSettingState] = useState<ThemeSetting>(() => (typeof window === "undefined" ? "auto" : readSetting()));
   const [deviceDark, setDeviceDark] = useState(prefersDark);
@@ -93,9 +98,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const toggle = useCallback(() => setSetting(theme === "dark" ? "light" : "dark"), [setSetting, theme]);
 
-  return (
-    <ThemeContext.Provider value={{ theme, setting, setSetting, toggle, appTheme: theme, overridden: false, setTheme: setSetting, setOverride: noop }}>{children}</ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ theme, setting, setSetting, toggle, appTheme: theme, overridden: false, setTheme: setSetting, setOverride: noop }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

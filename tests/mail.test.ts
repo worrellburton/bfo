@@ -9,6 +9,7 @@ import {
   parseSend,
   rawHeaderRecipients,
   replyHeaders,
+  resetMailSchema,
   searchCondition,
   snippetOf,
   storable,
@@ -157,6 +158,8 @@ beforeEach(() => {
   storageRoutes = [];
   unreadTotal = 0;
   me = robert;
+  // The Trash columns are in (migration 20261107_mail_trash); a test that needs them missing says so.
+  resetMailSchema(true);
   currentUserMock.mockClear();
   vi.stubGlobal(
     "fetch",
@@ -237,7 +240,7 @@ describe("bodies", () => {
       snippetOf(
         "##- Please type your reply above this line -##\n----------------\nLawrence P., Oct 22\nIt is rejected and returned to sender.\n\nThis email is a service from Earth Class Mail. Delivered by Zendesk\n[209REE-6G6XY]",
       ),
-    ).toBe("Lawrence P., Oct 22 It is rejected and returned to sender. This email is a service from Earth Class Mail. Delivered by Zendesk");
+    ).toBe("Lawrence P., Oct 22 It is rejected and returned to sender.");
     expect(snippetOf("Sounds good.\n\nSent from my iPhone")).toBe("Sounds good.");
     expect(snippetOf(null, "<html><head><style>p{color:red}</style></head><body><p>Hi&nbsp;<b>Robert</b> &amp; co</p></body></html>")).toBe("Hi Robert & co");
     const long = snippetOf("word ".repeat(100));
@@ -391,7 +394,9 @@ describe("ingest", () => {
       attachments: [{ id: "rea_1", filename: "a.pdf", contentType: "application/pdf", size: 3, path: "in/rem_1/rea_1" }],
     });
     expect(storageCalls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/object/mail/in/rem_1/rea_1"]);
-    expect(birdCalls.some((c) => c.path.endsWith("/raw"))).toBe(false);
+    // The header block is read once, for Reply-To only: To/Cc already named the mailboxes.
+    expect(birdCalls.filter((c) => c.path.endsWith("/raw")).length).toBeLessThanOrEqual(1);
+    expect(ins.body[0].reply_to).toBeNull();
   });
 
   it("delivers mail to an extra address to the account that has it, once per person", async () => {
@@ -756,16 +761,16 @@ describe("/api/mail", () => {
     me = { id: U2, name: "Claire Burton", role: "email", status: "approved", mail_address: CLAIRE };
     unreadTotal = 4;
     const r = await call("GET", { query: { view: "count" } });
-    expect(r).toEqual({ status: 200, json: { unread: 4, otherUnread: 0, address: CLAIRE, aliases: [], canSeeOther: false } });
+    expect(r).toMatchObject({ status: 200, json: { unread: 4, otherUnread: 0, address: CLAIRE, aliases: [], canSeeOther: false, trash: true, hold: null, canHold: false } });
     expect(currentUserMock).toHaveBeenCalledWith(expect.anything(), { allowEmailOnly: true });
-    expect(sbCalls.filter((c) => c.method === "COUNT").map((c) => c.path)).toEqual([`mail_messages?user_id=eq.${U2}&folder=eq.inbox&read_at=is.null&select=created_at&limit=1`]);
+    expect(sbCalls.filter((c) => c.method === "COUNT").map((c) => c.path)).toEqual([`mail_messages?user_id=eq.${U2}&folder=eq.inbox&deleted_at=is.null&read_at=is.null&select=created_at&limit=1`]);
   });
 
   it("never picks an address itself: none until an admin gives one, and no sending", async () => {
     // A name the user typed (complete-profile) must not claim robert@ or accounting@.
     me = { id: U2, name: "Accounting", role: "email", status: "approved", mail_address: null };
     const r = await call("GET", { query: { view: "count" } });
-    expect(r).toEqual({ status: 200, json: { unread: 0, otherUnread: 0, address: null, aliases: [], canSeeOther: false } });
+    expect(r).toMatchObject({ status: 200, json: { unread: 0, otherUnread: 0, address: null, aliases: [], canSeeOther: false } });
     const sent = await call("POST", { body: { action: "send", sendId: SEND_ID, to: ["jane@example.com"], subject: "Hi", text: "Hi" } });
     expect(sent).toEqual({ status: 400, json: { error: "no_address", message: "You don't have an address yet. Ask an admin." } });
     expect(sbCalls.some((c) => c.path.startsWith("app_users") || c.path.startsWith("mail_sends"))).toBe(false);
@@ -777,8 +782,20 @@ describe("/api/mail", () => {
     unreadTotal = 2;
     sbRoutes = [[/GET mail_sync/, () => [{ synced_at: "2026-10-14T12:00:00Z", error: "Bird refused (403): the API key can't read received mail" }]]];
     const r = await call("GET", { query: { view: "count" } });
-    expect(r.json).toEqual({ unread: 2, otherUnread: 2, address: ROBERT, aliases: [], canSeeOther: true, sync: { error: "Bird refused (403): the API key can't read received mail" } });
-    expect(sbCalls.some((c) => c.method === "COUNT" && c.path.startsWith("mail_messages?user_id=is.null&folder=eq.inbox&read_at=is.null"))).toBe(true);
+    expect(r.json).toMatchObject({
+      unread: 2,
+      otherUnread: 2,
+      address: ROBERT,
+      aliases: [],
+      canSeeOther: true,
+      canHold: true,
+      sync: { at: "2026-10-14T12:00:00Z", failed: true, error: "Bird refused (403): the API key can't read received mail" },
+    });
+    expect(sbCalls.some((c) => c.method === "COUNT" && c.path.startsWith("mail_messages?user_id=is.null&folder=eq.inbox&deleted_at=is.null&read_at=is.null"))).toBe(true);
+    // Everyone learns that mail couldn't be checked, and when it last was; only owners and admins see why.
+    me = robert;
+    const member = await call("GET", { query: { view: "count" } });
+    expect(member.json.sync).toEqual({ at: "2026-10-14T12:00:00Z", failed: true });
   });
 
   it("lists only the caller's mail, newest first, with paging", async () => {
@@ -794,7 +811,7 @@ describe("/api/mail", () => {
     expect(sbCalls[0].path).toContain("starred_at=not.is.null");
     // The time goes through exactly as given (microseconds kept), not re-parsed into milliseconds.
     const q = sbCalls[1].path;
-    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&and=\\(occurred_at\\.lt\\."2026-10-15T00:00:00\\.123456\\+00:00"\\)&select=`));
+    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&deleted_at=is\\.null&and=\\(occurred_at\\.lt\\."2026-10-15T00:00:00\\.123456\\+00:00"\\)&select=`));
     expect(q).toContain("order=occurred_at.desc,id.desc&limit=3");
     expect(q).not.toContain("html_body");
     for (const bad of <Record<string, string>[]>[{ before: "yesterday" }, { before: '2026-10-15T00:00:00Z",id.gt.(' }, { beforeId: MSG }, { before: "2026-10-15T00:00:00Z", beforeId: "x" }]) {
@@ -805,10 +822,10 @@ describe("/api/mail", () => {
   it("narrows a folder to unread or starred mail", async () => {
     sbRoutes = [[/GET mail_messages\?/, () => [row()]]];
     expect((await call("GET", { query: { view: "list", filter: "unread" } })).status).toBe(200);
-    expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&read_at=is\\.null&select=`));
+    expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.inbox&deleted_at=is\\.null&read_at=is\\.null&select=`));
     sbCalls.length = 0;
     expect((await call("GET", { query: { view: "list", folder: "archive", filter: "starred" } })).status).toBe(200);
-    expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.archive&starred_at=not\\.is\\.null&select=`));
+    expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&folder=eq\\.archive&deleted_at=is\\.null&starred_at=not\\.is\\.null&select=`));
     expect(sbCalls[0].path).toContain("starred_at");
     expect(await call("GET", { query: { view: "list", filter: "flagged" } })).toEqual({ status: 400, json: { error: "bad_filter" } });
   });
@@ -819,7 +836,7 @@ describe("/api/mail", () => {
     const q = sbCalls[0].path;
     // Scope, not folder: the search covers everything the caller may see.
     // List punctuation in the term becomes wildcards, so the query's shape can't change.
-    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&and=\\(or\\(subject\\.ilike\\.\\*Fourton\\* \\*SOW\\*\\*`));
+    expect(q).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&deleted_at=is\\.null&and=\\(or\\(subject\\.ilike\\.\\*Fourton\\* \\*SOW\\*\\*`));
     expect(q).toContain("text_body.ilike.*Fourton* *SOW**)");
     expect(q).not.toContain("folder=eq.archive");
     // Paging and search share one and=(…).
@@ -982,7 +999,7 @@ describe("/api/mail", () => {
     await call("GET", { query: { view: "list", folder: "archive", before: at, beforeId: id(3) } });
     const q = sbCalls[1].path;
     expect(q.match(/[?&]or=/g)).toHaveLength(1);
-    expect(q).toContain(`or=(user_id.eq.${U1},user_id.is.null)&folder=eq.archive&and=(or(occurred_at.lt."${at}",and(occurred_at.eq."${at}",id.lt.${id(3)})))&`);
+    expect(q).toContain(`or=(user_id.eq.${U1},user_id.is.null)&folder=eq.archive&deleted_at=is.null&and=(or(occurred_at.lt."${at}",and(occurred_at.eq."${at}",id.lt.${id(3)})))&`);
   });
 
   it("keeps the catch-all folder to owners and admins", async () => {
@@ -1018,34 +1035,119 @@ describe("/api/mail", () => {
   it("moves only received mail, within the caller's scope", async () => {
     const r = await call("POST", { body: { action: "move", ids: [MSG], folder: "archive" } });
     expect(r).toEqual({ status: 200, json: { ok: true } });
-    expect(sbCalls.find((c) => c.method === "PATCH")).toMatchObject({ method: "PATCH", path: `mail_messages?id=in.(${MSG})&direction=eq.in&user_id=eq.${U1}`, body: { folder: "archive" } });
+    expect(sbCalls.find((c) => c.method === "PATCH")).toMatchObject({ method: "PATCH", path: `mail_messages?id=in.(${MSG})&direction=eq.in&user_id=eq.${U1}&deleted_at=is.null`, body: { folder: "archive" } });
     expect((await call("POST", { body: { action: "move", ids: [MSG], folder: "sent" } })).status).toBe(400);
     expect((await call("POST", { body: { action: "read", ids: ["x"], read: true } })).status).toBe(400);
   });
 
-  it("deletes for good, and a shared file only when nothing else uses it", async () => {
+  it("moves deleted mail to Trash with who did it, and records it without the words", async () => {
     me = owner;
     const SENT = "55555555-5555-4555-8555-555555555555";
     sbRoutes = [
+      [/GET mail_holds/, () => []],
+      [/GET mail_messages\?id=in\./, () => [row({ subject: "Q3 statements" }), row({ id: SENT, direction: "out", folder: "sent", subject: "Re: Q3 statements" })]],
+    ];
+    const r = await call("POST", { body: { action: "trash", ids: [MSG, SENT] } });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ ok: true, trashed: [MSG, SENT], archived: [], kept: [] });
+    const patch = sbCalls.find((c) => c.method === "PATCH")!;
+    expect(patch.path).toBe(`mail_messages?id=in.(${MSG},${SENT})&or=(user_id.eq.${U1},user_id.is.null)&deleted_at=is.null`);
+    expect(patch.body).toMatchObject({ deleted_by: U1 });
+    expect(typeof patch.body.deleted_at).toBe("string");
+    // Nothing is removed for good, and no file is touched.
+    expect(sbCalls.some((c) => c.method === "DELETE")).toBe(false);
+    expect(storageCalls.some((c) => c.method === "DELETE")).toBe(false);
+    const log = sbCalls.find((c) => c.method === "POST" && c.path === "audit_log")!;
+    expect(log.body).toMatchObject({ action: "mail.trash", actor_id: U1, count: 2, summary: "Moved 2 messages to Trash; removed for good after 30 days" });
+    expect(log.body.detail.messages[0]).toEqual({ id: MSG, from: "jane@example.com", to: [ROBERT], subject: "Q3 statements", occurred_at: "2026-10-14T12:00:00.000Z", direction: "in", files: 0 });
+    expect(JSON.stringify(log.body)).not.toContain("Hi Robert");
+    // The page loaded before Trash still says "delete": it trashes too.
+    sbCalls.length = 0;
+    expect((await call("POST", { body: { action: "delete", ids: [MSG] } })).json).toMatchObject({ trashed: [MSG, SENT] });
+    expect(sbCalls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  it("archives held mail instead of deleting it, and keeps held mail it sent", async () => {
+    const SENT = "55555555-5555-4555-8555-555555555555";
+    sbRoutes = [
+      [/GET mail_holds/, () => [{ id: "h1", user_id: null, reason: "Audit", set_by: U2, set_at: "2026-11-01T00:00:00Z" }]],
+      [/GET mail_messages\?id=in\./, () => [row(), row({ id: SENT, direction: "out", folder: "sent" })]],
+    ];
+    const r = await call("POST", { body: { action: "trash", ids: [MSG, SENT] } });
+    expect(r.json).toMatchObject({ trashed: [], archived: [MSG], kept: [SENT] });
+    const patches = sbCalls.filter((c) => c.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]).toMatchObject({ path: `mail_messages?id=in.(${MSG})&user_id=eq.${U1}`, body: { folder: "archive" } });
+    expect(sbCalls.find((c) => c.path === "audit_log")!.body).toMatchObject({ action: "mail.delete_held", count: 2 });
+  });
+
+  it("refuses to delete before Trash is set up, so nothing is lost", async () => {
+    resetMailSchema(false);
+    expect(await call("POST", { body: { action: "trash", ids: [MSG] } })).toMatchObject({ status: 503, json: { error: "trash_not_ready" } });
+    expect(sbCalls.some((c) => c.method === "PATCH" || c.method === "DELETE")).toBe(false);
+    // Lists leave the column out, so they keep working.
+    sbRoutes = [[/GET mail_messages\?/, () => [row()]]];
+    expect((await call("GET", { query: { view: "list", folder: "inbox", filter: "unread" } })).status).toBe(200);
+    expect(sbCalls.filter((c) => c.method === "GET").every((c) => !c.path.includes("deleted_at"))).toBe(true);
+  });
+
+  it("restores from Trash and lists Trash on its own", async () => {
+    sbRoutes = [[/GET mail_messages\?id=in\./, () => [row({ deleted_at: "2026-11-01T00:00:00Z" })]]];
+    const r = await call("POST", { body: { action: "restore", ids: [MSG] } });
+    expect(r.json).toEqual({ ok: true, restored: [MSG] });
+    expect(sbCalls[0].path).toContain("&deleted_at=not.is.null&");
+    expect(sbCalls.find((c) => c.method === "PATCH")!.body).toEqual({ deleted_at: null, deleted_by: null });
+    expect(sbCalls.find((c) => c.path === "audit_log")!.body).toMatchObject({ action: "mail.restore", summary: "Restored “Hello” from Trash" });
+    sbCalls.length = 0;
+    sbRoutes = [[/GET mail_messages\?/, () => [row({ deleted_at: "2026-11-01T00:00:00.000Z" })]]];
+    const list = await call("GET", { query: { view: "list", folder: "trash" } });
+    expect(list.json.messages[0]).toMatchObject({ deletedAt: "2026-11-01T00:00:00.000Z", purgeAt: "2026-12-01T00:00:00.000Z" });
+    expect(sbCalls[0].path).toMatch(new RegExp(`^mail_messages\\?user_id=eq\\.${U1}&deleted_at=not\\.is\\.null&select=`));
+    // No pinned stars in Trash.
+    expect(list.json.pinned).toBeUndefined();
+  });
+
+  it("deletes forever only what's in Trash and not held, with a shared file kept while another copy uses it", async () => {
+    me = owner;
+    const SENT = "55555555-5555-4555-8555-555555555555";
+    const HELD = "66666666-6666-4666-8666-666666666666";
+    sbRoutes = [
+      [/GET mail_holds/, () => []],
       [
         /GET mail_messages\?id=in\./,
         () => [
-          row({ attachments: [{ id: "rea_1", filename: "a", contentType: "x/y", size: 1, path: "in/rem_1/rea_1" }] }),
-          row({ id: SENT, direction: "out", folder: "sent", dedupe_key: "out:em_1", bird_id: "em_1", attachments: [{ id: "a0", filename: "b", contentType: "x/y", size: 1, path: "out/m/0-b" }] }),
+          row({ deleted_at: "2026-11-01T00:00:00Z", attachments: [{ id: "rea_1", filename: "a", contentType: "x/y", size: 1, path: "in/rem_1/rea_1" }] }),
+          row({ id: SENT, deleted_at: "2026-11-01T00:00:00Z", direction: "out", folder: "sent", dedupe_key: "out:em_1", bird_id: "em_1", attachments: [{ id: "a0", filename: "b", contentType: "x/y", size: 1, path: "out/m/0-b" }] }),
+          row({ id: HELD, deleted_at: "2026-11-01T00:00:00Z", held_at: "2026-11-02T00:00:00Z" }),
         ],
       ],
       [/GET mail_messages\?attachments=cs\.\[\{"path":"in\/rem_1\/rea_1"\}\]/, () => [{ id: "copy" }]],
     ];
-    expect(await call("POST", { body: { action: "delete", ids: [MSG, SENT] } })).toEqual({ status: 200, json: { ok: true } });
-    expect(sbCalls[0].path).toContain("&select=id,attachments,dedupe_key,bird_id,direction");
+    expect(await call("POST", { body: { action: "purge", ids: [MSG, SENT, HELD] } })).toEqual({ status: 200, json: { ok: true, purged: 2, kept: 1 } });
+    expect(sbCalls.find((c) => c.method === "GET" && c.path.startsWith("mail_messages?id=in."))!.path).toContain("&deleted_at=not.is.null&");
     const del = sbCalls.findIndex((c) => c.method === "DELETE");
     expect(sbCalls[del].path).toBe(`mail_messages?id=in.(${MSG},${SENT})&or=(user_id.eq.${U1},user_id.is.null)`);
     // A tombstone for the received copy only, written first, so the sync can't bring it back.
     const tomb = sbCalls.findIndex((c) => c.method === "POST" && c.path.startsWith("mail_deleted"));
     expect(sbCalls[tomb]).toMatchObject({ path: "mail_deleted?on_conflict=dedupe_key", body: [{ dedupe_key: `in:rem_1:${U1}`, bird_id: "rem_1" }] });
-    expect(sbCalls[tomb].prefer).toContain("resolution=ignore-duplicates");
     expect(tomb).toBeLessThan(del);
     expect(storageCalls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/object/mail/out/m/0-b"]);
+    expect(sbCalls.find((c) => c.path === "audit_log")!.body).toMatchObject({ action: "mail.purge", count: 2, detail: { reason: "deleted_forever" } });
+  });
+
+  it("lets an owner or admin keep mail for records, and only an owner lift it", async () => {
+    sbRoutes = [[/GET mail_messages\?id=in\./, () => [row()]]];
+    expect((await call("POST", { body: { action: "hold", ids: [MSG], held: true } })).status).toBe(403);
+    me = { ...robert, role: "admin" };
+    expect((await call("POST", { body: { action: "hold", ids: [MSG], held: true } })).json).toEqual({ ok: true });
+    expect(sbCalls.find((c) => c.method === "PATCH")!.body).toMatchObject({ held_by: U1 });
+    expect((await call("POST", { body: { action: "hold", ids: [MSG], held: false } })).status).toBe(403);
+    me = owner;
+    expect((await call("POST", { body: { action: "hold", ids: [MSG], held: false } })).json).toEqual({ ok: true });
+    expect(sbCalls.filter((c) => c.path === "audit_log").map((c) => c.body.action)).toEqual(["mail.hold", "mail.release"]);
+    // A hold on all mail: an owner's alone.
+    me = { ...robert, role: "admin" };
+    expect((await call("POST", { body: { action: "hold-all", on: true } })).status).toBe(403);
   });
 
   describe("extra addresses", () => {
@@ -1263,7 +1365,8 @@ describe("/api/mail", () => {
 
     it("reports Bird's refusal as send_failed", async () => {
       birdRoutes = [[/POST \/v1\/email\/messages$/, () => json({ error: { type: "validation", code: "E04006", message: "Domain not verified" } }, 422)]];
-      expect(await send()).toEqual({ status: 502, json: { error: "send_failed", message: "Bird refused (422): Domain not verified" } });
+      // The provider's words stay in the log; the person is told what happened, without its name.
+      expect(await send()).toEqual({ status: 502, json: { error: "send_failed", message: "It wasn't sent. Check the addresses and try again; if it keeps happening, tell the office." } });
       expect(storedCopy()).toBeUndefined();
       // The mail may have gone out, so its place in the limit is kept.
       expect(reservations()).toHaveLength(1);

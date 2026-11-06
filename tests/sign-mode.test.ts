@@ -112,8 +112,13 @@ describe("signing mode", () => {
     expect(r2.statusCode).toBe(409);
     expect(row.mode).toBe("game");
     // Sending the same mode again is not a change.
-    const r3 = await call("POST", { action: "update", id: row.id, mode: "game", title: "MSA 2" });
+    const r3 = await call("POST", { action: "update", id: row.id, mode: "game" });
     expect(r3.statusCode).toBe(200);
+    // Once sent, what went out is the record: the title doesn't change either.
+    const r4 = await call("POST", { action: "update", id: row.id, title: "MSA 2" });
+    expect(r4.statusCode).toBe(409);
+    expect(r4.body.error).toBe("locked");
+    expect(row.title).toBe("MSA");
   });
 
   it("tells the signer's page which mode it is, and 'normal' for rows from before the column", async () => {
@@ -186,7 +191,7 @@ describe("signing mode", () => {
     const sent = vi.mocked(sendEmail).mock.calls.at(-1)!;
     expect(String(sent[2])).not.toMatch(/open the link on a computer/);
     expect(String(sent[3])).toContain("Review and sign");
-    expect(String(sent[3])).not.toContain("Play and sign");
+    expect(String(sent[2])).not.toMatch(/short film/);
   });
 
   it("treats the racetrack like the theater: TallulahMD LLC only, and the signer's page is told which", async () => {
@@ -215,7 +220,6 @@ describe("signing mode", () => {
     const text = String(sent[2]);
     expect(text).toContain("Review and sign");
     expect(text).not.toMatch(/game|theater|film|open the link on a computer/i);
-    expect(String(sent[3])).not.toContain("Play and sign");
     // The record says how it went out.
     expect(r.body.request.events.at(-1)).toMatchObject({ kind: "reminded", note: "as a normal request" });
     // The fresh link opens the game all the same.
@@ -225,7 +229,7 @@ describe("signing mode", () => {
     expect(view.body.mode).toBe("game");
     // Without the flag, a reminder still says it's the game, and the record carries no note.
     const r2 = await call("POST", { action: "remind", id: row.id });
-    expect(String(vi.mocked(sendEmail).mock.calls.at(-1)![3])).toContain("Play and sign");
+    expect(String(vi.mocked(sendEmail).mock.calls.at(-1)![2])).toMatch(/short film/);
     expect(r2.body.request.events.at(-1).kind).toBe("reminded");
     expect(r2.body.request.events.at(-1).note).toBeUndefined();
   });
@@ -245,13 +249,17 @@ describe("signing mode", () => {
     expect(r2.body.gameAllowed).toBe(false);
   });
 
-  it("sends the game email when the mode is game", async () => {
+  it("sends the game email when the mode is game, saying a phone can sign straight away", async () => {
     const { sendEmail } = await import("../lib/auth.js");
     row.mode = "game";
     const r = await call("POST", { action: "send", id: row.id });
     expect(r.statusCode).toBe(200);
     const sent = vi.mocked(sendEmail).mock.calls.at(-1)!;
-    expect(String(sent[2])).toMatch(/open the link on a computer/);
-    expect(String(sent[3])).toContain("Play and sign");
+    expect(String(sent[2])).toMatch(/short film/);
+    expect(String(sent[2])).toMatch(/phone or tablet.*sign straight away/);
+    expect(String(sent[3])).toContain("Review and sign");
+    // The link runs out, and the email says when.
+    expect(row.parties[0].expiresAt).toBeTruthy();
+    expect(String(sent[2])).toMatch(/The link works until/);
   });
 });

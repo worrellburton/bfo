@@ -5,14 +5,17 @@ import { authFetch, getToken } from "./auth";
 /**
  * The inbox's side of /api/mail: the shapes the server returns, one helper per
  * call, and the shared unread count behind the envelope in the rail.
+ * Fields added with Trash (deletedAt, kept, trash, hold…) are optional: a
+ * server that predates them still answers, and the page reads their absence
+ * as "not there yet".
  */
 
 // ── Types (the /api/mail contract) ───────────────────────────────────────
 
 export type MailAddress = { email: string; name?: string | null };
 export type MailAttachment = { id: string; filename: string; contentType: string; size: number; available: boolean };
-/** "active": inbox and sent together, one row per conversation, latest activity first. */
-export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other";
+/** "active": inbox and sent together, one row per conversation, latest activity first. "trash": deleted, kept 30 days. */
+export type MailFolder = "active" | "inbox" | "sent" | "archive" | "other" | "trash";
 /** Narrows a folder: everything, only unread, only starred, or only mail that is both. */
 export type MailFilter = "all" | "unread" | "starred" | "unread-starred";
 
@@ -39,6 +42,11 @@ export type MailSummary = {
   threadAt?: string;
   /** Received mail neither SPF nor DKIM vouches for: its From could be forged (no colleague's photo on it). */
   unverified?: boolean;
+  /** In Trash: when it was deleted, and when it goes for good. */
+  deletedAt?: string;
+  purgeAt?: string;
+  /** Kept for records. */
+  held?: boolean;
 };
 
 export type MailMessage = MailSummary & {
@@ -50,6 +58,16 @@ export type MailMessage = MailSummary & {
   messageId: string | null;
   /** Neither SPF nor DKIM passed. */
   unverifiedSender: boolean;
+  /** Where the sender asked replies to go, when that's not the From. */
+  replyTo?: MailAddress[];
+  /** Reads like payment or banking instructions. */
+  paymentRisk?: boolean;
+  /** The mailbox has written to this sender before (its pictures may load). Absent: not known. */
+  knownSender?: boolean;
+  /** The display name copies someone in the office, from outside the office's domain. */
+  impersonation?: boolean;
+  /** Kept for records: this message ("message"), or a hold on its mailbox or all mail ("hold"). */
+  kept?: "message" | "hold" | null;
 };
 
 export type MailCount = {
@@ -60,7 +78,16 @@ export type MailCount = {
   /** Extra addresses on the same account: mail to them lands here too, and they can be sent from. */
   aliases?: string[];
   canSeeOther: boolean;
-  sync?: { error?: string };
+  /** Unread conversations in Inbox (Active): the folder tab's badge. */
+  activeUnread?: number;
+  /** Trash is set up on the server (deleting is recoverable). */
+  trash?: boolean;
+  /** A records hold covering my mail, if one is on. */
+  hold?: { since: string; reason: string | null; all: boolean } | null;
+  /** I may put all mail on hold or lift it (owners). */
+  canHold?: boolean;
+  /** When mail was last checked for new messages, and whether that worked (the reason for owners and admins). */
+  sync?: { at?: string | null; failed?: boolean; error?: string };
 };
 
 export type OutgoingAttachment = { filename: string; contentType: string; data: string };
@@ -83,7 +110,7 @@ type SendInput = {
 
 // ── Calls ────────────────────────────────────────────────────────────────
 
-class MailError extends Error {
+export class MailError extends Error {
   status: number;
   code: string;
   constructor(status: number, code: string, message: string) {
@@ -94,12 +121,13 @@ class MailError extends Error {
 }
 
 function fallbackMessage(status: number, code?: string): string {
-  if (code === "not_found" || status === 404) return "That message is gone.";
-  if (code === "no_address") return "No address yet. Ask an admin.";
-  if (code === "forbidden" || status === 403) return "Not allowed.";
-  if (status === 413) return "Too large to send.";
-  if (status === 429) return "Too many sends today. Try again later.";
-  return "Something went wrong. Try again.";
+  if (code === "not_found" || status === 404) return "That message is no longer here. It may have been moved or deleted.";
+  if (code === "no_address") return "You don't have an address yet. Ask an owner or admin for one.";
+  if (code === "bad_action") return "Deleting isn't available yet, so nothing was deleted. Archive it instead.";
+  if (code === "forbidden" || status === 403) return "Your role doesn't allow that. Ask an owner or admin.";
+  if (status === 413) return "That's too large to send. Remove an attachment and try again.";
+  if (status === 429) return "That's the most messages for today. Try again tomorrow.";
+  return "That didn't work. Check your connection and try again.";
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -116,6 +144,8 @@ function post<T>(body: Record<string, unknown>): Promise<T> {
 type ListQuery = {
   folder: MailFolder;
   filter?: MailFilter;
+  /** Only mail with attachments. */
+  attachments?: boolean;
   /** Search text: every folder is searched and `folder` is ignored. */
   q?: string;
   /** One of my addresses: only that mailbox. */
@@ -129,16 +159,17 @@ type ListQuery = {
 };
 
 /** One page, newest first. */
-export function listMail({ folder, filter = "all", q = "", to, before, beforeId, beforeKey, limit = 50 }: ListQuery) {
+export function listMail({ folder, filter = "all", attachments = false, q = "", to, before, beforeId, beforeKey, limit = 50 }: ListQuery) {
   const p = new URLSearchParams({ view: "list", folder, limit: String(limit) });
   if (filter !== "all") p.set("filter", filter);
+  if (attachments) p.set("att", "1");
   if (q.trim()) p.set("q", q.trim());
   if (to) p.set("to", to);
   if (before) p.set("before", before);
   if (before && beforeId) p.set("beforeId", beforeId);
   if (before && beforeKey) p.set("beforeKey", beforeKey);
-  // `pinned`: starred mail for the top of the first page (filter "all", no search).
-  return call<{ messages: MailSummary[]; hasMore: boolean; pinned?: MailSummary[] }>(`/api/mail?${p}`);
+  // `pinned`: starred mail for the top of the first page (filter "all", no search). `unread`: one mailbox's unread count.
+  return call<{ messages: MailSummary[]; hasMore: boolean; pinned?: MailSummary[]; unread?: number }>(`/api/mail?${p}`);
 }
 
 /** Opens a message; the server marks it read (with `conversation`, its whole conversation: opened from Active). */
@@ -207,9 +238,49 @@ export function starMail(ids: string[], starred: boolean, opts: { conversation?:
   return post<{ ok: true }>({ action: "star", ids, starred, ...(opts.conversation ? { conversation: true } : {}) });
 }
 
-/** `conversation`: every message in their conversations, sent and received. */
-export function deleteMail(ids: string[], opts: { conversation?: boolean } = {}) {
-  return post<{ ok: true }>({ action: "delete", ids, ...(opts.conversation ? { conversation: true } : {}) });
+/** What Delete did: into Trash, archived instead (held mail that came in), or left alone (held mail sent out). */
+export type TrashResult = { trashed: string[]; archived: string[]; kept: string[]; purgeAt?: string };
+
+/**
+ * Delete: into Trash for 30 days. `conversation`: every message in their
+ * conversations, sent and received. A server without Trash answers 400
+ * (an unknown action), so nothing is ever removed for good from here.
+ */
+export function trashMail(ids: string[], opts: { conversation?: boolean } = {}) {
+  return post<TrashResult>({ action: "trash", ids, ...(opts.conversation ? { conversation: true } : {}) });
+}
+
+/** Out of Trash, back where each message was. */
+export function restoreMail(ids: string[], opts: { conversation?: boolean } = {}) {
+  return post<{ restored: string[] }>({ action: "restore", ids, ...(opts.conversation ? { conversation: true } : {}) });
+}
+
+/** Delete forever: only mail already in Trash, and never held mail. */
+export function purgeMail(ids: string[]) {
+  return post<{ purged: number; kept: number }>({ action: "purge", ids });
+}
+
+export function emptyTrash() {
+  return post<{ purged: number; kept: number }>({ action: "empty-trash" });
+}
+
+/** Keep for records (owner or admin), or stop (owner). */
+export function holdMail(ids: string[], held: boolean) {
+  return post<{ ok: true }>({ action: "hold", ids, held });
+}
+
+/** A records hold on all mail (owner). */
+export function holdAllMail(on: boolean, reason?: string) {
+  return post<{ hold: MailCount["hold"] }>({ action: "hold-all", on, ...(reason ? { reason } : {}) });
+}
+
+/** The office-mailbox notice: its version and when I acknowledged it. */
+export function getNotice() {
+  return call<{ version: string; acknowledgedAt: string | null; recordable: boolean }>("/api/mail?view=notice");
+}
+
+export function ackNotice(version: string) {
+  return post<{ acknowledgedAt: string; recorded: boolean }>({ action: "notice-ack", version });
 }
 
 // ── Change signal ────────────────────────────────────────────────────────
@@ -312,7 +383,7 @@ export function useMailCount(): MailCount | null {
   return value;
 }
 
-/** The same message, laid out better: same words, clearer shape (Improve design). */
-export function improveMail(html: string, subject: string): Promise<{ html: string }> {
-  return post<{ html: string }>({ action: "improve", html, subject });
+/** The same message, laid out better: same words and figures, clearer shape (Tidy layout). `ack`: the first-use notice's version, once. */
+export function improveMail(html: string, subject: string, ack?: string): Promise<{ html: string }> {
+  return post<{ html: string }>({ action: "improve", html, subject, ...(ack ? { ack } : {}) });
 }

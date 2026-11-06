@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deflateSync } from "node:zlib";
 import { PDFDocument } from "pdf-lib";
-import { hashToken, type SignatureRequestRow } from "../lib/sign";
+import { ESIGN_DISCLOSURE_VERSION, hashToken, type SignatureRequestRow } from "../lib/sign";
 
 /**
  * Sending a finished request again (api/sign.ts "resend"), the address box a
@@ -185,9 +185,15 @@ beforeEach(async () => {
 describe("resend", () => {
   it("sends a finished request again as a new one, with an address box under each signature, as the racetrack, with a plain email", async () => {
     const { sendEmail } = await import("../lib/auth.js");
-    const r = await call("POST", { action: "resend", id: OLD, mode: "race", plain: true });
+    // A signed agreement goes out again only with a reason; the address boxes are asked for by party.
+    expect((await call("POST", { action: "resend", id: OLD, mode: "race", plain: true })).body.error).toBe("reason");
+    const r = await call("POST", { action: "resend", id: OLD, mode: "race", plain: true, address: ["a", "b"], reason: "Both addresses were missing" });
     expect(r.statusCode).toBe(200);
     const made = r.body.request;
+    // The two records point at each other.
+    expect(made.replaces).toBe(OLD);
+    expect(rows.get(OLD)!.replaced_by).toBe(made.id);
+    expect(rows.get(OLD)!.events.at(-1)!.note).toContain("Both addresses were missing");
     expect(made.id).not.toBe(OLD);
     expect(made).toMatchObject({ title: "Operating Agreement - TallulahMD LLC", status: "sent", mode: "race", asset_id: "tallulah" });
     // The same document, copied under the new request; the old one and its signed copy untouched.
@@ -223,11 +229,12 @@ describe("resend", () => {
 
   it("says what the race is in the email unless asked not to, and the signer's page opens the race", async () => {
     const { sendEmail } = await import("../lib/auth.js");
-    const r = await call("POST", { action: "resend", id: OLD, mode: "race" });
+    const r = await call("POST", { action: "resend", id: OLD, mode: "race", address: ["b"], reason: "Sam's address" });
     expect(r.statusCode).toBe(200);
+    expect(r.body.request.fields.filter((f: { type: string }) => f.type === "address").map((f: { party: string }) => f.party)).toEqual(["b"]);
     const text = String(vi.mocked(sendEmail).mock.calls.at(-1)![2]);
     expect(text).toContain("two laps");
-    expect(text).toContain("Play and sign");
+    expect(text).toContain("sign straight away");
     // The signer's link opens the race (the fake can't know the token, so the hash is looked up from the row).
     const made = rows.get(r.body.request.id)!;
     const fresh = "f".repeat(32);
@@ -246,15 +253,20 @@ describe("resend", () => {
       { key: "a", role: "Manager", name: "Robert W. Burton", email: "r@x.com", status: "signed", tokenHash: hashToken(tokenA) },
       { key: "b", role: "Member", name: "Sameh Elguizaoui", email: "sam@x.com", status: "viewed", tokenHash: hashToken(tokenB) },
     ];
+    // A pending one needs no reason: it is voided and replaced.
     const r = await call("POST", { action: "resend", id: OLD, mode: "race", plain: true });
     expect(r.statusCode).toBe(200);
     expect(r.body.request.status).toBe("sent");
     const after = rows.get(OLD)!;
     expect(after.status).toBe("voided");
-    expect(after.parties.every((p) => !p.tokenHash)).toBe(true);
     expect(after.events.map((e) => e.kind)).toEqual(["resent", "voided"]);
-    // Sam's old link is dead.
-    expect((await call("GET", {}, { token: tokenB })).statusCode).toBe(404);
+    // Sam's old link no longer signs anything; it tells him the request was replaced.
+    const view = await call("GET", {}, { token: tokenB });
+    expect(view.statusCode).toBe(200);
+    expect(view.body).toMatchObject({ status: "voided", replaced: true });
+    expect(view.body.pdfUrl).toBeUndefined();
+    const sign = await call("POST", { action: "sign", token: tokenB, name: "Sameh Elguizaoui", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION });
+    expect(sign.statusCode).toBe(409);
   });
 
   it("refuses a resend of a draft, and a game for another entity", async () => {
@@ -266,7 +278,7 @@ describe("resend", () => {
     expect(r.statusCode).toBe(409);
     expect(r.body.error).toBe("game_not_for_entity");
     // The plain page is fine for anyone.
-    expect((await call("POST", { action: "resend", id: OLD, mode: "normal" })).statusCode).toBe(200);
+    expect((await call("POST", { action: "resend", id: OLD, mode: "normal", reason: "A fresh copy" })).statusCode).toBe(200);
   });
 });
 
@@ -281,10 +293,18 @@ describe("the address box", () => {
       { key: "a", role: "Manager", name: "Robert W. Burton", email: "r@x.com", status: "sent", tokenHash: hashToken(tokenA) },
       { key: "b", role: "Member", name: "Sameh Elguizaoui", email: "sam@x.com", status: "sent", tokenHash: hashToken(tokenB) },
     ];
-    const without = await call("POST", { action: "sign", token: tokenB, name: "Sameh Elguizaoui", signature: png, consent: true });
+    const without = await call("POST", { action: "sign", token: tokenB, name: "Sameh Elguizaoui", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION });
     expect(without.statusCode).toBe(400);
     expect(without.body.error).toBe("address");
-    const r = await call("POST", { action: "sign", token: tokenB, name: "Sameh Elguizaoui", signature: png, address: "12 Palm Court, Apt 4, Hesperia, CA 92345", consent: true });
+    const r = await call("POST", {
+      action: "sign",
+      token: tokenB,
+      name: "Sameh Elguizaoui",
+      signature: png,
+      address: "12 Palm Court, Apt 4, Hesperia, CA 92345",
+      consent: true,
+      consentVersion: ESIGN_DISCLOSURE_VERSION,
+    });
     expect(r.statusCode).toBe(200);
     const after = rows.get(OLD)!;
     expect(after.parties[1]).toMatchObject({ status: "signed", address: "12 Palm Court, Apt 4, Hesperia, CA 92345" });
@@ -295,7 +315,7 @@ describe("the address box", () => {
     const doc = await PDFDocument.load(stamped);
     expect(doc.getPageCount()).toBe(1);
     // Robert, with no address box, signs without one.
-    const a = await call("POST", { action: "sign", token: tokenA, name: "Robert W. Burton", signature: png, consent: true });
+    const a = await call("POST", { action: "sign", token: tokenA, name: "Robert W. Burton", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION });
     expect(a.statusCode).toBe(200);
     expect(rows.get(OLD)!.status).toBe("completed");
   });

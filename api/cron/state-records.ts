@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { cronAuth, currentUser, handleError, isAdmin, refuseCron } from "../../lib/auth.js";
+import { cronAuth, currentUser, handleError, isAdmin, refuseCron, type AppUser } from "../../lib/auth.js";
+import { audit } from "../../lib/audit.js";
 import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { checkStateRecords } from "../../lib/state-records.js";
 
@@ -9,7 +10,7 @@ import { checkStateRecords } from "../../lib/state-records.js";
  * Records read in the last week are skipped.
  *
  * GET  → the Vercel cron (Bearer CRON_SECRET, required)
- * POST { ids?, force? } → "Check all" from the app (owner or admin)
+ * POST { ids?, force? } → "Check all" from the app (owner or admin); recorded in the audit log
  *
  * Both stop starting reads 240 s in (the function may run 300 s, and each Palm
  * call up to 20 s); what's left answers "later", for the next run.
@@ -25,6 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fromCron = req.method === "GET";
     const started = Date.now();
     let opts: { ids?: string[]; force?: boolean; by?: { id: string; name: string | null } } = {};
+    let actor: AppUser | null = null;
     if (fromCron) {
       const cron = cronAuth(req);
       if (cron !== "ok") return refuseCron(req, res, "state-records", cron);
@@ -33,6 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!user) return res.status(401).json({ error: "unauthorized" });
       if (!isAdmin(user)) return res.status(403).json({ error: "forbidden" });
       const body = (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body ?? {})) as { ids?: unknown; force?: unknown };
+      actor = user;
       opts = { ids: Array.isArray(body.ids) ? body.ids.map(String).slice(0, 200) : undefined, force: body.force === true, by: { id: user.id, name: user.name } };
     }
     const check = async (run?: CronRun) => {
@@ -54,6 +57,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     // The scheduled run is recorded (cron_runs) and alerts the admins when it fails.
     const out = fromCron ? await recordCronRun("state-records", check) : await check();
+    // A check someone asked for is billed to the Palm account: who asked, for how many, and what came back.
+    if (!fromCron && actor) {
+      const read = out.results.filter((r) => r.outcome === "read");
+      await audit({
+        actor,
+        action: "palm.state_check",
+        count: new Set(read.map((r) => r.id)).size,
+        summary: `Read ${read.length} state record${read.length === 1 ? "" : "s"} through Palm`,
+        detail: { asked: opts.ids?.length ?? null, counts: out.counts },
+      });
+    }
     return res.status(200).json(out);
   } catch (err) {
     return handleError(res, err);

@@ -17,8 +17,8 @@
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { audit } from "../../lib/audit.js";
-import { MAX_CODE_ATTEMPTS, SESSION_TTL_MS, fail, guard, handleError, hashCode, normalizeIdentifier, publicUser, safeEqual, sb, verifyCheck, type AppUser } from "../../lib/auth.js";
-import { clientIp, deviceOf, lastFour, publicRefusal, purgeStale, refuse, WAITING_ROLE } from "../../lib/sign-in.js";
+import { MAX_CODE_ATTEMPTS, SESSION_TTL_MS, fail, guard, handleError, hashCode, normalizeIdentifier, safeEqual, sb, verifyCheck, type AppUser } from "../../lib/auth.js";
+import { clientIp, deviceOf, lastFour, publicRefusal, purgeStale, refuse, signedInUser, WAITING_ROLE } from "../../lib/sign-in.js";
 
 type CodeRow = {
   id: string;
@@ -29,6 +29,13 @@ type CodeRow = {
 };
 
 const UUID = /^[0-9a-f-]{36}$/i;
+
+/*
+ * A person who never had access is never the actor of a trail entry, only its
+ * target (a text id): the trail's actor column references app_users and is
+ * append-only, so naming them as actor would stop the retention purge from
+ * deleting their request (lib/sign-in.ts purgeStale).
+ */
 
 /** The one answer for every number the office has refused, removed or turned off. */
 export const NOT_ALLOWED = "This number can't sign in. Contact the office.";
@@ -47,12 +54,6 @@ async function spendAttempt(row: CodeRow, extra: Record<string, unknown> = {}): 
     body: { attempts: row.attempts + 1, ...extra },
   });
   return Array.isArray(updated) && updated.length > 0;
-}
-
-/** The fields the client reads beyond publicUser: whether the current Terms were agreed to (absent when the column isn't there yet). */
-export function signedInUser(user: AppUser) {
-  const extra = user as AppUser & { terms_version?: string | null };
-  return { ...publicUser(user), verifiedAt: user.verified_at, ...("terms_version" in extra ? { termsVersion: extra.terms_version ?? null } : {}) };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -76,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const record = async (action: "auth.code_wrong" | "auth.locked_out", summary: string) => {
       const user = await accountFor().catch(() => undefined);
       await audit({
-        actor: user ?? null,
+        actor: user?.status === "approved" ? user : null,
         action,
         target: user ? { type: "user", id: user.id, label: user.name ?? lastFour(identifier.value) } : { type: "phone", id: lastFour(identifier.value) },
         summary: `${summary} for ${user?.name ?? lastFour(identifier.value)}`,
@@ -145,7 +146,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       user = created?.[0];
       if (user) {
         await audit({
-          actor: user,
+          actor: "system",
           action: "user.request",
           target: { type: "user", id: user.id, label: lastFour(identifier.value) },
           summary: `${lastFour(identifier.value)} asked to join BFO`,
@@ -169,7 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Verified, but an owner or admin still has to let them in.
     if (user.status !== "approved") {
-      await audit({ actor: user, action: "auth.sign_in_waiting", target: who, summary: `${who.label} signed in and is waiting for approval`, detail: where });
+      await audit({ actor: "system", action: "auth.sign_in_waiting", target: who, summary: `${who.label} signed in and is waiting for approval`, detail: where });
       return res.status(200).json({ verified: true, status: user.status, token: null });
     }
 

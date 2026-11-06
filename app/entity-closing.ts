@@ -8,6 +8,11 @@
  *
  * Palm files none of this: there is no dissolution filing in its API. It
  * does end its own registered agent service, which is the last step.
+ *
+ * A company that owns others first transfers each interest (a step per
+ * entity it owns), and its books are closed before it's marked dissolved.
+ * A trust ends under its own terms: the trustee winds it up and distributes
+ * what's left; there's no state filing.
  */
 
 import { palmServes } from "./entity-addresses";
@@ -48,6 +53,10 @@ type Input = {
   registeredAgentSource?: string;
   foreign?: Record<string, { notNeeded?: boolean; confirmed?: boolean; agent?: string; fileNumber?: string; record?: unknown }>;
   palm?: Partial<Record<"live" | "test", { ra?: { status?: string | null } | null }>>;
+  /** The family's entities it owns on record: each interest is transferred before it ends. */
+  owned?: { id: string; name: string; percent?: number | null }[];
+  /** Who owns it, by name: where its interests and anything left go. */
+  ownerName?: string | null;
 };
 
 const SOS: Record<string, { llc: string; corp: string; where: { label: string; url: string }; note?: string }> = {
@@ -80,6 +89,7 @@ export function withdrawalStates(a: Input): string[] {
 }
 
 export function closingSteps(a: Input): ClosingStep[] {
+  if (entityType(a) === "Trust") return trustSteps(a);
   const type = entityType(a);
   const corp = type === "C-Corp";
   const st = stateCode(a.state);
@@ -95,10 +105,24 @@ export function closingSteps(a: Input): ClosingStep[] {
       : "The members sign a written consent to dissolve, as the operating agreement requires. BFO drafts one from the owners on record.",
     generate: "consent",
   });
+  for (const o of a.owned ?? []) {
+    steps.push({
+      key: `transfer:${o.id}`,
+      title: `Transfer its interest in ${o.name}`,
+      how: `Assign its ${o.percent != null ? `${o.percent}% ` : ""}interest in ${o.name} to ${a.ownerName ? a.ownerName : "its owner"} (or as the owners decide), in a signed assignment with an effective date, with ${o.name}'s consent where its operating agreement requires it. Then record the new owner on ${o.name}'s Owners tab.`,
+      note: "Until this is done the dissolved company would still be the owner of record.",
+    });
+  }
   steps.push({
     key: "windup",
     title: "Wind up its affairs",
-    how: "Collect what it's owed, pay or settle its debts, end its contracts and leases, and distribute what's left to the owners by their shares. Keep the records.",
+    how: `Collect what it's owed, pay or settle its debts, and end its contracts and leases. ${
+      tax === "Partnership"
+        ? "Distribute what's left as the operating agreement provides, normally by positive capital accounts (not by percentages)."
+        : corp || tax === "C Corporation" || tax === "S Corporation"
+          ? "Distribute what's left to the shareholders; a liquidating distribution is taxable to the company and to them."
+          : "Distribute what's left as the operating agreement provides."
+    } Record each distribution in Books, and keep the records.`,
   });
   steps.push({
     key: "bank",
@@ -126,18 +150,28 @@ export function closingSteps(a: Input): ClosingStep[] {
   const disregarded = tax === "Disregarded Entity";
   steps.push({
     key: "tax",
-    title: disregarded ? "Report its last year on the owner's return" : "File its final tax return",
+    title: disregarded ? "Report its last year on the owner's return" : "File its final tax returns",
     how: disregarded
-      ? "A disregarded entity files no return of its own: its income through the day it closes goes on its owner's return."
+      ? "A disregarded entity files no income tax return of its own: its income through the day it closes goes on its owner's return."
       : tax === "Partnership"
-        ? 'File a final Form 1065 with "Final return" checked, and final K-1s to each partner, for the year it closes. If it had employees, final payroll returns (941, 940) and W-2s too.'
+        ? 'File a final Form 1065 with "Final return" checked, and final K-1s to each partner, for the year it closes, and the final state partnership return(s).'
         : tax === "S Corporation"
-          ? 'File a final Form 1120-S with "Final return" checked and final K-1s. File Form 966 within 30 days of the vote to dissolve. If it had employees, final payroll returns and W-2s too.'
+          ? 'File a final Form 1120-S with "Final return" checked and final K-1s, and the final state return(s). File Form 966 within 30 days of the vote to dissolve.'
           : corp
-            ? 'File a final Form 1120 with "Final return" checked. File Form 966 within 30 days of the vote to dissolve. If it had employees, final payroll returns and W-2s too.'
-            : 'File its final federal return with "Final return" checked, and any final state return and payroll returns.',
+            ? 'File a final Form 1120 with "Final return" checked, and the final state return(s). File Form 966 within 30 days of the vote to dissolve.'
+            : 'File its final federal return with "Final return" checked, and the final state return(s).',
     link: { label: "IRS: Closing a business", url: "https://www.irs.gov/businesses/small-businesses-self-employed/closing-a-business" },
     optional: disregarded,
+  });
+  steps.push({
+    key: "payroll",
+    title: "Final payroll returns and 1099s",
+    how: `Under its own EIN${disregarded ? " (a disregarded entity is still the employer for payroll)" : ""}: a final Form 941 and 940 with W-2s if it had employees, and 1099s for anyone it paid $600 or more in its last year. Close its state payroll and sales tax accounts. Mark it done if it had none of these.`,
+  });
+  steps.push({
+    key: "books",
+    title: "Close its books",
+    how: "A final balance sheet as of the dissolution date, each liquidating distribution recorded in Books (what, how much, to whom, when), then the last period locked and its accounts unmapped once they're closed.",
   });
   if (a.ein?.trim() && a.ein.trim() !== "00-0000000") {
     steps.push({
@@ -165,6 +199,59 @@ export function closingSteps(a: Input): ClosingStep[] {
     title: "Stop its mail",
     how: "Take its name off the Stable mailbox, and update anyone who still sends it mail.",
   });
+  return steps;
+}
+
+/**
+ * A trust ends under its own terms, with no state filing: the trustee winds
+ * it up, pays what it owes, distributes what's left, and files its last
+ * return (a grantor trust's last year stays on the grantors' Form 1040).
+ */
+function trustSteps(a: Input): ClosingStep[] {
+  const grantor = /^grantor/i.test(a.llcType ?? "") || (!a.llcType && /\brevocable\b/i.test(a.name ?? "") && !/\birrevocable\b/i.test(a.name ?? ""));
+  const steps: ClosingStep[] = [
+    {
+      key: "consent",
+      title: "The trustee decides to end it, as the trust agreement allows",
+      how: "Check the trust agreement for when and how it ends (a revocable trust can be revoked by the grantors in writing). Keep the written revocation or the trustee's decision with the trust's papers.",
+    },
+  ];
+  for (const o of a.owned ?? []) {
+    steps.push({
+      key: `transfer:${o.id}`,
+      title: `Transfer its interest in ${o.name}`,
+      how: `Assign the trust's ${o.percent != null ? `${o.percent}% ` : ""}interest in ${o.name} to the beneficiaries as the trust agreement provides, in a signed assignment with an effective date. Then record the new owner on ${o.name}'s Owners tab.`,
+    });
+  }
+  steps.push({
+    key: "windup",
+    title: "Pay its debts and distribute what's left",
+    how: "Pay the trust's final expenses and debts, then distribute the remaining assets (the corpus) to the beneficiaries as the trust agreement says. Record each distribution and keep the receipts.",
+  });
+  steps.push({
+    key: "bank",
+    title: "Close its bank and brokerage accounts",
+    how: "Once the last distributions clear, close each account in the trust's name.",
+  });
+  steps.push({
+    key: "tax",
+    title: grantor ? "Report its last year on the grantors' return" : "File its final Form 1041",
+    how: grantor
+      ? "A grantor trust files no income tax return of its own: its income through the day it ends goes on the grantors' Form 1040."
+      : 'File a final Form 1041 with "Final return" checked, with final K-1s to each beneficiary who received a distribution.',
+    link: { label: "IRS: Form 1041", url: "https://www.irs.gov/forms-pubs/about-form-1041" },
+    optional: grantor,
+  });
+  if (a.ein?.trim() && a.ein.trim() !== "00-0000000") {
+    steps.push({
+      key: "ein",
+      title: "Close its EIN account with the IRS",
+      how: "Once the final return is filed, write to the IRS asking it to close the account. BFO drafts the letter.",
+      generate: "ein-letter",
+      link: { label: "IRS: Closing a business", url: "https://www.irs.gov/businesses/small-businesses-self-employed/closing-a-business" },
+    });
+  }
+  steps.push({ key: "mail", title: "Stop its mail", how: "Update anyone who still sends the trust mail." });
   return steps;
 }
 

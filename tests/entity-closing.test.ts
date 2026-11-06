@@ -19,7 +19,7 @@ const louise = {
 describe("closing an entity", () => {
   it("lists the steps for its state, tax class and registrations", () => {
     const steps = closingSteps(louise);
-    expect(steps.map((s) => s.key)).toEqual(["consent", "windup", "bank", "state:NV", "withdraw:AZ", "tax", "ein", "agent", "mail"]);
+    expect(steps.map((s) => s.key)).toEqual(["consent", "windup", "bank", "state:NV", "withdraw:AZ", "tax", "payroll", "books", "ein", "agent", "mail"]);
     expect(steps.find((s) => s.key === "state:NV")).toMatchObject({ title: "File the Certificate of Dissolution with Nevada", link: { label: "Nevada SilverFlume" } });
     expect(steps.find((s) => s.key === "tax")).toMatchObject({ optional: true, title: "Report its last year on the owner's return" });
     expect(closingSteps({ ...louise, state: "Delaware", llcType: "Partnership", foreign: {} }).find((s) => s.key === "state:DE")?.title).toBe("File the Certificate of Cancellation with Delaware");
@@ -51,5 +51,28 @@ describe("closing an entity", () => {
     const start = { name: "X", closing: { startedAt: "2026-10-21", steps: {} } };
     expect(describeChange({ name: "X" }, start)[0].summary).toBe("Started closing it down");
     expect(describeChange(start, { name: "X", closing: { startedAt: "2026-10-21", steps: { "state:NV": "2026-10-22" } } })[0].summary).toBe("Closing: done with the state filing (NV)");
+  });
+
+  it("transfers what it owns before it ends, and closes its books", () => {
+    const steps = closingSteps({ name: "Northwind Holdings, LLC", type: "LLC", state: "NV", llcType: "Partnership", owned: [{ id: "a1", name: "Alder Ridge, LLC", percent: 60 }], ownerName: "Northwind Trust" });
+    const transfer = steps.find((s) => s.key === "transfer:a1");
+    expect(transfer?.title).toBe("Transfer its interest in Alder Ridge, LLC");
+    expect(transfer?.how).toMatch(/60% interest in Alder Ridge, LLC to Northwind Trust/);
+    expect(steps.findIndex((s) => s.key === "transfer:a1")).toBeLessThan(steps.findIndex((s) => s.key === "windup"));
+    expect(steps.find((s) => s.key === "windup")?.how).toMatch(/positive capital accounts/);
+    expect(steps.find((s) => s.key === "tax")?.how).toMatch(/final state partnership return/);
+    expect(steps.some((s) => s.key === "books")).toBe(true);
+  });
+
+  it("keeps a disregarded entity's own payroll and 1099s, and gives a trust its own steps", () => {
+    const llc = closingSteps({ name: "Alder Ridge, LLC", type: "LLC", state: "NV", llcType: "Disregarded Entity" });
+    expect(llc.find((s) => s.key === "tax")?.optional).toBe(true);
+    expect(llc.find((s) => s.key === "payroll")?.optional).toBeFalsy();
+    const trust = closingSteps({ name: "Northwind Family Revocable Trust", type: "Trust", llcType: "Grantor trust" });
+    expect(trust.map((s) => s.key)).toEqual(["consent", "windup", "bank", "tax", "mail"]);
+    expect(trust.find((s) => s.key === "tax")).toMatchObject({ title: "Report its last year on the grantors' return", optional: true });
+    const nonGrantor = closingSteps({ name: "Northwind Irrevocable Trust", type: "Trust", llcType: "Non-grantor trust", ein: "12-3456789" });
+    expect(nonGrantor.find((s) => s.key === "tax")?.title).toBe("File its final Form 1041");
+    expect(nonGrantor.some((s) => s.key === "ein")).toBe(true);
   });
 });

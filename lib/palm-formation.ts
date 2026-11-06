@@ -3,9 +3,14 @@ import {
   asksMarried,
   CONSTRUCTION_QUESTIONS,
   einMemberCount,
+  electionDeadline,
   filersKey,
+  hostState,
   OFFICER_ROLES,
+  organizationalCostNote,
+  taxOutcome,
   type EinActivity,
+  type FilingAttestation,
   type FilingStatus,
   type FormationAddress,
   type FormationDraft,
@@ -16,12 +21,19 @@ import {
   type PersonName,
   type StateRules,
 } from "../app/formation.js";
+import { ownerFilingName, ownerName, ownerPercent, parentOwnerId, personName as fullName } from "./formation-owners.js";
 
 /**
  * Forming an entity through Palm, server side: the wizard's draft becomes
  * Palm's formation request, a state's requirement schema becomes the extra
  * fields the wizard must ask for, and a Palm filing becomes what the entity's
- * record keeps. Pure, so it's tested without a network.
+ * record keeps (the record at submission, the audit entry, and each later
+ * status). Pure, so it's tested without a network.
+ *
+ * HTTP surface: none; a library for api/palm.ts and api/palm-webhook.ts.
+ * Who may call it: server code after its role check; the wizard uses
+ * validationDraft and isSsnIssue too.
+ * Env: none.
  */
 
 export type { FormationDraft, FormationState };
@@ -116,6 +128,34 @@ function address(a: FormationAddress): Record<string, string> {
 
 const personName = (n: PersonName) => some({ first: clean(n.first), middle: clean(n.middle), last: clean(n.last), suffix: clean(n.suffix) });
 const partyName = (kind: "person" | "entity", n: PersonName, entityName: string) => (kind === "person" ? { type: "person", ...personName(n) } : { type: "entity", entity_name: clean(entityName) });
+
+/** "example.com" → "https://example.com"; a scheme already typed is kept. */
+export const normalizeWebsite = (s: string) => {
+  const w = clean(s);
+  return !w ? "" : /^https?:\/\//i.test(w) ? w : `https://${w.replace(/^\/+/, "")}`;
+};
+
+/**
+ * The note Palm's team reads before filing: the person's own words, then
+ * what the request has no field for (a company organizer's signer, an LLC's
+ * tax election, your own agent's consent). At most 2,000 characters; the
+ * generated lines are kept whole.
+ */
+export function noteToPalm(d: FormationDraft): string {
+  const lines: string[] = [];
+  const word = d.entityType === "llc" ? "Organizer" : "Incorporator";
+  for (const o of d.organizers) {
+    if (o.kind === "entity" && clean(o.entityName) && clean(o.signerName))
+      lines.push(`${word} ${clean(o.entityName)} signs through ${clean(o.signerName)}${clean(o.signerCapacity) ? `, ${clean(o.signerCapacity)}` : ""}.`);
+  }
+  const t = taxOutcome(d);
+  if (d.entityType === "llc" && t.elected)
+    lines.push(`For federal tax, the LLC will elect to be treated as ${t.value === "S Corporation" ? "an S corporation (Form 2553)" : "a C corporation (Form 8832)"}.`);
+  if (d.agent.provider === "own" && d.agent.consent) lines.push("The registered agent named has agreed to serve and will sign the state's consent.");
+  const generated = lines.join("\n");
+  const own = clean(d.note).slice(0, Math.max(0, 2000 - (generated ? generated.length + 2 : 0)));
+  return [own, generated].filter(Boolean).join("\n\n");
+}
 
 /** A manager / director / officer: name, and whatever else was given. */
 function official(p: FormationOfficial, principal: Record<string, string>, extra: Record<string, unknown> = {}) {
@@ -238,11 +278,13 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
       entity_type: o.kind === "entity" ? clean(o.entityType) : "",
     }),
   );
+  // The owners go only where the state's filing asks for them (undefined: an older draft, sent as before).
+  const owners = d.membersRequired === false ? [] : d.owners;
   const governing = llc
     ? [
-        ...d.owners.map((o) =>
+        ...owners.map((o) =>
           some({
-            name: partyName(o.kind, o.name, o.entityName),
+            name: partyName(o.kind, o.name, ownerFilingName(o)),
             address: o.address ? address(o.address) : principal,
             role: "member",
             title: clean(o.title) || "Member",
@@ -264,7 +306,7 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
     legal_name: clean(d.legalName),
     purpose: clean(d.purpose),
     email: clean(d.email),
-    ...some({ phone: clean(d.phone), website: clean(d.website) }),
+    ...some({ phone: clean(d.phone), website: normalizeWebsite(d.website) }),
     ...(/^\d{4}-\d{2}-\d{2}$/.test(d.effectiveDate) ? { effective_date: d.effectiveDate } : {}),
     contact: some({ name: clean(d.contact.name), email: clean(d.contact.email), phone: clean(d.contact.phone) }),
     principal_address: principal,
@@ -294,7 +336,7 @@ export function buildFormationRequest(d: FormationDraft, assetId: string): Recor
         }
       : {}),
     ...(d.ein ? { ein: einRequest(d, d.ein) } : {}),
-    ...some({ expedited_tier: clean(d.expeditedTier), note: clean(d.note).slice(0, 2000) }),
+    ...some({ expedited_tier: clean(d.expeditedTier), note: noteToPalm(d) }),
     metadata: { bfo_asset_id: assetId },
   };
   // State-specific answers go on top; blanks are left out.
@@ -350,6 +392,16 @@ export function stateRules(schema: unknown): StateRules {
   walk(root, "", 0);
   return out;
 }
+
+/**
+ * The draft for Palm's check (form-validate): every SSN removed, so an SSN
+ * leaves the browser only with the filing itself. Palm then reports the
+ * missing SSNs; isSsnIssue drops those, since the wizard checks their format.
+ */
+export const validationDraft = (d: FormationDraft): FormationDraft => redactDraft(d);
+
+/** Whether a problem Palm reports is about an SSN the validation draft left out on purpose. */
+export const isSsnIssue = (issue: { field: string | null; message: string }) => /(^|[^a-z])(ssn|itin)([^a-z]|$)/i.test(issue.field ?? "") || /\b(SSN|ITIN)\b|social security/i.test(issue.message);
 
 /** The draft with anything secret removed, for logs and the record. */
 export function redactDraft(d: FormationDraft): FormationDraft {
@@ -412,32 +464,185 @@ export function summarizeFiling(f: PalmFiling, prev?: Partial<FormationState> | 
   };
 }
 
+/** What the record holds already, for formationPatch's fill-blanks rule. */
+export type RecordFacts = { status?: string | null; fileNumber?: string | null; formationDate?: string | null; registeredAgentSource?: string | null };
+
 /**
  * The changes to the entity's record for a filing's state: the formation
  * under palm.<mode>.formation, plus the facts the state hands back. Keys may
  * hold "/" (the tree's nested update).
+ *
+ * With `current` (the record as it is), a Palm update only fills blanks: a
+ * file number or formation date already on record is kept, and a different
+ * one from Palm is set beside it under palm.<mode>.formationDifferences to be
+ * checked. The registered agent's name is never written here: Palm's agent
+ * service reports the agent of record's legal name (lib/palm-agent.ts).
  */
-export function formationPatch(state: FormationState, mode: "test" | "live", businessId?: string | null): Record<string, unknown> {
+export function formationPatch(state: FormationState, mode: "test" | "live", businessId?: string | null, current?: RecordFacts | null): Record<string, unknown> {
   const patch: Record<string, unknown> = { [`palm/${mode}/formation`]: state };
   if (businessId) {
     patch[`palm/${mode}/businessId`] = businessId;
     patch[`palm/${mode}/linkedAt`] = state.submittedAt;
   }
+  const blank = (v: string | null | undefined) => !(v ?? "").trim();
+  const differences: Record<string, { record: string; palm: string }> = {};
+  const fill = (key: "fileNumber" | "formationDate", value: string | null) => {
+    if (!value) return;
+    const had = current?.[key];
+    if (!current || blank(had)) patch[key] = value;
+    else if (had!.trim() !== value.trim()) differences[key] = { record: had!.trim(), palm: value };
+  };
+  const statusOpen = !current || blank(current.status) || current.status === "Forming" || current.status === "Formation canceled";
   if (state.status === "completed") {
-    patch.status = "Active";
-    if (state.registrationNumber) patch.fileNumber = state.registrationNumber;
-    if (state.formationDate) patch.formationDate = state.formationDate;
-    if (state.registeredAgent) {
-      patch.registeredAgent = "Palm";
-      patch.registeredAgentSource = `Palm, ${state.registeredAgent.status}`;
-    }
+    if (statusOpen) patch.status = "Active";
+    fill("fileNumber", state.registrationNumber);
+    fill("formationDate", state.formationDate);
+    if (state.registeredAgent && (!current || blank(current.registeredAgentSource))) patch.registeredAgentSource = `Palm, ${state.registeredAgent.status}`;
   } else if (state.status === "canceled") {
-    patch.status = "Formation canceled";
-  } else {
+    if (statusOpen) patch.status = "Formation canceled";
+  } else if (statusOpen) {
     patch.status = "Forming";
   }
+  if (Object.keys(differences).length) patch[`palm/${mode}/formationDifferences`] = differences;
   if (state.ein?.number) patch.ein = state.ein.number;
   return patch;
+}
+
+/** A wizard address as one line: "street, suite, city, ST 12345". */
+const oneLine = (a: FormationAddress) =>
+  [[a.street1, a.street2].map(clean).filter(Boolean).join(", "), clean(a.city), `${clean(a.region).toUpperCase()} ${clean(a.postal)}`.trim()].filter(Boolean).join(", ");
+
+const dollarsText = (n: number, currency = "USD") => new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
+/**
+ * The new entity's record when the filing is submitted (form-submit), from
+ * the draft. Everything the wizard collected that belongs on the record goes
+ * on it: every owner (linked by id when it's in BFO, with the address and the
+ * initial contribution given), the managers, directors and officers, how
+ * it's managed and taxed (with any election's deadline), the answer about
+ * registering in the state it's run from, who paid the formation cost and
+ * how it's booked, and, under palm.<mode>.formation, what was filed (SSNs
+ * removed) and what the person filing affirmed.
+ */
+export function formationRecord(
+  d: FormationDraft,
+  o: { stateName: string; mode: "test" | "live"; state: FormationState; businessId: string | null; now?: number; attestation?: FilingAttestation | null },
+): Record<string, unknown> {
+  const now = o.now ?? Date.now();
+  const llc = d.entityType === "llc";
+  const principal = oneLine(d.principal);
+  const pct = (x: Parameters<typeof ownerPercent>[0]) => {
+    const n = ownerPercent(x);
+    return Number.isNaN(n) ? null : n;
+  };
+  const members: Record<string, unknown>[] = d.owners.map((w) => {
+    const amount = Number(clean(w.contribution).replace(/[$,]/g, ""));
+    // An owner in BFO with no address of its own here shares the principal office (the wizard left it blank because it matched).
+    const address = w.address ? oneLine(w.address) : w.kind === "entity" && w.entityId ? principal : null;
+    return some({
+      name: ownerName(w),
+      percent: pct(w),
+      role: llc ? "Member" : "Shareholder",
+      entityId: w.kind === "entity" ? clean(w.entityId) : "",
+      address,
+      ...(w.kind === "entity" && w.entityKind === "trust" ? { trustee: clean(w.trustee), trustDate: clean(w.trustDate), filingName: ownerFilingName(w) } : {}),
+      ...(w.kind === "entity" && w.entityKind !== "trust" && clean(w.signer) ? { signer: clean(w.signer), signerTitle: clean(w.signerTitle) } : {}),
+      ...(clean(w.contribution) && Number.isFinite(amount)
+        ? { contribution: some({ amount, kind: w.contributionKind, date: clean(w.contributionDate), property: w.contributionKind === "property" ? clean(w.contributionNote) : "" }) }
+        : {}),
+    });
+  });
+  const people = (list: FormationOfficial[], role: (p: FormationOfficial, i: number) => string) =>
+    list.map((p, i) => some({ name: fullName(p.name), percent: null, role: role(p, i), address: p.address ? oneLine(p.address) : null }));
+  if (llc && d.managed === "managers") members.push(...people(d.managers, (p) => clean(p.title) || "Manager"));
+  if (!llc) {
+    members.push(...people(d.directors, () => "Director"));
+    members.push(...people(d.officers, (p, i) => clean(p.title) || OFFICER_ROLES.find(([r]) => r === d.officers[i].role)?.[1] || "Officer"));
+  }
+  const tax = taxOutcome(d);
+  const deadline = electionDeadline(d, new Date(now).toISOString().slice(0, 10));
+  const host = hostState(d);
+  const fee = o.state.fee;
+  const record: Record<string, unknown> = {
+    name: clean(d.legalName),
+    type: llc ? "LLC" : "C-Corp",
+    state: o.stateName,
+    ein: "",
+    createdAt: now,
+    formedVia: "palm",
+    address: principal,
+    ...(d.mailing ? { mailingAddress: oneLine(d.mailing) } : {}),
+    ...(parentOwnerId(d.owners) ? { ownerId: parentOwnerId(d.owners) } : {}),
+    ...(members.length ? { members } : {}),
+    ...(clean(d.email) ? { email: clean(d.email) } : {}),
+    ...(llc ? { managed: d.managed } : {}),
+    llcType: tax.value,
+    llcTypeSource: tax.elected ? `Set at formation: elects ${tax.value} on Form ${tax.form}` : "Set at formation (the IRS default)",
+    ...(deadline ? { taxElection: { form: deadline.form, dueBy: deadline.dueBy, filed: false } } : {}),
+    ...(host && d.hostBusiness === "no" ? { foreign: { [host]: { notNeeded: true } } } : {}),
+    ...(fee
+      ? {
+          formationCost: some({
+            amount: fee.total,
+            currency: fee.currency,
+            date: new Date(now).toISOString().slice(0, 10),
+            payerId: clean(d.payer.entityId),
+            payerName: clean(d.payer.name),
+            treatment: d.payer.treatment,
+            note: organizationalCostNote(tax.value),
+          }),
+        }
+      : {}),
+    palm: { [o.mode]: { businessId: o.businessId, linkedAt: o.state.submittedAt, formation: { ...o.state, request: redactDraft(d), ...(o.attestation ? { attestation: o.attestation } : {}) } } },
+  };
+  Object.assign(record, Object.fromEntries(Object.entries(formationPatch(o.state, o.mode)).filter(([k]) => !k.includes("/"))));
+  return record;
+}
+
+/**
+ * The audit entry for a submitted filing (lib/audit.ts): who filed what,
+ * with which state, who signs it, the confirmation typed, the fee, and Palm's
+ * filing id. No SSN or other secret goes in it.
+ */
+export function formationAudit(
+  d: FormationDraft,
+  o: {
+    assetId: string;
+    stateName: string;
+    mode: "test" | "live";
+    filingId: string;
+    actorName: string | null;
+    fee: { total: number; currency: string } | null;
+    attestation?: FilingAttestation | null;
+    ip?: string | null;
+    userAgent?: string | null;
+  },
+): { action: string; target: { type: string; id: string; label: string }; summary: string; detail: Record<string, unknown> } {
+  const llc = d.entityType === "llc";
+  const doc = llc ? "articles of organization" : "articles of incorporation";
+  const signers = d.organizers.map((p) => (p.kind === "person" ? fullName(p.name) : `${clean(p.entityName)}${clean(p.signerName) ? ` by ${clean(p.signerName)}` : ""}`)).filter(Boolean);
+  const role = llc ? "organizer" : "incorporator";
+  const cost = o.fee ? `, ${dollarsText(o.fee.total, o.fee.currency)}` : "";
+  const test = o.mode === "test" ? " (test mode: nothing reached the state)" : "";
+  return {
+    action: "entity.form",
+    target: { type: "entity", id: o.assetId, label: clean(d.legalName) },
+    summary: `Filed ${doc} with ${o.stateName} (${role} ${signers.join(", ") || "not named"}), confirmed by ${o.actorName ?? "a signed-in person"}${cost}, Palm filing ${o.filingId}${test}`,
+    detail: some({
+      mode: o.mode,
+      jurisdiction: d.jurisdiction,
+      entityType: d.entityType,
+      filingId: o.filingId,
+      signers,
+      fee: o.fee ?? undefined,
+      einApplication: !!d.ein,
+      attestationVersion: o.attestation?.version,
+      typed: o.attestation?.typed ?? undefined,
+      ss4Declared: o.attestation ? !!o.attestation.ss4 : undefined,
+      ip: o.ip ?? undefined,
+      userAgent: o.userAgent ? o.userAgent.slice(0, 300) : undefined,
+    }),
+  };
 }
 
 /** The EIN add-on finishing: its number lands on the entity. */

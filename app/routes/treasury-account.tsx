@@ -1,63 +1,67 @@
-import { Link, useNavigate, useParams } from "react-router";
+/**
+ * One account in Treasury: its balance and when it was read, who owns it,
+ * and its Books ledger (Plaid rows and CSV imports, as Books keeps them).
+ * Renaming, changing the owner and hiding are confirmed and recorded on the
+ * server (api/plaid/account-prefs.ts). A CSV import is previewed with its
+ * totals before anything is added to Books (api/books/import-csv.ts).
+ * Built on app/ui (docs/DESIGN.md).
+ */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { authFetch } from "../auth";
-import { useTheme } from "../theme";
-import { money, signed } from "../currency";
+import { useNavigate, useParams } from "react-router";
+import { canWrite } from "../auth";
+import {
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  Dialog,
+  Empty,
+  Field,
+  Input,
+  LinkButton,
+  Page,
+  PageHeader,
+  Row,
+  Rows,
+  SearchField,
+  Skeleton,
+  Status,
+  Table,
+  confirm,
+  format,
+  toast,
+  useDocumentTitle,
+  type Column,
+  type MenuItem,
+} from "../ui";
+import { TAX_STATUS_LABEL, TENANCY_LABEL, defaultTaxStatus, isDebt, registration } from "../treasury-model";
+import { OwnerDialog } from "../treasury-ui";
+import {
+  accountName,
+  confirmOwnerChange,
+  conflictOf,
+  getJson,
+  loadTreasury,
+  officialName,
+  ownerText,
+  saveOwner,
+  stoppedAsAccount,
+  typeLabel,
+  useRecords,
+  type Account,
+  type Connection,
+  type OwnerChoice,
+  type StoppedAccount,
+} from "../treasury-data";
 
 export function meta() {
-  return [{ title: "BFO - Account" }];
+  return [{ title: "Account · Treasury · BFO" }];
 }
 
-type Account = {
-  item_id: string;
-  institution_name: string;
-  institution_color: string | null;
-  institution_logo: string | null;
-  account_id: string;
-  name: string;
-  official_name: string | null;
-  mask: string | null;
-  type: string;
-  subtype: string | null;
-  balance_current: number | null;
-  balance_available: number | null;
-  currency: string | null;
-  change: number | null;
-  change_since: string | null;
-  nickname: string | null;
-  hidden: boolean;
-  entity_id: string | null;
-  entity_name: string | null;
-};
+type Txn = { id?: string; date: string; name: string; description: string; category: string | null; amount: number; pending: boolean; currency: string | null; source?: string };
+type Ledger = { rows: Txn[]; source: "books" | "bank"; total: number };
 
-type Entity = { id: string; name: string };
-
-type Txn = {
-  date: string;
-  name: string;
-  description: string;
-  category: string | null;
-  amount: number;
-  pending: boolean;
-  currency: string | null;
-};
-
-/** Plaid's "FOOD_AND_DRINK" → "Food and drink" (the rule pretty() in books-shared uses). */
-function pretty(cat: string): string {
-  const s = cat.replace(/_/g, " ").toLowerCase();
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function tint(hex: string | null): string {
-  const fallback = "99, 102, 241";
-  if (!hex) return fallback;
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return fallback;
-  const n = parseInt(m[1], 16);
-  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
-}
-
-// ── CSV import (bank history past the Plaid window) ──────────────────────────
+// ── CSV parsing (bank exports) ────────────────────────────────────────────
 type CsvRow = { date: string; description: string; amount: number };
 
 /** RFC-ish CSV split: honours quotes, doubled quotes, and CRLF. */
@@ -101,16 +105,14 @@ function normalizeDate(raw: string): string {
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   m = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/.exec(s);
   if (m) {
-    const mo = m[1].padStart(2, "0");
-    const da = m[2].padStart(2, "0");
     let yr = m[3];
     if (yr.length === 2) yr = Number(yr) > 70 ? `19${yr}` : `20${yr}`;
-    return `${yr}-${mo}-${da}`;
+    return `${yr}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
   }
   return "";
 }
 
-/** "$1,234.56", "(45.00)", "-45" → number (parens / trailing minus = negative). */
+/** "$1,234.56", "(45.00)", "-45" → number (parentheses or a trailing minus mean negative). */
 function parseAmount(raw: string): number {
   let s = raw.trim();
   if (!s) return NaN;
@@ -123,29 +125,27 @@ function parseAmount(raw: string): number {
     neg = true;
     s = s.replace(/-$/, "");
   }
-  s = s.replace(/[$,\s]/g, "");
-  const n = Number(s);
+  const n = Number(s.replace(/[$,\s]/g, ""));
   if (!Number.isFinite(n)) return NaN;
   return neg ? -Math.abs(n) : n;
 }
 
 /**
- * Parse a bank CSV into {date, description, amount} rows. Handles both
- * headered exports (maps columns by name, incl. split Debit/Credit) and the
- * header-less Wells Fargo layout [date, amount, *, "", description].
- * Sign out is the bank convention: deposits positive, withdrawals negative.
+ * Rows from a bank CSV: headed exports by column name (including split
+ * debit and credit columns), or the header-less layout [date, amount, *, *,
+ * description]. Signed as the bank signs them: deposits positive. The
+ * preview shows the totals so a wrong sign is caught before anything posts.
  */
-function parseBankCsv(text: string): CsvRow[] {
+function parseBankCsv(text: string): { rows: CsvRow[]; headerless: boolean } {
   const records = splitCsv(text);
-  if (!records.length) return [];
+  if (!records.length) return { rows: [], headerless: false };
   const header = records[0].map((c) => c.trim().toLowerCase());
   const hasHeader = header.some((c) => /date|amount|description|payee|debit|credit|withdraw|deposit|memo/.test(c));
-
-  let iDate = -1,
-    iDesc = -1,
-    iAmt = -1,
-    iDebit = -1,
-    iCredit = -1;
+  let iDate = -1;
+  let iDesc = -1;
+  let iAmt = -1;
+  let iDebit = -1;
+  let iCredit = -1;
   let body = records;
   if (hasHeader) {
     header.forEach((c, i) => {
@@ -159,19 +159,17 @@ function parseBankCsv(text: string): CsvRow[] {
   } else {
     iDate = 0;
     iAmt = 1;
-    iDesc = 4; // Wells Fargo default
+    iDesc = 4;
   }
   if (iDate < 0) iDate = 0;
-
   const out: CsvRow[] = [];
   for (const cols of body) {
     const date = normalizeDate(cols[iDate] ?? "");
     if (!date) continue;
     const description = (iDesc >= 0 ? (cols[iDesc] ?? "") : "").trim() || (cols.find((c, i) => i !== iDate && i !== iAmt && c.trim()) ?? "").trim();
     let amount = NaN;
-    if (iAmt >= 0 && (cols[iAmt] ?? "").trim() !== "") {
-      amount = parseAmount(cols[iAmt]);
-    } else if (iDebit >= 0 || iCredit >= 0) {
+    if (iAmt >= 0 && (cols[iAmt] ?? "").trim() !== "") amount = parseAmount(cols[iAmt]);
+    else if (iDebit >= 0 || iCredit >= 0) {
       const d = parseAmount(cols[iDebit] ?? "");
       const c = parseAmount(cols[iCredit] ?? "");
       amount = (Number.isFinite(c) ? Math.abs(c) : 0) - (Number.isFinite(d) ? Math.abs(d) : 0);
@@ -179,543 +177,603 @@ function parseBankCsv(text: string): CsvRow[] {
     if (!Number.isFinite(amount) || amount === 0) continue;
     out.push({ date, description, amount });
   }
-  return out;
+  return { rows: out, headerless: !hasHeader };
 }
 
+async function sha256(text: string): Promise<string | null> {
+  try {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
+
+type ImportPlan = {
+  file: string;
+  sha: string | null;
+  rows: CsvRow[];
+  headerless: boolean;
+  chargesPositive: boolean;
+  server: null | { to_add: number; already_here: number; near_matches: number; money_in: number; money_out: number; first: string; last: string; locked: number; closed_through: string | null };
+};
+
+const PAGE = 200;
+
 export default function TreasuryAccount() {
-  const { accountId } = useParams();
+  const { accountId = "" } = useParams();
   const navigate = useNavigate();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const records = useRecords();
+  const writer = canWrite();
 
   const [account, setAccount] = useState<Account | null>(null);
-  const [siblings, setSiblings] = useState<Account[]>([]);
-  const [entities, setEntities] = useState<Entity[]>([]);
-  const [status, setStatus] = useState<"online" | "reconnect" | "offline">("online");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  // A failed save is reported beside the controls; `error` is for a page that couldn't load.
-  const [saveError, setSaveError] = useState("");
-
-  const [txns, setTxns] = useState<Txn[]>([]);
-  const [txnState, setTxnState] = useState<"loading" | "idle" | "error">("loading");
-  const [txnError, setTxnError] = useState("");
+  const [stopped, setStopped] = useState<StoppedAccount | null>(null);
+  const [conn, setConn] = useState<Connection | null>(null);
+  const [asOf, setAsOf] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ledger, setLedger] = useState<Ledger | null>(null);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-
-  const [editingName, setEditingName] = useState(false);
+  const [shown, setShown] = useState(PAGE);
+  const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const nameInput = useRef<HTMLInputElement>(null);
-  // Set once the editor is left, so the blur that follows Escape can't save.
-  const nameDone = useRef(false);
-  const [hiding, setHiding] = useState(false);
-
-  const fileInput = useRef<HTMLInputElement>(null);
+  const [ownerOpen, setOwnerOpen] = useState(false);
+  const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [reload, setReload] = useState(0);
+
+  const title = account ? accountName(account) : stopped ? accountName({ nickname: stopped.nickname, name: stopped.name, mask: stopped.mask }) : "Account";
+  useDocumentTitle(title, "Treasury");
 
   useEffect(() => {
-    // Previous/next can be pressed before a slow load lands; a reply for the
-    // account the user has already left must not overwrite this one.
     let stale = false;
-    setError("");
-    setSaveError("");
-    nameDone.current = true;
-    setEditingName(false);
-    setSearch("");
+    setLoadError(null);
     void (async () => {
       try {
-        const res = await authFetch("/api/plaid/data?report=treasury");
-        const data = await res.json().catch(() => ({}));
+        const data = await loadTreasury();
         if (stale) return;
-        if (!res.ok) throw new Error(data?.message || "Couldn't load the account.");
-        const list: Account[] = (data.accounts ?? []).filter((a: Account) => !a.hidden);
-        const found = (data.accounts ?? []).find((a: Account) => a.account_id === accountId);
-        if (!found) throw new Error("That account isn't connected any more.");
-        setSiblings(list.some((a) => a.account_id === found.account_id) ? list : [found, ...list]);
+        const found = data.accounts.find((a) => a.account_id === accountId) ?? null;
+        const gone = data.disconnected.find((a) => a.account_id === accountId) ?? null;
+        if (!found && !gone) throw new Error("That account isn’t connected any more.");
         setAccount(found);
-        setStatus((data.connections ?? []).find((c: any) => c.item_id === found.item_id)?.status ?? "offline");
+        setStopped(found ? null : gone);
+        setConn(found ? (data.connections.find((c) => c.item_id === found.item_id) ?? null) : null);
+        setAsOf(data.asOf);
       } catch (err) {
-        if (stale) return;
-        setError(err instanceof Error ? err.message : "Couldn't load the account.");
-      } finally {
-        if (!stale) setLoading(false);
+        if (!stale) setLoadError(err instanceof Error ? err.message : "Couldn’t load the account.");
       }
     })();
     return () => {
       stale = true;
     };
-  }, [accountId]);
+  }, [accountId, reload]);
 
-  // Keyed on the ids, not the object: a rename or entity change replaces
-  // `account` and shouldn't re-run the Plaid call.
-  const txnItemId = account?.item_id;
-  const txnAccountId = account?.account_id;
+  const investment = account?.type === "investment" || stopped?.type === "investment";
   useEffect(() => {
-    if (!txnItemId || !txnAccountId) return;
+    if (!account && !stopped) return;
     let stale = false;
-    setTxns([]);
-    setTxnState("loading");
+    setLedger(null);
+    setLedgerError(null);
+    setShown(PAGE);
     void (async () => {
       try {
-        const res = await authFetch(`/api/plaid/data?report=bank-transactions&item_id=${txnItemId}&account_id=${txnAccountId}`);
-        const data = await res.json().catch(() => ({}));
-        if (stale) return;
-        if (!res.ok || data.error) throw new Error(data?.message || "Couldn't load transactions.");
-        setTxns(data.transactions ?? []);
-        setTxnState("idle");
+        // The Books ledger: the kept record, Plaid rows and CSV imports alike.
+        const out = await getJson<{ transactions: Txn[]; total: number }>(`/api/plaid/data?report=account-ledger&account_id=${encodeURIComponent(accountId)}`);
+        if (!stale) setLedger({ rows: out.transactions, source: "books", total: out.total });
       } catch (err) {
         if (stale) return;
-        setTxnError(err instanceof Error ? err.message : "Couldn't load transactions.");
-        setTxnState("error");
+        // A server without the ledger read: the bank's last 180 days through Plaid.
+        if (account && !investment) {
+          try {
+            const out = await getJson<{ transactions: Txn[]; total: number }>(`/api/plaid/data?report=bank-transactions&item_id=${account.item_id}&account_id=${account.account_id}`);
+            if (!stale) setLedger({ rows: out.transactions, source: "bank", total: out.total });
+          } catch (e2) {
+            if (!stale) setLedgerError(e2 instanceof Error ? e2.message : "Couldn’t load transactions.");
+          }
+        } else if (!investment) setLedgerError(err instanceof Error ? err.message : "Couldn’t load transactions.");
+        else setLedger({ rows: [], source: "books", total: 0 });
       }
     })();
     return () => {
       stale = true;
     };
-  }, [txnItemId, txnAccountId]);
-
-  useEffect(() => {
-    // Entities come from the assets tree, same source as the mappings page.
-    let unsub: (() => void) | undefined;
-    let cancelled = false;
-    void (async () => {
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, onValue } = await import("../store");
-      if (cancelled) return;
-      unsub = onValue(ref(db, "assets"), (snap) => {
-        const data = snap.val() || {};
-        setEntities(
-          Object.entries<any>(data)
-            .map(([id, asset]) => ({ id, name: asset?.name || "Unnamed entity" }))
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        );
-      });
-    })().catch(() => {
-      /* the entity picker just stays empty */
-    });
-    return () => {
-      cancelled = true;
-      unsub?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (editingName) nameInput.current?.focus();
-  }, [editingName]);
-
-  /** Saves and reports whether it worked, so callers can wait before leaving. */
-  async function savePrefs(patch: { nickname?: string; hidden?: boolean }): Promise<boolean> {
-    if (!account) return false;
-    const res = await authFetch("/api/plaid/account-prefs", {
-      method: "POST",
-      body: JSON.stringify({ account_id: account.account_id, ...patch }),
-    }).catch(() => null);
-    if (!res?.ok) {
-      setSaveError("Couldn't save that.");
-      return false;
-    }
-    setSaveError("");
-    setAccount({ ...account, ...("nickname" in patch ? { nickname: patch.nickname || null } : {}), ...("hidden" in patch ? { hidden: !!patch.hidden } : {}) });
-    return true;
-  }
-
-  /** Leave the name editor: save only a real change; Escape (save=false) drops the draft. */
-  function commitName(save: boolean) {
-    if (nameDone.current || !account) return;
-    nameDone.current = true;
-    setEditingName(false);
-    if (save && nameDraft.trim() !== (account.nickname ?? "")) void savePrefs({ nickname: nameDraft.trim() });
-  }
-
-  async function toggleHidden() {
-    if (!account || hiding) return;
-    const hide = !account.hidden;
-    setHiding(true);
-    const ok = await savePrefs({ hidden: hide });
-    setHiding(false);
-    // Treasury reloads on arrival, so only go once the save has landed.
-    if (ok && hide) navigate("/treasury");
-  }
-
-  async function assignEntity(entityId: string) {
-    if (!account) return;
-    const entity = entities.find((e) => e.id === entityId) ?? null;
-    const res = await authFetch("/api/plaid/account-prefs", {
-      method: "POST",
-      body: JSON.stringify({
-        account_id: account.account_id,
-        entity_id: entity?.id ?? "",
-        entity_name: entity?.name ?? "",
-      }),
-    });
-    if (!res.ok) {
-      setSaveError("Couldn't save that mapping.");
-      return;
-    }
-    setSaveError("");
-    setAccount({ ...account, entity_id: entity?.id ?? null, entity_name: entity?.name ?? null });
-  }
-
-  async function importCsv(file: File) {
-    if (!account) return;
-    setImporting(true);
-    setImportMsg(null);
-    try {
-      const text = await file.text();
-      const rows = parseBankCsv(text);
-      if (!rows.length) {
-        setImportMsg({ ok: false, text: "Couldn't find any dated rows with amounts in that file." });
-        return;
-      }
-      const res = await authFetch("/api/books/import-csv", {
-        method: "POST",
-        body: JSON.stringify({ account_id: account.account_id, rows }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || "Import failed.");
-      const imported = data.imported ?? 0;
-      const skipped = data.skipped_existing ?? 0;
-      setImportMsg({
-        ok: true,
-        text: `Imported ${imported} transaction${imported === 1 ? "" : "s"} into Books` + (skipped ? ` · ${skipped} already present` : "") + ". They appear in the Books ledger.",
-      });
-    } catch (err) {
-      setImportMsg({ ok: false, text: err instanceof Error ? err.message : "Import failed." });
-    } finally {
-      setImporting(false);
-      if (fileInput.current) fileInput.current.value = "";
-    }
-  }
+    // The ids, not the objects: a rename shouldn't re-read the ledger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, !!account, !!stopped, investment, reload]);
 
   const filtered = useMemo(() => {
+    const rows = ledger?.rows ?? [];
     const q = search.trim().toLowerCase();
-    if (!q) return txns;
-    return txns.filter(
-      (t) =>
-        t.name?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q) || (t.category ? pretty(t.category).toLowerCase().includes(q) || t.category.toLowerCase().includes(q) : false),
-    );
-  }, [txns, search]);
+    if (!q) return rows;
+    return rows.filter((t) => `${t.name} ${t.description} ${t.category ?? ""}`.toLowerCase().includes(q));
+  }, [ledger, search]);
 
-  const subtle = isDark ? "text-gray-500" : "text-gray-500";
-  const card = isDark ? "glass-card" : "glass-card";
-  const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-
-  if (loading) return <p className={`text-sm ${subtle}`}>Loading…</p>;
-  if (error || !account) {
+  if (loadError) {
     return (
-      <div>
-        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>
-          ← Treasury
-        </Link>
-        <p className={`mt-4 text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</p>
-      </div>
+      <Page header={<PageHeader title="Account" back={{ to: "/treasury", label: "Treasury" }} />}>
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setReload((n) => n + 1)}>
+              Try again
+            </Button>
+          }
+        >
+          {loadError}
+        </Banner>
+      </Page>
+    );
+  }
+  if (!account && !stopped) {
+    return (
+      <Page header={<PageHeader title="Account" back={{ to: "/treasury", label: "Treasury" }} />}>
+        <Skeleton kind="card" />
+        <Skeleton kind="rows" rows={6} />
+      </Page>
     );
   }
 
-  const rgb = tint(account.institution_color);
-  const displayName = account.nickname || account.official_name || account.name;
-  const online = status === "online";
+  // A stopped account reads from its kept row; a live one from the bank.
+  const a: Account = account ?? stoppedAsAccount(stopped!);
+  const debt = isDebt(a);
+  const owner = ownerText(a, (id) => (records.loaded ? records.nameOf(id) : (a.entity_name ?? null)));
+  const reg = registration(a.official_name || a.name, a.subtype);
+  const conflict = conflictOf(a, records.isTrust);
+  const bankName = officialName(a);
+  const tax = a.tax_status ?? null;
+  const taxGuess = defaultTaxStatus(a.subtype, a.official_name || a.name, a.type);
+  const canImport = writer && !investment && !stopped;
+  const offline = !!account && conn?.status !== "online";
 
-  // Mapped only to an entity that still exists; one deleted since reads as
-  // unmapped (amber) and is named in the picker so it can be reassigned.
-  const orphaned = !!account.entity_id && entities.length > 0 && !entities.some((e) => e.id === account.entity_id);
-  const mapped = !!account.entity_id && !orphaned;
+  async function savePrefs(patch: Record<string, unknown>): Promise<boolean> {
+    try {
+      await getJson("/api/plaid/account-prefs", { method: "POST", body: JSON.stringify({ account_id: a.account_id, ...patch }) });
+      setError(null);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn’t save that.");
+      return false;
+    }
+  }
 
-  const idx = siblings.findIndex((a) => a.account_id === account.account_id);
-  const count = siblings.length;
-  const prevAcct = count > 1 ? siblings[(idx - 1 + count) % count] : null;
-  const nextAcct = count > 1 ? siblings[(idx + 1) % count] : null;
-  const navBtn = `w-[40px] h-[40px] lg:w-8 lg:h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
-    isDark ? "border-white/10 text-gray-400 hover:bg-white/10 hover:text-white" : "border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-  }`;
+  async function rename() {
+    const next = nameDraft.trim();
+    if (next === (a.nickname ?? "")) return setRenaming(false);
+    if (await savePrefs({ nickname: next })) {
+      setRenaming(false);
+      if (account) setAccount({ ...account, nickname: next || null });
+      else if (stopped) setStopped({ ...stopped, nickname: next || null });
+      toast({ message: next ? `Renamed to ${next}` : "Back to the bank’s name" });
+    }
+  }
+
+  async function hide() {
+    let books: { count: number; from: string | null; to: string | null } | null = null;
+    try {
+      books = (await getJson<{ books: { count: number; from: string | null; to: string | null } }>(`/api/plaid/account-prefs?account_id=${encodeURIComponent(a.account_id)}`)).books;
+    } catch {
+      books = null;
+    }
+    const ok = await confirm({
+      title: "Hide this account?",
+      object: { name: accountName(a), detail: `${a.institution_name} · ${format.money((debt ? -1 : 1) * (a.balance_current ?? 0))}` },
+      message: "It leaves Treasury’s totals, every Books report and the emailed Treasury report until you show it again. Nothing is deleted.",
+      details:
+        books && books.count > 0 && books.from && books.to
+          ? [`${format.count(books.count, "Books transaction")}, ${format.dateRange(books.from, books.to)}, leave the reports while it’s hidden.`]
+          : undefined,
+      confirmLabel: "Hide account",
+    });
+    if (!ok) return;
+    if (await savePrefs({ hidden: true })) {
+      toast({
+        message: `Hid ${accountName(a)}`,
+        action: { label: "Undo", run: () => void getJson("/api/plaid/account-prefs", { method: "POST", body: JSON.stringify({ account_id: a.account_id, hidden: false }) }) },
+      });
+      navigate("/treasury");
+    }
+  }
+
+  async function show() {
+    if (await savePrefs({ hidden: false })) {
+      if (account) setAccount({ ...account, hidden: false });
+      toast({ message: `${accountName(a)} is back in the totals` });
+    }
+  }
+
+  async function onOwnerSave(choice: OwnerChoice): Promise<string | null> {
+    const toPerson = choice.owner_kind === "person" || choice.owner_kind === "joint";
+    const toText = toPerson ? (choice.owner_names ?? []).filter(Boolean).join(" & ") : (choice.entity_name ?? null);
+    if (!(await confirmOwnerChange(a, owner, toText || null, toPerson))) return "Not changed.";
+    const err = await saveOwner(a.account_id, choice);
+    if (err) return err;
+    const next = {
+      ...a,
+      owner_kind: choice.owner_kind,
+      owner_names: choice.owner_names ?? null,
+      tenancy: choice.tenancy ?? null,
+      entity_id: toPerson ? null : (choice.entity_id ?? null),
+      entity_name: toPerson ? null : (choice.entity_name ?? null),
+      tax_status: choice.tax_status ?? null,
+      beneficiary_entity_id: choice.beneficiary_entity_id || null,
+      beneficiary_name: choice.beneficiary_name || null,
+    };
+    if (account) setAccount(next);
+    toast({ message: "Owner saved" });
+    return null;
+  }
+
+  // ── CSV import, previewed ─────────────────────────────────────────────
+  async function dryRun(p: ImportPlan): Promise<ImportPlan> {
+    try {
+      const out = await getJson<NonNullable<ImportPlan["server"]>>("/api/books/import-csv", {
+        method: "POST",
+        body: JSON.stringify({ account_id: a.account_id, rows: p.rows, file_name: p.file, file_sha256: p.sha, charges_positive: p.chargesPositive, dry_run: true }),
+      });
+      return { ...p, server: out };
+    } catch {
+      return { ...p, server: null };
+    }
+  }
+
+  async function pickFile(file: File) {
+    const text = await file.text();
+    const parsed = parseBankCsv(text);
+    if (fileInput.current) fileInput.current.value = "";
+    if (!parsed.rows.length) return setError("That file has no dated rows with amounts. Export the account’s activity as CSV and try again.");
+    setPlan(await dryRun({ file: file.name, sha: await sha256(text), rows: parsed.rows, headerless: parsed.headerless, chargesPositive: false, server: null }));
+  }
+
+  async function runImport() {
+    if (!plan) return;
+    setImporting(true);
+    try {
+      const out = await getJson<{ imported: number; skipped_existing: number; import_id?: string }>("/api/books/import-csv", {
+        method: "POST",
+        body: JSON.stringify({ account_id: a.account_id, rows: plan.rows, file_name: plan.file, file_sha256: plan.sha, charges_positive: plan.chargesPositive }),
+      });
+      setPlan(null);
+      toast({
+        message: `Added ${format.count(out.imported, "transaction")} to Books`,
+        action: out.import_id
+          ? { label: "Undo", run: () => void getJson("/api/books/import-csv", { method: "POST", body: JSON.stringify({ undo_import_id: out.import_id }) }).then(() => setReload((n) => n + 1)) }
+          : undefined,
+      });
+      setReload((n) => n + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The import didn’t finish. Nothing was added.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // Client totals, in the bank's sign (deposits positive), before the server answers.
+  const local = plan
+    ? (() => {
+        const sign = plan.chargesPositive ? -1 : 1;
+        let moneyIn = 0;
+        let moneyOut = 0;
+        const dates = plan.rows.map((r) => r.date).sort();
+        for (const r of plan.rows) {
+          const v = sign * r.amount;
+          if (v > 0) moneyIn += v;
+          else moneyOut += -v;
+        }
+        return { moneyIn, moneyOut, first: dates[0], last: dates[dates.length - 1] };
+      })()
+    : null;
+
+  const menu: MenuItem[] = writer
+    ? [
+        {
+          label: "Rename…",
+          onSelect: () => {
+            setNameDraft(a.nickname ?? "");
+            setRenaming(true);
+          },
+        },
+        { label: "Change owner…", onSelect: () => setOwnerOpen(true) },
+        ...(account ? [a.hidden ? { label: "Show in Treasury", onSelect: () => void show() } : { label: "Hide account…", onSelect: () => void hide() }] : []),
+      ]
+    : [];
+
+  const columns: Column<Txn>[] = [
+    { key: "date", header: "Date", width: "112px", render: (t) => <span className="text-ink-2 tabular-nums">{format.date(t.date, "short")}</span> },
+    {
+      key: "name",
+      header: "Description",
+      render: (t) => (
+        <span className="break-words">
+          {t.name}
+          {t.pending && <span className="text-ink-3"> · Pending</span>}
+          {t.source === "csv" && <span className="text-ink-3"> · Imported</span>}
+        </span>
+      ),
+    },
+    {
+      key: "category",
+      header: ledger?.source === "books" ? "Books category" : "Bank’s category",
+      width: "200px",
+      render: (t) => (t.category ? <span className="text-ink-2">{tidy(t.category)}</span> : <span className="text-ink-3">—</span>),
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      align: "right",
+      width: "140px",
+      render: (t) => <span className={t.amount < 0 ? "text-positive" : "text-ink"}>{format.money(-t.amount, { sign: "always" })}</span>,
+    },
+  ];
+
+  const sourceLine =
+    ledger?.source === "books"
+      ? ledger.total
+        ? `From Books: ${format.count(ledger.total, "transaction")}, ${format.dateRange(ledger.rows[ledger.rows.length - 1].date, ledger.rows[0].date)}. Bank rows and imported files alike.`
+        : null
+      : ledger?.source === "bank"
+        ? `From ${a.institution_name} through Plaid, the last 180 days${ledger.total > ledger.rows.length ? `: the newest ${format.count(ledger.rows.length, "row")} of ${ledger.total}` : ""}. Books keeps the full history.`
+        : null;
 
   return (
-    <div>
-      <div className="flex items-center justify-between gap-3">
-        <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>
-          ← Treasury
-        </Link>
-        {count > 1 && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => prevAcct && navigate(`/treasury/${prevAcct.account_id}`)}
-              title={prevAcct ? prevAcct.nickname || prevAcct.official_name || prevAcct.name : "Previous"}
-              className={navBtn}
-              aria-label="Previous account"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-              </svg>
-            </button>
-            <span className={`text-xs tabular-nums ${subtle}`}>
-              {idx + 1} / {count}
-            </span>
-            <button
-              onClick={() => nextAcct && navigate(`/treasury/${nextAcct.account_id}`)}
-              title={nextAcct ? nextAcct.nickname || nextAcct.official_name || nextAcct.name : "Next"}
-              className={navBtn}
-              aria-label="Next account"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Header card in the bank's colours */}
-      <div className="treasury-card mt-4 mb-6 cursor-default" style={{ ["--bank" as any]: rgb }}>
-        <div className="treasury-card-sheen" aria-hidden />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            {account.institution_logo ? (
-              <img src={`data:image/png;base64,${account.institution_logo}`} alt="" className="w-10 h-10 rounded-lg object-contain bg-white/90 p-1 shrink-0" />
-            ) : (
-              <div className="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold text-white bg-[rgba(var(--bank),0.55)]">{account.institution_name.slice(0, 1)}</div>
-            )}
-            <div className="min-w-0">
-              {editingName ? (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    commitName(true);
-                  }}
-                >
-                  <input
-                    ref={nameInput}
-                    value={nameDraft}
-                    onChange={(e) => setNameDraft(e.target.value)}
-                    onBlur={() => commitName(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        commitName(false);
-                      }
-                    }}
-                    maxLength={60}
-                    placeholder={account.official_name || account.name}
-                    className="bg-transparent border-b border-white/30 focus:border-white/70 focus:outline-none text-white text-xl font-semibold w-full"
-                  />
-                </form>
-              ) : (
-                <button
-                  onClick={() => {
-                    setNameDraft(account.nickname ?? "");
-                    nameDone.current = false;
-                    setEditingName(true);
-                  }}
-                  title="Rename this account"
-                  className="group relative flex max-w-full items-center gap-2 text-left cursor-pointer after:absolute after:inset-x-0 after:-inset-y-[10px] after:content-[''] lg:after:inset-0"
-                >
-                  <span className="text-white text-xl font-semibold truncate">{displayName}</span>
-                  <svg className="w-4 h-4 text-white/40 group-hover:text-white/80 transition-colors shrink-0" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"
-                    />
-                  </svg>
-                </button>
-              )}
-              <p className="text-white/50 text-xs mt-0.5 truncate">
-                {account.institution_name}
-                {account.mask ? ` ····${account.mask}` : ""} · {account.subtype || account.type}
-                {account.nickname && ` · ${account.official_name || account.name}`}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="flex items-center gap-1.5">
-              <span className={online ? "treasury-dot treasury-dot-live" : "treasury-dot treasury-dot-down"} />
-              <span className="text-[10px] uppercase tracking-wider text-white/45">{online ? "Online" : "Offline"}</span>
-            </span>
-            <button
-              onClick={() => void toggleHidden()}
-              disabled={hiding}
-              className="min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs text-white/60 border border-white/15 hover:bg-white/10 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
-            >
-              {hiding ? "Saving…" : account.hidden ? "Unhide" : "Hide account"}
-            </button>
-          </div>
-        </div>
-
-        <div className="relative mt-6">
-          <p className="text-white text-[28px] sm:text-[34px] font-semibold tracking-tight break-words">{money(account.balance_current, account.currency ?? "USD")}</p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
-            {account.balance_available != null && <span className="text-white/45">{money(account.balance_available, account.currency ?? "USD")} available</span>}
-            {account.change != null && account.change !== 0 && (
-              // A card or loan balance going up is more owed, not a gain.
-              <span className={(account.type === "credit" || account.type === "loan" ? -1 : 1) * account.change > 0 ? "text-[#6ee7b7]" : "text-[#fda4af]"}>
-                {signed(account.change, account.currency ?? "USD")} since last visit
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Entity mapping */}
-      <div className="flex items-center gap-2 mb-6 -mt-1">
-        <span id="account-entity-label" className={`shrink-0 text-[11px] uppercase tracking-wider ${subtle}`}>
-          Entity
-        </span>
-        <span className="relative inline-flex min-w-0 items-center">
-          <select
-            aria-labelledby="account-entity-label"
-            style={{ colorScheme: isDark ? "dark" : "light" }}
-            value={account.entity_id ?? ""}
-            disabled={entities.length === 0}
-            onChange={(e) => void assignEntity(e.target.value)}
-            className={`appearance-none max-w-full truncate min-h-[40px] lg:min-h-0 pl-3.5 pr-9 py-1.5 rounded-full text-sm border cursor-pointer disabled:opacity-50 ${
-              mapped
-                ? isDark
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                : orphaned
-                  ? isDark
-                    ? "bg-amber-500/[0.06] border-amber-500/30 text-amber-200"
-                    : "bg-amber-50 border-amber-300 text-amber-900"
-                  : isDark
-                    ? "bg-white/[0.04] border-white/10 text-gray-300"
-                    : "bg-white border-gray-200 text-gray-700"
-            }`}
-          >
-            <option value="">{entities.length === 0 ? "No entities found" : "Unassigned"}</option>
-            {orphaned && (
-              <option value={account.entity_id!} disabled>
-                {account.entity_name ?? "Unknown entity"} (deleted)
-              </option>
-            )}
-            {entities.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </select>
-          <svg className="w-3.5 h-3.5 absolute right-3.5 pointer-events-none opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-          </svg>
-        </span>
-      </div>
-
-      {saveError && (
-        <div role="alert" className={`mb-4 -mt-2 rounded-lg px-4 py-2.5 text-xs ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {saveError}
-        </div>
+    <Page
+      header={
+        <PageHeader title={title} back={{ to: "/treasury", label: "Treasury" }} context={[a.institution_name, typeLabel(a), owner].filter(Boolean).join(" · ")} menu={menu.length ? menu : undefined} />
+      }
+    >
+      {error && (
+        <Banner tone="negative" onDismiss={() => setError(null)}>
+          {error}
+        </Banner>
       )}
+      {stopped && (
+        <Banner tone="info">
+          {stopped.reason === "not_shared"
+            ? `${a.institution_name} stopped sharing this account on ${format.date(stopped.disconnected_at, "medium")}.`
+            : `${a.institution_name} was disconnected on ${format.date(stopped.disconnected_at, "medium")}.`}{" "}
+          Its Books history is kept; it isn’t in Treasury’s totals.
+        </Banner>
+      )}
+      {offline && <Banner tone="warning">{a.institution_name} isn’t answering, so this balance may be out of date. An owner or admin can reconnect it on Treasury.</Banner>}
 
-      {/* Transactions */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-3">
-        <h2 className={`text-sm font-semibold ${isDark ? "" : "text-gray-900"}`}>Transactions</h2>
-        <div className="flex w-full items-center gap-2 sm:w-auto">
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void importCsv(f);
+      <Card>
+        <p className="text-small font-medium text-ink-2">{stopped ? "Last balance" : debt ? "Owed" : investment ? "Market value" : "Current balance"}</p>
+        <p className="mt-1 text-display text-ink tabular-nums">{format.money(a.balance_current, { currency: a.currency ?? "USD" })}</p>
+        <p className="mt-1 text-small text-ink-2">
+          {stopped
+            ? stopped.last_balance_at
+              ? `As read on ${format.dateTime(stopped.last_balance_at)}`
+              : "No balance was read before it stopped syncing"
+            : [
+                asOf ? format.asOf(asOf, { time: true }) : null,
+                a.balance_updated_at ? `the bank updated it ${format.dateTime(a.balance_updated_at)}` : null,
+                a.change_basis === "prior_close" && a.change ? `${a.change > 0 ? "↑" : "↓"} ${format.money(Math.abs(a.change))} since the ${format.date(a.change_since!, "short")} close` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+        </p>
+        {!investment && !stopped && a.balance_available != null && Math.abs(a.balance_available - (a.balance_current ?? 0)) >= 0.005 && (
+          <p className="mt-1 text-small text-ink-2">
+            {debt ? "Available credit" : "Available"} {format.money(a.balance_available)}
+            {debt ? "" : ", after pending items"}
+          </p>
+        )}
+        <Rows className="mt-4 border-t border-line">
+          <Row
+            label="Owner"
+            hint={conflict ?? (a.owner_kind === "person" || a.owner_kind === "joint" ? "Outside every entity’s Books." : undefined)}
+            action={
+              writer ? (
+                <Button variant="quiet" size="sm" onClick={() => setOwnerOpen(true)}>
+                  Change…
+                </Button>
+              ) : undefined
+            }
+          >
+            {owner ? (
+              <span className="inline-flex items-center gap-2">
+                {owner}
+                {conflict && <Status tone="warning">Check owner</Status>}
+              </span>
+            ) : (
+              <Status tone="warning">No owner yet</Status>
+            )}
+          </Row>
+          {a.owner_kind === "joint" && a.tenancy && <Row label="Held as">{TENANCY_LABEL[a.tenancy]}</Row>}
+          {a.beneficiary_name && <Row label="Beneficiary">{a.beneficiary_name}</Row>}
+          <Row label="Tax status" hint={!tax && taxGuess ? `Likely ${TAX_STATUS_LABEL[taxGuess].toLowerCase()}, from its type. Confirm it under Change owner.` : undefined}>
+            {tax ? TAX_STATUS_LABEL[tax] : null}
+          </Row>
+          {reg && <Row label="Registration">{`${reg.label}, as the custodian reports it`}</Row>}
+          {bankName && <Row label="Bank’s name">{bankName}</Row>}
+          {a.hidden && <Row label="In Treasury">Hidden: left out of the totals, Books reports and the emailed report.</Row>}
+        </Rows>
+      </Card>
+
+      <Card
+        title={investment ? "Activity" : "Transactions"}
+        action={
+          canImport ? (
+            <Button variant="quiet" size="sm" icon="upload" onClick={() => fileInput.current?.click()}>
+              Import CSV…
+            </Button>
+          ) : undefined
+        }
+        flush
+      >
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void pickFile(f);
+          }}
+        />
+        {investment ? (
+          <div className="px-5 py-4 touch:px-4">
+            <Empty
+              size="section"
+              action={
+                <LinkButton to={`/investments?account=${encodeURIComponent(a.account_id)}`} variant="secondary" size="sm">
+                  See holdings in Investments
+                </LinkButton>
+              }
+            >
+              A brokerage account’s positions, dividends and trades are on Investments.
+              {ledger && ledger.rows.length > 0 ? ` Books also holds ${format.count(ledger.rows.length, "cash transaction")} for it.` : ""}
+            </Empty>
+          </div>
+        ) : ledgerError ? (
+          <div className="p-4">
+            <Banner
+              tone="negative"
+              action={
+                <Button variant="quiet" size="sm" onClick={() => setReload((n) => n + 1)}>
+                  Try again
+                </Button>
+              }
+            >
+              {ledgerError}
+            </Banner>
+          </div>
+        ) : !ledger ? (
+          <Skeleton kind="table" rows={8} columns={["112px", "1fr", "200px", "140px"]} />
+        ) : ledger.rows.length === 0 ? (
+          <div className="px-5 py-4 touch:px-4">
+            <Empty
+              size="section"
+              action={
+                canImport ? (
+                  <Button size="sm" onClick={() => fileInput.current?.click()}>
+                    Import CSV…
+                  </Button>
+                ) : undefined
+              }
+            >
+              {ledger.source === "books" ? "Books has no transactions for this account yet. Older history can be added from the bank’s CSV export." : "No transactions in the last 180 days."}
+            </Empty>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-3 px-5 py-3 touch:px-4">
+              {sourceLine && <p className="min-w-[240px] flex-1 text-small text-ink-2">{sourceLine}</p>}
+              {ledger.rows.length > 8 && (
+                <div className="w-full sm:w-[260px]">
+                  <SearchField value={search} onChange={setSearch} placeholder="Search transactions" label="Search transactions" />
+                </div>
+              )}
+            </div>
+            <Table
+              caption={`${title} transactions`}
+              columns={columns}
+              rows={filtered.slice(0, shown)}
+              rowKey={(t) => t.id ?? `${t.date}-${t.description}-${t.amount}`}
+              phoneRow={(t) => ({
+                title: t.name,
+                secondary: [format.date(t.date, "short"), t.category ? tidy(t.category) : null, t.pending ? "Pending" : null, t.source === "csv" ? "Imported" : null].filter(Boolean).join(" · "),
+                trailing: <span className={t.amount < 0 ? "text-positive" : "text-ink"}>{format.money(-t.amount, { sign: "always" })}</span>,
+              })}
+              empty={<p className="text-body text-ink-2">No transactions match “{search}”.</p>}
+            />
+            {filtered.length > shown && (
+              <div className="flex justify-center border-t border-line p-3">
+                <Button variant="quiet" size="sm" onClick={() => setShown((n) => n + PAGE)}>
+                  Show {format.count(Math.min(PAGE, filtered.length - shown), "more transaction")}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      <Dialog
+        open={renaming}
+        onClose={() => setRenaming(false)}
+        title="Rename account"
+        description="The name shown across BFO. The bank’s own name stays on the account page and in Books."
+        size="sm"
+        dirty={nameDraft.trim() !== (a.nickname ?? "")}
+        footer={
+          <>
+            <Button onClick={() => setRenaming(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => void rename()}>
+              Save name
+            </Button>
+          </>
+        }
+      >
+        <Field label="Name" hint={`Leave empty to use the bank’s name, ${accountName({ name: a.official_name || a.name, mask: a.mask })}.`}>
+          <Input
+            value={nameDraft}
+            maxLength={60}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void rename();
             }}
           />
-          <button
-            onClick={() => fileInput.current?.click()}
-            disabled={importing}
-            title="Import a bank CSV export — history older than Plaid serves"
-            className={`shrink-0 inline-flex items-center gap-1.5 min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-xs border cursor-pointer disabled:opacity-50 transition-colors ${
-              isDark ? "bg-white/[0.04] border-white/10 text-gray-300 hover:bg-white/10" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 7.5L12 3m0 0L7.5 7.5M12 3v13.5" />
-            </svg>
-            {importing ? "Importing…" : "Import CSV"}
-          </button>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter…"
-            aria-label="Filter transactions"
-            type="search"
-            className={`min-w-0 flex-1 sm:flex-none sm:w-48 min-h-[40px] lg:min-h-0 px-3 py-1.5 rounded-lg text-[16px] sm:text-xs border focus:outline-none ${
-              isDark ? "bg-white/[0.04] border-white/10 text-white placeholder-gray-600 focus:border-white/25" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-400"
-            }`}
-          />
-        </div>
-      </div>
+        </Field>
+      </Dialog>
 
-      {importMsg && (
-        <div
-          className={`mb-3 rounded-lg px-4 py-2.5 text-xs ${
-            importMsg.ok ? (isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700") : isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"
-          }`}
-        >
-          {importMsg.text}
-        </div>
-      )}
+      <OwnerDialog open={ownerOpen} onClose={() => setOwnerOpen(false)} account={a} entities={records.entities} people={records.people} onSave={onOwnerSave} />
 
-      <div className={`rounded-xl border overflow-hidden ${card}`}>
-        {txnState === "loading" && <p className={`text-sm p-5 ${subtle}`}>Loading transactions…</p>}
-        {txnState === "error" && <p className={`text-sm p-5 ${isDark ? "text-red-400" : "text-red-600"}`}>{txnError}</p>}
-        {txnState === "idle" && filtered.length === 0 && <p className={`text-sm p-5 ${subtle}`}>{txns.length ? "No transactions match that filter." : "No transactions in the last 180 days."}</p>}
-        {txnState === "idle" && filtered.length > 0 && (
-          <ul className="sm:hidden">
-            {filtered.map((t, i) => (
-              <li key={`${t.date}-${t.description}-${i}`} className={`flex items-start justify-between gap-3 px-4 py-3 ${i ? `border-t ${rowBorder}` : ""}`}>
-                <span className="min-w-0">
-                  <span className="block text-sm break-words">
-                    {t.name}
-                    {t.pending && <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>}
-                  </span>
-                  <span className={`block text-xs tabular-nums ${subtle}`}>
-                    {t.date}
-                    {t.category ? ` · ${pretty(t.category)}` : ""}
-                  </span>
-                </span>
-                <span className={`shrink-0 text-sm text-right tabular-nums font-medium ${t.amount > 0 ? (isDark ? "text-gray-200" : "text-gray-900") : "text-emerald-400"}`}>
-                  {signed(-t.amount, t.currency ?? "USD")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {txnState === "idle" && filtered.length > 0 && (
-          <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm border-collapse min-w-[640px]">
-              <thead>
-                <tr className={isDark ? "bg-white/[0.03]" : "bg-gray-50"}>
-                  {["Date", "Description", "Category", "Amount"].map((h, i) => (
-                    <th key={h} className={`text-[11px] uppercase tracking-wider font-medium px-4 py-2.5 ${i === 3 ? "text-right" : "text-left"} ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((t, i) => (
-                  <tr key={`${t.date}-${t.description}-${i}`} className={i % 2 ? (isDark ? "bg-white/[0.015]" : "bg-gray-50/60") : ""}>
-                    <td className={`px-4 py-2.5 tabular-nums whitespace-nowrap border-t ${rowBorder} ${subtle}`}>{t.date}</td>
-                    <td className={`px-4 py-2.5 border-t ${rowBorder}`}>
-                      {t.name}
-                      {t.pending && <span className={`ml-2 text-[10px] uppercase tracking-wider ${subtle}`}>pending</span>}
-                    </td>
-                    <td className={`px-4 py-2.5 border-t ${rowBorder} ${subtle}`}>{t.category ? pretty(t.category) : "—"}</td>
-                    <td
-                      className={`px-4 py-2.5 text-right tabular-nums whitespace-nowrap font-medium border-t ${rowBorder} ${
-                        t.amount > 0 ? (isDark ? "text-gray-200" : "text-gray-900") : "text-emerald-400"
-                      }`}
-                    >
-                      {signed(-t.amount, t.currency ?? "USD")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <Dialog
+        open={!!plan}
+        onClose={() => setPlan(null)}
+        title="Add this file to Books?"
+        description={plan ? `${plan.file} · ${accountName(a)}` : undefined}
+        size="md"
+        footer={
+          <>
+            <Button onClick={() => setPlan(null)}>Cancel</Button>
+            <Button variant="primary" busy={importing} busyLabel="Adding…" disabled={!!plan?.server && (plan.server.locked > 0 || plan.server.to_add === 0)} onClick={() => void runImport()}>
+              {plan?.server ? `Add ${format.count(plan.server.to_add, "transaction")}` : `Add ${format.count(plan?.rows.length ?? 0, "row")}`}
+            </Button>
+          </>
+        }
+      >
+        {plan && local && (
+          <div className="flex flex-col gap-4">
+            <Rows>
+              <Row label="In the file">
+                {format.count(plan.rows.length, "row")}, {format.dateRange(plan.server?.first ?? local.first, plan.server?.last ?? local.last)}
+              </Row>
+              {plan.server && <Row label="New to Books">{format.count(plan.server.to_add, "transaction")}</Row>}
+              {plan.server && (plan.server.already_here > 0 || plan.server.near_matches > 0) && (
+                <Row label="Already in Books">{format.count(plan.server.already_here + plan.server.near_matches, "row")}, skipped</Row>
+              )}
+              <Row label="Money in">{format.money(plan.server ? plan.server.money_in : local.moneyIn)}</Row>
+              <Row label="Money out">{format.money(plan.server ? plan.server.money_out : local.moneyOut)}</Row>
+            </Rows>
+            <Checkbox
+              checked={plan.chargesPositive}
+              onChange={(v) => void dryRun({ ...plan, chargesPositive: v }).then(setPlan)}
+              label="This file shows charges as positive amounts"
+              hint={
+                plan.headerless
+                  ? "The file has no header row, so the columns were guessed. Check that money in and out look right."
+                  : "Card exports often do. Check that money in and out look right before adding."
+              }
+            />
+            {plan.server && plan.server.locked > 0 && (
+              <Banner tone="warning">
+                {format.count(plan.server.locked, "row")} fall on or before {format.date(plan.server.closed_through!, "medium")}, when this entity’s books were closed. Reopen the period in Books to
+                import them.
+              </Banner>
+            )}
+            <p className="text-small text-ink-2">Recorded with the file’s name and fingerprint, your name and the time. An import can be undone.</p>
           </div>
         )}
-      </div>
-    </div>
+      </Dialog>
+    </Page>
   );
+}
+
+/** "FOOD_AND_DRINK" or "food_and_drink" → "Food and drink"; a Books category stays as written. */
+function tidy(cat: string): string {
+  if (!/_/.test(cat) && cat !== cat.toUpperCase()) return cat;
+  const s = cat.replace(/_/g, " ").toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

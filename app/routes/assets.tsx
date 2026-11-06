@@ -1,880 +1,153 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+/**
+ * Entities: every entity the family holds, as an ownership tree (list),
+ * cards or a map. Each row says what the entity is, its tax class and the
+ * return that means, who owns it, its core documents and how complete its
+ * records are ("Records": facts and documents on file; state standing and
+ * deadlines are Entity compliance's). Rare and billed jobs (Palm, the
+ * document scan) live in the header's "…" and confirm their cost first.
+ * Partners see only the entities shared with them. The arithmetic is in
+ * assets-model.ts; the dialogs in assets-dialogs.tsx.
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { authFetch, getUser, isAdmin, isPartner } from "../auth";
-import { palmCall, type PalmMode } from "../palm";
-import { dollars } from "../../lib/palm-pricing";
-import { stateReadCost, type StateReadable } from "../../lib/state-reads";
+import { dollars, stateRecordCents } from "../../lib/palm-pricing";
+import { statesToRead as readsOf, stateReadCost as readCost, type StateReadable } from "../../lib/state-reads";
+import { authFetch, canWrite, getUser, isAdmin, isPartner } from "../auth";
+import { entityTag, setEntityTagLocal } from "../books-shared";
+import { FormEntityWizard } from "../entity/form-wizard";
+import { entityType, type EntityType } from "../entity-paperwork";
+import { scanAllEntities, type ScanProgress } from "../entity-scan";
+import { palmCall } from "../palm";
+import {
+  Banner,
+  Button,
+  Card,
+  confirm,
+  Dialog,
+  cx,
+  Disclosure,
+  Empty,
+  Icon,
+  IconButton,
+  List,
+  ListRow,
+  Menu,
+  MultiSelect,
+  Page,
+  PageHeader,
+  Popover,
+  SearchField,
+  Segmented,
+  Select,
+  Skeleton,
+  Toolbar,
+  Tooltip,
+  format,
+  toast,
+  useDocumentTitle,
+  usePhone,
+  type MenuItem,
+  type Option,
+} from "../ui";
+import { NewEntityDialog, InitialsDialog, OwnerDialog, PalmChecksDialog, PalmResultsDialog, type PalmChecksPlan, type PalmMode, type PalmRunResult } from "./assets-dialogs";
+import {
+  formedIn,
+  inStates,
+  initialsClash,
+  isDissolved,
+  isForming,
+  missingGroups,
+  missingLine,
+  NO_STATE,
+  ownerPhrase,
+  ownersOf,
+  recordsOf,
+  sharedInitials,
+  stateChoices,
+  taxLabel,
+  taxLine,
+  trustPeople,
+  TYPE_LABEL,
+  type EntityRec,
+  type Records,
+  type TaxLine,
+} from "./assets-model";
+import { EstateMapView } from "./estate-map";
+
+/** The state records an entity's sync reads, and what that costs (lib/state-reads.ts). */
+const statesToRead = (a: Rec) => readsOf(a as unknown as StateReadable);
+const stateReadCost = (a: Rec, mode: PalmMode | null, o: { freshMs: number }) => readCost(a as unknown as StateReadable, mode, o);
 
 /** Kept in step with lib/palm-sync.ts SYNC_FRESH_MS (that module is server-only). */
 const SYNC_FRESH_MS = 24 * 60 * 60 * 1000;
-import { useTheme } from "../theme";
-import { EstateMapView } from "./estate-map";
-import { entityCompleteness, entityType, type CompletenessItem } from "../entity-completeness";
-import { scanAllEntities, type ScanProgress } from "../entity-scan";
-import { confirmDialog } from "../confirm-dialog";
-import { US_STATES } from "../formation";
-import { FormEntityWizard } from "../entity/form-wizard";
-import {
-  BTN_BASE,
-  Icon,
-  MICRO,
-  Menu,
-  PATHS,
-  TAG_PILL,
-  TAP,
-  Toast,
-  amberTone,
-  cardSurface,
-  entityTag,
-  entityTagClass,
-  ghostBtn,
-  hairline,
-  incomeTone,
-  outlineBtn,
-  popoverSurface,
-  primaryBtn,
-  ruleBorder,
-  setEntityTagLocal,
-  textInput,
-  tiers,
-  useFocusTrap,
-  useMedia,
-} from "../books-shared";
+/** A state record older than this is stale (DESIGN.md §10.7). */
+const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function meta() {
-  return [{ title: "BFO - Assets" }];
+  return [{ title: "Entities · BFO" }];
 }
 
-interface Asset {
-  id: string;
-  name: string;
-  type: "LLC" | "C-Corp" | "LP" | "Trust";
-  state: string;
-  ein: string;
-  createdAt: number;
-  ownerId?: string;
-  /** Trusts: the people who act for it — shown where an LLC shows its owner. */
-  trustees?: string;
-  llcType?: "Disregarded Entity" | "Partnership" | "S Corporation" | "C Corporation" | "";
-  /** Where the tax class came from — e.g. "EIN letter: required to file Form 1065". */
-  llcTypeSource?: string;
-  initials?: string;
+/** The record as the page reads it, with the documents the scan would read. */
+type Rec = EntityRec & {
+  createdAt?: number;
   stateLink?: string;
-  operatingAgreementDate?: string;
-  articlesOfOrgDate?: string;
-  // Read for the completeness score; written on the entity page.
-  address?: string;
-  registeredAgent?: string;
-  formationDate?: string;
-  einLetter?: unknown;
-  w9?: unknown;
-  articles?: unknown;
-  operatingAgreement?: unknown;
-  // Read for "Sync everything with Palm": which states' records it reads, and what that costs.
-  status?: string;
   fileNumber?: string;
-  foreign?: StateReadable["foreign"];
-  palm?: StateReadable["palm"];
-  stateRecord?: StateReadable["stateRecord"];
-}
+  documents?: Record<string, { storagePath?: string; contentType?: string; factsCheckedAt?: number; classReadAt?: number } | null>;
+  stateRecord?: { mode?: string; checkedAt?: number };
+};
 
-/** What the server's sync found for one entity (lib/palm-sync.ts). */
-type PalmSyncResult = { id: string; name: string; lines: { label: string; tone: "good" | "warn" | "bad" | "muted"; text: string }[] };
+type View = "list" | "cards" | "map";
+type SortKey = "name" | "tax" | "owner" | "docs" | "records";
 
-type SortKey = "name" | "type" | "llcType" | "state" | "ein" | "owner" | "filings" | "score";
-type SortDir = "asc" | "desc";
-type EntView = "list" | "cards" | "map";
-type Score = { score: number; items: CompletenessItem[]; missing: CompletenessItem[] };
-
-const FILING_KEYS = ["einLetter", "w9", "articles", "operatingAgreement"] as const;
-
-// ── States ──────────────────────────────────────────────────────────────────
-// The fifty states plus DC, for the state filter's mega menu. Records may hold
-// a name ("Arizona") or a postal code ("AZ"); both fold to the name.
-const STATE_KEY = new Map<string, string>(
-  US_STATES.flatMap(([abbr, name]) => [
-    [abbr.toLowerCase(), name],
-    [name.toLowerCase(), name],
-  ]),
-);
-const STATE_ABBR = new Map<string, string>(US_STATES.map(([abbr, name]) => [name, abbr]));
-/** The value the "No state" choice stands for in the filter. */
-const NO_STATE = "__none";
-/** A record's state as the filter sees it: the full name for US states, else the trimmed text ("" when blank). */
-function canonState(raw: string | undefined): string {
-  const s = (raw || "").trim();
-  return s ? (STATE_KEY.get(s.toLowerCase()) ?? s) : "";
-}
-
-/**
- * List ⇄ cards ⇄ map. Phones default to the list (the map is hard to use at
- * that width), larger screens to the map; an explicit choice is remembered
- * per browser and wins over the default (the same contract as the Books
- * ledger).
- */
 const VIEW_KEY = "bfo-entities-view";
-function readStoredView(): EntView | null {
+function storedView(): View | null {
   try {
     const s = localStorage.getItem(VIEW_KEY);
     if (s === "list" || s === "cards" || s === "map") return s;
   } catch {
-    /* private mode — fall through to the device default */
+    /* private mode: the device default */
   }
   return null;
 }
 
-/** The head's fill and bottom rule live on the cells (see books-shared headSkin). */
-function headSkin(isDark: boolean): string {
-  return isDark ? "bg-[#080808] [&>th]:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.08)]" : "bg-white [&>th]:shadow-[inset_0_-1px_0_0_#e5e7eb]";
-}
+/** The four documents every company keeps, as Books and the cards count them. */
+const CORE_DOCS = [
+  { key: "articles", label: "Formation filing" },
+  { key: "einLetter", label: "EIN letter" },
+  { key: "operatingAgreement", label: "Operating agreement" },
+  { key: "w9", label: "Form W-9" },
+] as const;
 
-// Fixed widths in px (the root is 85%, so rem columns would drift). Entity is
-// the only fluid column; columns join as the viewport grows so the table
-// never scrolls sideways: md Type · Owned by · Filings, xl State · EIN,
-// 1400px Tax classification.
-const COLS = {
-  type: "w-[76px] hidden md:table-cell",
-  llcType: "w-[136px] hidden min-[1400px]:table-cell",
-  state: "w-[104px] hidden xl:table-cell",
-  ein: "w-[108px] hidden xl:table-cell",
-  owner: "w-[180px] hidden md:table-cell",
-  filings: "w-[80px] hidden md:table-cell",
-  score: "w-[116px]",
-  menu: "w-[44px]",
+const TONE_GLYPH: Record<Records["tone"], { icon: "check" | "warning" | "x" | null; cls: string; word: string }> = {
+  positive: { icon: "check", cls: "text-positive", word: "complete" },
+  neutral: { icon: null, cls: "", word: "" },
+  warning: { icon: "warning", cls: "text-warning", word: "needs attention" },
+  negative: { icon: "x", cls: "text-negative", word: "records disagree" },
 };
 
-/** "Missing: Registered agent, W-9 (+16)" — the points are what the record would gain. */
-function missingSummary(s: Score, max = 2): string {
-  if (!s.missing.length) return "All requirements on file";
-  const names = s.missing.slice(0, max).map((m) => m.label);
-  const more = s.missing.length - max;
-  return `Missing: ${names.join(", ")}${more > 0 ? ` +${more} more` : ""} (+${100 - s.score} pts)`;
-}
-
-const PERSON_PATH = "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z";
-
-/**
- * A trust isn't owned the way an LLC is — trustees act for it. Where an LLC
- * row offers an "Owned by" picker, a trust row names its trustees (edited on
- * the entity page, where the trust agreement fills them in).
- */
-function TrusteesCell({ a, t3, onOpen }: { a: Asset; t3: string; onOpen: () => void }) {
-  const names = (a.trustees ?? "").trim();
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      title={names ? `Trustees: ${names}` : "Add trustees on the entity page"}
-      className={`inline-flex max-w-full min-h-[32px] items-center gap-1.5 rounded-md text-left text-sm lg:text-xs cursor-pointer hover:underline decoration-dotted underline-offset-2 ${names ? "" : t3}`}
-    >
-      <Icon d={PERSON_PATH} className="w-3.5 h-3.5 shrink-0 opacity-60" />
-      <span className="truncate">{names ? `Trustees: ${names}` : "No trustees yet"}</span>
-    </button>
-  );
-}
-
-/** The compliance ring's colour — the entity page's scale (emerald ≥ 90, indigo ≥ 60, amber below). */
-function scoreTone(score: number, isDark: boolean): string {
-  if (score >= 90) return isDark ? "text-emerald-400" : "text-emerald-600";
-  if (score >= 60) return isDark ? "text-indigo-400" : "text-indigo-600";
-  return isDark ? "text-amber-400" : "text-amber-600";
-}
-/** The score number beside a ring: green when there, amber when far off, plain between. */
-function scoreText(score: number, isDark: boolean, plain: string): string {
-  return score >= 90 ? incomeTone(isDark) : score < 60 ? amberTone(isDark) : plain;
-}
-
-// ── Small pieces ────────────────────────────────────────────────────────────
-
-/** A completeness ring: the track plus an arc for the score. */
-function Ring({ score, size, isDark, stroke = 2, children }: { score: number; size: number; isDark: boolean; stroke?: number; children?: ReactNode }) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const off = c * (1 - Math.max(0, Math.min(100, score)) / 100);
-  return (
-    <span className={`relative inline-flex items-center justify-center shrink-0 ${scoreTone(score, isDark)}`} style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className={isDark ? "stroke-white/10" : "stroke-gray-200"} />
-        {score > 0 && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />}
-      </svg>
-      {children && <span className="absolute inset-0 flex items-center justify-center">{children}</span>}
-    </span>
-  );
-}
-
-// Tips warm up like the entity-tag tooltip: the first waits, the next ones
-// are instant for a moment so scanning a column reads as one gesture.
-let tipWarmUntil = 0;
-
-/**
- * A hover / focus card rendered through a portal (never clipped by the
- * table). The trigger is a real button so it takes keyboard focus and a tap
- * opens it on touch; the summary rides on aria-label for screen readers.
- */
-function Tip({ isDark, label, content, children, className = "", width = 232 }: { isDark: boolean; label: string; content: ReactNode; children: ReactNode; className?: string; width?: number }) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const timer = useRef<number | null>(null);
-  const shown = useRef(false);
-  const id = useId();
-  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
-  const show = () => {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    shown.current = true;
-    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
-    setPos(window.innerHeight - r.bottom > 220 ? { left, top: r.bottom + 8 } : { left, bottom: window.innerHeight - r.top + 8 });
-  };
-  const enter = () => {
-    if (Date.now() < tipWarmUntil) show();
-    else timer.current = window.setTimeout(show, 250);
-  };
-  const hide = () => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-    if (shown.current) tipWarmUntil = Date.now() + 400;
-    shown.current = false;
-    setPos(null);
-  };
-  useEffect(() => {
-    if (!pos) return;
-    const h = () => hide();
-    window.addEventListener("scroll", h, true);
-    window.addEventListener("resize", h);
-    return () => {
-      window.removeEventListener("scroll", h, true);
-      window.removeEventListener("resize", h);
-    };
-  }, [pos]);
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
-  return (
-    <>
-      <button
-        ref={ref}
-        type="button"
-        aria-label={label}
-        aria-describedby={pos ? id : undefined}
-        onMouseEnter={enter}
-        onMouseLeave={hide}
-        onFocus={show}
-        onBlur={hide}
-        onClick={show}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && pos) {
-            e.preventDefault();
-            hide();
-          }
-        }}
-        className={`inline-flex items-center rounded-md cursor-default ${className}`}
-      >
-        {children}
-      </button>
-      {pos &&
-        createPortal(
-          <div
-            id={id}
-            role="tooltip"
-            style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width }}
-            className={`z-[80] pointer-events-none rounded-xl border px-3 py-2.5 text-left tabular-nums ${
-              pos.top !== undefined ? "pop-in origin-top" : "pop-in-up origin-bottom"
-            } ${popoverSurface(isDark)}`}
-          >
-            {content}
-          </div>,
-          document.body,
-        )}
-    </>
-  );
-}
-
-type RowAction = { label: string; run?: () => void; href?: string };
-
-/**
- * The row kebab: an anchored popover on sm+, a bottom sheet on phones (the
- * same idiom as the ledger's ⋯). Arrow keys move, Escape / Tab close, focus
- * returns to the trigger.
- */
-function RowMenu({ isDark, name, actions, onOpenChange, className = "" }: { isDark: boolean; name: string; actions: RowAction[]; onOpenChange?: (open: boolean) => void; className?: string }) {
-  const { t1, t3 } = tiers(isDark);
-  const smUp = useMedia("(min-width: 640px)");
-  const [open, setOpen] = useState(false);
-  const [sheet, setSheet] = useState(false);
-  const [box, setBox] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const focusFirst = useRef(false);
-  const W = 200;
-
-  const items = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>("[role='menuitem']") ?? []);
-  const setBoth = (v: boolean) => {
-    setOpen(v);
-    onOpenChange?.(v);
-  };
-  const close = (refocus: boolean) => {
-    setBoth(false);
-    setBox(null);
-    if (refocus) btnRef.current?.focus({ preventScroll: true });
-  };
-  const openMenu = (kbd: boolean) => {
-    focusFirst.current = kbd;
-    setSheet(!smUp);
-    setBoth(true);
-  };
-
-  useFocusTrap(panelRef, open && sheet, { initial: "container" });
-
-  useLayoutEffect(() => {
-    if (!open || sheet) return;
-    const r = btnRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const h = actions.length * 32 + 10;
-    const left = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
-    setBox(window.innerHeight - r.bottom > h + 12 ? { left, top: r.bottom + 6 } : { left, bottom: window.innerHeight - r.top + 6 });
-  }, [open, sheet, actions.length]);
-
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  useEffect(() => {
-    if (!open) return;
-    if (focusFirst.current) {
-      focusFirst.current = false;
-      requestAnimationFrame(() => items()[0]?.focus());
-    }
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
-      closeRef.current(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeRef.current(true);
-      }
-    };
-    const onScroll = (e: Event) => {
-      if (panelRef.current?.contains(e.target as Node)) return;
-      if (!sheet) closeRef.current(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onScroll, true);
-    };
-  }, [open, sheet]);
-
-  const onPanelKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Tab") {
-      if (!sheet) close(false);
-      return;
-    }
-    const list = items();
-    if (!list.length) return;
-    const i = list.indexOf(document.activeElement as HTMLElement);
-    let next = -1;
-    if (e.key === "ArrowDown") next = (i + 1) % list.length;
-    else if (e.key === "ArrowUp") next = i < 0 ? list.length - 1 : (i - 1 + list.length) % list.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = list.length - 1;
-    if (next < 0) return;
-    e.preventDefault();
-    list[next].focus();
-  };
-
-  const itemSkin = isDark ? "text-gray-200 hover:bg-white/[0.08] focus-visible:bg-white/[0.08]" : "text-gray-800 hover:bg-gray-100 focus-visible:bg-gray-100";
-  const itemCls = sheet
-    ? `w-full min-h-[44px] px-3 rounded-lg text-base text-left inline-flex items-center gap-3 cursor-pointer transition-colors ${itemSkin}`
-    : `w-full h-8 px-2 rounded-lg text-xs text-left inline-flex items-center whitespace-nowrap cursor-pointer transition-colors ${itemSkin}`;
-  const renderItems = () =>
-    actions.map((a) =>
-      a.href ? (
-        <a key={a.label} role="menuitem" href={a.href} target="_blank" rel="noopener noreferrer" onClick={() => close(false)} className={itemCls}>
-          {a.label}
-          <Icon d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" className="ml-auto w-3 h-3 opacity-50" />
-        </a>
-      ) : (
-        <button
-          key={a.label}
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            // Refocus the kebab first so whatever the action opens records it.
-            close(true);
-            a.run?.();
-          }}
-          className={itemCls}
-        >
-          {a.label}
-        </button>
-      ),
-    );
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => (open ? close(false) : openMenu(false))}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
-            e.preventDefault();
-            if (open) items()[0]?.focus();
-            else openMenu(true);
-          }
-        }}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Actions for ${name}`}
-        className={`w-7 h-7 rounded-md inline-flex items-center justify-center cursor-pointer transition-[color,background-color,opacity] ${TAP.box} ${t3} ${
-          isDark
-            ? "hover:bg-white/[0.06] hover:text-white aria-expanded:bg-white/[0.08] aria-expanded:text-gray-100"
-            : "hover:bg-gray-100 hover:text-gray-900 aria-expanded:bg-gray-100 aria-expanded:text-gray-900"
-        } ${className}`}
-      >
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
-          <circle cx="5" cy="12" r="1.6" />
-          <circle cx="12" cy="12" r="1.6" />
-          <circle cx="19" cy="12" r="1.6" />
-        </svg>
-      </button>
-      {open &&
-        (sheet || box) &&
-        createPortal(
-          sheet ? (
-            <>
-              <div className="fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] fade-in" onClick={() => close(true)} aria-hidden />
-              <div
-                ref={panelRef}
-                role="menu"
-                aria-label={`Actions for ${name}`}
-                tabIndex={-1}
-                onKeyDown={onPanelKey}
-                className={`fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border flex flex-col pb-[max(env(safe-area-inset-bottom),12px)] sheet-in ${popoverSurface(isDark)}`}
-              >
-                <div className={`mx-auto mt-2 mb-1 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
-                <p className={`px-4 pt-2 pb-1 text-base font-semibold truncate ${t1}`}>{name}</p>
-                <div className="p-2">{renderItems()}</div>
-              </div>
-            </>
-          ) : (
-            <div
-              ref={panelRef}
-              role="menu"
-              aria-label={`Actions for ${name}`}
-              onKeyDown={onPanelKey}
-              style={{ position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: W }}
-              className={`z-[70] rounded-xl border p-1 ${box!.top !== undefined ? "pop-in origin-top" : "pop-in-up origin-bottom"} ${popoverSurface(isDark)}`}
-            >
-              {renderItems()}
-            </div>
-          ),
-          document.body,
-        )}
-    </>
-  );
-}
-
-// ── State filter: a mega menu ───────────────────────────────────────────────
-type StateChoice = { value: string; label: string; abbr?: string; count: number };
-
-/**
- * The toolbar's state filter. A wide panel under the trigger (a bottom sheet
- * on phones): a search field, the states in use with their entity counts,
- * then every other state in an alphabetical grid, plus "No state". Several
- * can be picked; the list shows entities in any of them. Arrow keys move
- * through the grid (up / down by row), typing jumps to a state, Space or
- * Enter toggles, Escape closes; focus stays inside until it does.
- */
-function StateMegaMenu({
-  isDark,
-  value,
-  onChange,
-  counts,
-  noState,
-}: {
-  isDark: boolean;
-  value: string[];
-  onChange: (v: string[]) => void;
-  /** Entities per state in use (canonical names). */
-  counts: Map<string, number>;
-  /** Entities with no state recorded. */
-  noState: number;
-}) {
-  const { t1, t2, t3 } = tiers(isDark);
-  const smUp = useMedia("(min-width: 640px)");
-  const [open, setOpen] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [sheet, setSheet] = useState(false);
-  const [q, setQ] = useState("");
-  const [box, setBox] = useState<{ left: number; top?: number; bottom?: number; width: number; maxH: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const closeTimer = useRef<number | null>(null);
-  const typed = useRef({ buf: "", at: 0 });
-  const titleId = useId();
-  const selected = useMemo(() => new Set(value), [value]);
-
-  const inUse: StateChoice[] = useMemo(
-    () => [
-      ...[...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, count]) => ({ value: name, label: name, abbr: STATE_ABBR.get(name), count })),
-      ...(noState ? [{ value: NO_STATE, label: "No state", count: noState }] : []),
-    ],
-    [counts, noState],
-  );
-  const others: StateChoice[] = useMemo(() => US_STATES.filter(([, name]) => !counts.has(name)).map(([abbr, name]) => ({ value: name, label: name, abbr, count: 0 })), [counts]);
-  const needle = q.trim().toLowerCase();
-  const hit = (c: StateChoice) => !needle || c.label.toLowerCase().includes(needle) || c.abbr?.toLowerCase() === needle || (c.value === NO_STATE && "none".startsWith(needle));
-  const shownInUse = inUse.filter(hit);
-  const shownOthers = others.filter(hit);
-
-  const text = value.length === 0 ? "All states" : value.length === 1 ? (value[0] === NO_STATE ? "No state" : value[0]) : `${value.length} states`;
-
-  useEffect(
-    () => () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    },
-    [],
-  );
-
-  function finishClose() {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-    setClosing(false);
-    setOpen(false);
-    setBox(null);
-    setQ("");
-  }
-  // The exit animation plays before unmount. Focus goes back to the trigger
-  // for every close the keyboard could have caused, not for a click elsewhere.
-  function requestClose(refocus: boolean) {
-    if (!open || closing) return;
-    setClosing(true);
-    if (refocus) btnRef.current?.focus({ preventScroll: true });
-    closeTimer.current = window.setTimeout(finishClose, 220);
-  }
-  function openPanel() {
-    if (closing) return;
-    setSheet(!smUp);
-    setOpen(true);
-  }
-  const toggle = (v: string) => onChange(selected.has(v) ? value.filter((x) => x !== v) : [...value, v]);
-
-  // The sheet is modal (scroll lock + trap); the popover wraps Tab itself.
-  // (The sheet takes focus on its container so the phone keyboard stays down.)
-  useFocusTrap(panelRef, open && sheet, { initial: "container" });
-  useEffect(() => {
-    if (open && !sheet) requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
-  }, [open, sheet]);
-
-  useLayoutEffect(() => {
-    if (!open || sheet || closing) return;
-    function place() {
-      const r = btnRef.current?.getBoundingClientRect();
-      if (!r) return;
-      const width = Math.min(window.innerWidth - 16, 600);
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-      const below = window.innerHeight - r.bottom - 16;
-      const above = r.top - 16;
-      setBox(
-        below < 360 && above > below
-          ? { left, bottom: window.innerHeight - r.top + 8, width, maxH: Math.min(560, above - 8) }
-          : { left, top: r.bottom + 8, width, maxH: Math.max(240, Math.min(560, below - 8)) },
-      );
-    }
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [open, sheet, closing]);
-
-  useEffect(() => {
-    if (!open || closing) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as Node;
-      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
-      requestClose(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, closing]);
-
-  const options = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>("[data-state-opt]") ?? []);
-  /** Up / down move by row through the grids (and across the two groups); left / right step. */
-  function moveFrom(cur: HTMLElement, dir: "up" | "down"): HTMLElement | undefined {
-    const r = cur.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cands = options()
-      .map((el) => ({ el, r: el.getBoundingClientRect() }))
-      .filter(({ r: o }) => (dir === "down" ? o.top >= r.bottom - 2 : o.bottom <= r.top + 2));
-    if (!cands.length) return undefined;
-    const rowY = dir === "down" ? Math.min(...cands.map((c) => c.r.top)) : Math.max(...cands.map((c) => c.r.top));
-    const row = cands.filter((c) => Math.abs(c.r.top - rowY) < 4);
-    row.sort((a, b) => Math.abs(a.r.left + a.r.width / 2 - cx) - Math.abs(b.r.left + b.r.width / 2 - cx));
-    return row[0]?.el;
-  }
-
-  function onPanelKey(e: ReactKeyboardEvent<HTMLDivElement>) {
-    // Keys typed here never reach the map's window shortcuts (F fits, +/− zoom).
-    e.stopPropagation();
-    if (e.key === "Escape") {
-      e.preventDefault();
-      requestClose(true);
-      return;
-    }
-    if (e.key === "Tab" && !sheet) {
-      const list = Array.from(panelRef.current?.querySelectorAll<HTMLElement>("input, button:not([disabled])") ?? []).filter((el) => el.offsetParent !== null);
-      if (!list.length) return;
-      const first = list[0];
-      const last = list[list.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-      return;
-    }
-    const active = document.activeElement as HTMLElement | null;
-    const list = options();
-    if (active === searchRef.current) {
-      if (e.key === "ArrowDown" && list.length) {
-        e.preventDefault();
-        list[0].focus();
-      } else if (e.key === "Enter" && needle && list.length) {
-        e.preventDefault();
-        list[0].click();
-      }
-      return;
-    }
-    const i = active ? list.indexOf(active) : -1;
-    if (i < 0) return;
-    let next: HTMLElement | undefined;
-    if (e.key === "ArrowRight") next = list[Math.min(i + 1, list.length - 1)];
-    else if (e.key === "ArrowLeft") next = list[Math.max(i - 1, 0)];
-    else if (e.key === "ArrowDown") next = moveFrom(active!, "down");
-    else if (e.key === "ArrowUp") {
-      next = moveFrom(active!, "up");
-      if (!next) next = searchRef.current ?? undefined;
-    } else if (e.key === "Home") next = list[0];
-    else if (e.key === "End") next = list[list.length - 1];
-    else if (e.key.length === 1 && /\S/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      // Typeahead: letters build a prefix for a moment, then reset.
-      const now = Date.now();
-      const t = typed.current;
-      t.buf = now - t.at > 700 ? e.key.toLowerCase() : t.buf + e.key.toLowerCase();
-      t.at = now;
-      const label = (el: HTMLElement) => (el.dataset.label ?? "").toLowerCase();
-      const start = t.buf.length === 1 ? i + 1 : i;
-      next = [...list.slice(start), ...list.slice(0, start)].find((el) => label(el).startsWith(t.buf));
-    } else return;
-    e.preventDefault();
-    next?.focus();
-    next?.scrollIntoView({ block: "nearest" });
-  }
-
-  // ── Skins ──
-  const trigger = `group/menu inline-flex items-center gap-1.5 h-[40px] sm:h-9 pl-4 pr-3 rounded-full border text-sm font-medium whitespace-nowrap cursor-pointer transition-colors max-w-[240px] ${TAP.md} ${
-    isDark
-      ? "bg-white/[0.04] border-white/10 text-gray-200 hover:bg-white/[0.08] hover:border-white/15 aria-expanded:bg-white/[0.1] aria-expanded:border-white/20"
-      : "bg-white border-gray-200 text-gray-800 hover:bg-gray-50 hover:border-gray-300 aria-expanded:bg-gray-100 aria-expanded:border-gray-300"
-  }`;
-  const hl = isDark ? "hover:bg-white/[0.08] focus-visible:bg-white/[0.08]" : "hover:bg-gray-100 focus-visible:bg-gray-100";
-  const optCls = `group/opt w-full min-w-0 flex items-center rounded-lg text-left cursor-pointer transition-colors focus-visible:outline-0! ${
-    isDark ? "focus-visible:ring-1 focus-visible:ring-white/25" : "focus-visible:ring-1 focus-visible:ring-gray-300"
-  } ${hl} ${sheet ? "min-h-[44px] px-2.5 gap-2.5 text-[15px]" : "h-8 px-2 gap-2 text-xs"}`;
-  const check = (on: boolean) => (
-    <span
-      aria-hidden
-      className={`shrink-0 inline-flex items-center justify-center rounded-[4px] border transition-colors ${sheet ? "w-[18px] h-[18px]" : "w-[14px] h-[14px]"} ${
-        on
-          ? isDark
-            ? "bg-indigo-500 border-indigo-500 text-white"
-            : "bg-indigo-600 border-indigo-600 text-white"
-          : isDark
-            ? "border-white/25 group-hover/opt:border-white/40"
-            : "border-gray-300 group-hover/opt:border-gray-400"
-      }`}
-    >
-      {on && <Icon d={PATHS.check} strokeWidth={3} className={sheet ? "w-3 h-3" : "w-2.5 h-2.5"} />}
-    </span>
-  );
-  const option = (c: StateChoice, withCount: boolean) => {
-    const on = selected.has(c.value);
-    return (
-      <button
-        key={c.value}
-        type="button"
-        role="checkbox"
-        aria-checked={on}
-        data-state-opt
-        data-label={c.label}
-        onClick={() => toggle(c.value)}
-        title={c.label}
-        className={`${optCls} ${on ? `font-medium ${t1}` : isDark ? "text-gray-300" : "text-gray-700"}`}
-      >
-        {check(on)}
-        <span className={`truncate flex-1 ${c.value === NO_STATE && !on ? t2 : ""}`}>{c.label}</span>
-        {withCount && <span className={`shrink-0 tabular-nums ${on ? t2 : t3}`}>{c.count}</span>}
-      </button>
-    );
-  };
-  const head = (label: string, note?: string) => (
-    <p className={`flex items-baseline gap-2 px-2 pt-2 pb-1 text-xs font-medium ${t2}`}>
-      {label}
-      {note && <span className={`font-normal ${t3}`}>{note}</span>}
-    </p>
-  );
-  const smallBtn = `${BTN_BASE} ${sheet ? "h-[40px] px-5 text-sm" : "h-7 px-3 text-xs"}`;
-
-  const panelBody = (
-    <>
-      <div className={`shrink-0 border-b ${sheet ? "px-3 pt-1 pb-2.5" : "p-2.5"} ${hairline(isDark)}`}>
-        <div className="relative">
-          <Icon d={PATHS.search} strokeWidth={2} className={`absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${t3}`} />
-          <input
-            ref={searchRef}
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search states…"
-            aria-label="Search states"
-            className={`w-full rounded-full border pl-8 [&::-webkit-search-cancel-button]:appearance-none ${
-              sheet ? "h-[40px] pr-3.5 text-[16px] placeholder:text-base" : "h-8 pr-3 text-xs focus-visible:outline-0!"
-            } ${textInput(isDark)}`}
-          />
-        </div>
-      </div>
-      <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain ${sheet ? "px-2 pb-2" : "px-1.5 pb-1.5"}`}>
-        {shownInUse.length === 0 && shownOthers.length === 0 && <p className={`px-2 py-3 text-xs ${t2}`}>No states match.</p>}
-        {shownInUse.length > 0 && (
-          <div role="group" aria-label="States in use">
-            {head("States in use", "entities")}
-            <div className={`grid gap-x-1 ${sheet ? "grid-cols-1" : "grid-cols-3"}`}>{shownInUse.map((c) => option(c, true))}</div>
-          </div>
-        )}
-        {shownOthers.length > 0 && (
-          <div role="group" aria-label="Other states" className={shownInUse.length ? `mt-1.5 border-t pt-0.5 ${hairline(isDark)}` : ""}>
-            {head(shownInUse.length ? "Other states" : "States")}
-            <div className={`grid gap-x-1 ${sheet ? "grid-cols-2" : "grid-cols-4"}`}>{shownOthers.map((c) => option(c, false))}</div>
-          </div>
-        )}
-      </div>
-      <div className={`shrink-0 flex items-center gap-2 border-t ${sheet ? "px-4 pt-2.5" : "px-3 py-2"} ${hairline(isDark)}`}>
-        <p className={`flex-1 min-w-0 truncate text-xs ${t2}`} aria-live="polite">
-          {value.length === 0 ? "Showing every state" : `${value.length} selected · entities in any of them`}
-        </p>
-        <button type="button" onClick={() => onChange([])} disabled={value.length === 0} className={`${smallBtn} ${ghostBtn(isDark)}`}>
-          Clear
-        </button>
-        <button type="button" onClick={() => requestClose(true)} className={`${smallBtn} ${primaryBtn(isDark)}`}>
-          Done
-        </button>
-      </div>
-    </>
-  );
-
-  const enter = sheet ? "sheet-in" : box?.bottom !== undefined ? "pop-in-up origin-bottom" : "pop-in origin-top";
-  const exit = sheet ? "sheet-out" : box?.bottom !== undefined ? "pop-out-up" : "pop-out";
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => (open ? requestClose(false) : openPanel())}
-        onKeyDown={(e) => {
-          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-            e.preventDefault();
-            openPanel();
-          }
-        }}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={`State: ${text}`}
-        className={trigger}
-      >
-        {value.length > 0 && <span aria-hidden className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? "bg-indigo-400" : "bg-indigo-600"}`} />}
-        <span className="truncate">{text}</span>
-        <Icon d={PATHS.chevron} strokeWidth={2} className={`w-3 h-3 shrink-0 opacity-50 transition-[rotate] motion-reduce:transition-none ${open && !closing ? "rotate-180" : ""}`} />
-      </button>
-      {open &&
-        (sheet || box) &&
-        createPortal(
-          <>
-            {sheet && <div className={`fixed inset-0 z-[69] bg-black/50 backdrop-blur-[2px] ${closing ? "fade-out" : "fade-in"}`} onClick={() => requestClose(true)} aria-hidden />}
-            <div
-              ref={panelRef}
-              role="dialog"
-              aria-modal={sheet || undefined}
-              aria-label={sheet ? undefined : "Filter by state"}
-              aria-labelledby={sheet ? titleId : undefined}
-              onKeyDown={onPanelKey}
-              onAnimationEnd={(e) => {
-                if (closing && e.target === e.currentTarget) finishClose();
-              }}
-              style={sheet ? { position: "fixed", left: 0, right: 0, bottom: 0 } : { position: "fixed", left: box!.left, top: box!.top, bottom: box!.bottom, width: box!.width, maxHeight: box!.maxH }}
-              className={`z-[70] border overflow-hidden flex flex-col tabular-nums ${
-                sheet ? "rounded-t-2xl max-h-[82vh] pb-[max(env(safe-area-inset-bottom),12px)]" : "rounded-xl"
-              } ${closing ? `${exit} pointer-events-none` : enter} ${popoverSurface(isDark)}`}
-            >
-              {sheet && (
-                <>
-                  <div className={`mx-auto mt-2 h-1 w-10 rounded-full shrink-0 ${isDark ? "bg-white/20" : "bg-gray-300"}`} aria-hidden />
-                  <p id={titleId} className={`px-4 pt-2 pb-1.5 text-base font-semibold ${t1}`}>
-                    State
-                  </p>
-                </>
-              )}
-              {panelBody}
-            </div>
-          </>,
-          document.body,
-        )}
-    </>
-  );
-}
-
-// ── Page ────────────────────────────────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────────────────
 
 export default function Assets() {
-  // An invited entity owner sees only their own entities, as a simple list.
+  // An invited entity owner sees only the entities shared with them.
   if (isPartner()) return <PartnerEntities />;
   return <StaffAssets />;
 }
 
 /** A partner's front page: the entities they've been given, each with what's on file. */
 function PartnerEntities() {
-  const { theme } = useTheme();
-  const dark = theme === "dark";
-  const [list, setList] = useState<{ id: string; name: string; type?: string; state?: string; files: number }[] | null>(null);
-  const me = getUser();
+  useDocumentTitle("Entities");
+  const [list, setList] = useState<{ id: string; name: string; type: EntityType; state: string; files: number }[] | null>(null);
+  const first = getUser()?.name?.trim().split(/\s+/)[0];
   useEffect(() => {
     let live = true;
     void (async () => {
-      const { db, ref, get, authReady } = await import("../store");
-      await authReady;
+      const { db, ref, get } = await import("../store");
       const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string; type?: string; state?: string; documents?: Record<string, unknown> }>;
       if (live)
         setList(
           Object.entries(all)
-            .map(([id, a]) => ({ id, name: a?.name ?? "Entity", type: a?.type, state: a?.state, files: Object.keys(a?.documents ?? {}).length }))
+            .map(([id, a]) => ({ id, name: a?.name ?? "Entity", type: entityType(a ?? {}), state: formedIn(a ?? {}), files: Object.keys(a?.documents ?? {}).length }))
             .sort((a, b) => a.name.localeCompare(b.name)),
         );
     })().catch(() => live && setList([]));
@@ -882,184 +155,101 @@ function PartnerEntities() {
       live = false;
     };
   }, []);
-  const first = me?.name?.trim().split(/\s+/)[0];
   return (
-    <div className="mx-auto max-w-[880px] pt-4 sm:pt-10">
-      <p className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${dark ? "text-gray-500" : "text-gray-500"}`}>Burton Family Office</p>
-      <h1 className="mt-2 font-brand text-[30px] leading-tight sm:text-[38px]">{first ? `Welcome, ${first}.` : "Welcome."}</h1>
-      <p className={`mt-2 text-[14px] ${dark ? "text-gray-400" : "text-gray-600"}`}>The entities you're part of. Open one to see its documents and who owns it.</p>
-      <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {list === null ? (
-          [0, 1].map((i) => <div key={i} className="shimmer h-[104px] rounded-2xl" />)
-        ) : list.length === 0 ? (
-          <p className={`text-[13px] ${dark ? "text-gray-500" : "text-gray-500"}`}>Nothing has been shared with you yet.</p>
-        ) : (
-          list.map((e) => (
-            <Link
-              key={e.id}
-              to={`/assets/${e.id}`}
-              className={`group rounded-2xl border p-5 transition-colors ${dark ? "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]" : "border-gray-200 bg-white hover:border-gray-300"}`}
-            >
-              <span className="block font-brand text-[20px] leading-snug">{e.name}</span>
-              <span className={`mt-1 block text-[12.5px] ${dark ? "text-gray-500" : "text-gray-500"}`}>
-                {[e.type, e.state].filter(Boolean).join(" · ")}
-                {e.files ? ` · ${e.files} document${e.files === 1 ? "" : "s"}` : ""}
-              </span>
-              <span className={`mt-4 inline-flex items-center gap-1 text-[12.5px] font-medium ${dark ? "text-[#a5b4fc]" : "text-[#4f46e5]"}`}>Open →</span>
-            </Link>
-          ))
-        )}
-      </div>
-    </div>
+    <Page width="reading" header={<PageHeader title="Entities" context={`${first ? `Welcome, ${first}. ` : ""}The entities you're part of. Open one to see its documents and who owns it.`} />}>
+      {list === null ? (
+        <Skeleton kind="card" rows={3} />
+      ) : list.length === 0 ? (
+        <Empty title="Nothing shared yet" size="page">
+          When the office shares an entity with you, it appears here.
+        </Empty>
+      ) : (
+        <Card flush>
+          <List label="Your entities">
+            {list.map((e) => (
+              <ListRow key={e.id} to={`/assets/${e.id}`} title={e.name} secondary={[TYPE_LABEL[e.type], e.state, e.files ? format.count(e.files, "document") : ""].filter(Boolean).join(" · ")} />
+            ))}
+          </List>
+        </Card>
+      )}
+    </Page>
   );
 }
 
 function StaffAssets() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  useDocumentTitle("Entities");
   const navigate = useNavigate();
-  const [assets, setAssets] = useState<Asset[]>([]);
+  const phone = usePhone();
+  const writer = canWrite();
+  const admin = isAdmin();
+  const [assets, setAssets] = useState<Rec[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [toast, setToast] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
-  // "+ Entity" on the standalone Estate Map lands here with ?new=1.
+  const [reload, setReload] = useState(0);
+
+  // ── Dialogs ────────────────────────────────────────────────────────────
+  const [newOpen, setNewOpen] = useState(false);
+  const [wizard, setWizard] = useState(false);
+  const [ownerFor, setOwnerFor] = useState<{ id: string; proposed?: string } | null>(null);
+  const [initialsFor, setInitialsFor] = useState<string | null>(null);
+  const [recordsFor, setRecordsFor] = useState<string | null>(null);
+  const [checksOpen, setChecksOpen] = useState(false);
+  const [run, setRun] = useState<{ title: string; results: PalmRunResult[]; error?: string; mode?: PalmMode } | null>(null);
+  const [running, setRunning] = useState<string | null>(null);
+
+  // "+ Entity" elsewhere lands here with ?new=1; the estate map's old address with ?view=map.
   const [params, setParams] = useSearchParams();
   useEffect(() => {
-    if (params.get("new") !== "1") return;
-    setShowForm(true);
+    const wantNew = params.get("new") === "1";
+    const wantView = params.get("view");
+    if (!wantNew && !wantView) return;
+    if (wantNew) setNewOpen(true);
+    if (wantView === "map" || wantView === "list" || wantView === "cards") setChoice(wantView);
     const next = new URLSearchParams(params);
     next.delete("new");
+    next.delete("view");
     setParams(next, { replace: true });
   }, [params, setParams]);
-  const [scan, setScan] = useState<ScanProgress | null>(null);
 
-  // ── Sync everything with Palm, for every entity ──────────────────────────
-  // One run on the server (api/palm-sync.ts): each entity's state records (the
-  // billed part, priced here first), then its agent, Palm's copy and its mail.
-  const [palmMode, setPalmMode] = useState<PalmMode | null>(null);
+  // ── Load ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isAdmin()) return;
+    let unsubscribe: (() => void) | undefined;
     let alive = true;
-    palmCall<{ mode: PalmMode | null }>("status")
-      .then((r) => alive && setPalmMode(r.mode))
-      .catch(() => {});
+    void (async () => {
+      const { db, ref, onValue } = await import("../store");
+      if (!alive) return;
+      unsubscribe = onValue(
+        ref(db, "assets"),
+        (snap) => {
+          const data = (snap.val() ?? {}) as Record<string, Omit<Rec, "id">>;
+          setAssets(
+            Object.entries(data)
+              .filter(([, v]) => v && typeof v.name === "string")
+              .map(([id, v]) => ({ ...v, id, type: entityType(v) })),
+          );
+          setLoadError("");
+          setLoading(false);
+        },
+        () => {
+          setLoadError("Couldn't load the entities. Check your connection and try again.");
+          setLoading(false);
+        },
+      );
+    })().catch(() => {
+      if (!alive) return;
+      setLoadError("Couldn't load the entities. Check your connection and try again.");
+      setLoading(false);
+    });
     return () => {
       alive = false;
+      unsubscribe?.();
     };
-  }, []);
-  const palmPlan = useMemo(() => {
-    // Records read in the last day are kept by the server's sync, so they cost nothing here.
-    const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode, { freshMs: SYNC_FRESH_MS }) }));
-    return {
-      cents: per.reduce((n, x) => n + x.cost.cents, 0),
-      states: per.reduce((n, x) => n + x.cost.states.length, 0),
-      entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]?.businessId).length,
-    };
-  }, [assets, palmMode]);
-  const [palmSync, setPalmSync] = useState<{ running: boolean; results: PalmSyncResult[]; error?: string; mode?: PalmMode; title?: string } | null>(null);
+  }, [reload]);
 
-  // ── Palm Monitor and the IRS EIN check, for every entity ─────────────────
-  // What each would do and cost comes from the server (which registrations are
-  // already watched, which EINs already checked out), shown before anything runs.
-  type PalmChecksPlan = { mode: PalmMode; monitor: { count: number; cents: number; on: number; unidentified: number }; ein: { count: number; cents: number; settled: number } };
-  const [palmChecks, setPalmChecks] = useState<{ plan?: PalmChecksPlan; error?: string } | null>(null);
-  async function openPalmChecks() {
-    setPalmChecks({});
-    try {
-      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({ action: "plan" }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.message || "Couldn't reach Palm.");
-      setPalmChecks({ plan: j });
-    } catch (err) {
-      setPalmChecks({ error: (err as Error).message });
-    }
-  }
-  async function runPalmCheck(action: "monitor-all" | "ein-all") {
-    const plan = palmChecks?.plan;
-    if (!plan || palmSync?.running) return;
-    setPalmChecks(null);
-    const title = action === "monitor-all" ? "Palm Monitor" : "EINs checked with the IRS";
-    setPalmSync({ running: true, results: [], title });
-    try {
-      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({ action, mode: plan.mode }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.message || "Palm didn't finish.");
-      setPalmSync({ running: false, results: j.entities ?? [], mode: j.mode, title });
-    } catch (err) {
-      setPalmSync({ running: false, results: [], error: (err as Error).message, title });
-    }
-  }
-
-  async function syncAllWithPalm() {
-    if (!palmMode || palmSync?.running) return;
-    const live = palmMode === "live";
-    const ok = await confirmDialog({
-      title: `Sync ${palmPlan.entities} ${palmPlan.entities === 1 ? "entity" : "entities"} with Palm?`,
-      message: live ? (
-        <>
-          Reading {palmPlan.states} state {palmPlan.states === 1 ? "record" : "records"} is billed by Palm: about <b>{dollars(palmPlan.cents)}</b>. Everything else is free.
-        </>
-      ) : (
-        "Palm is in test mode: nothing is billed, and the records come from its sandbox."
-      ),
-      details: [
-        "Each entity's state record is read in its home state and every state it's registered in as a foreign entity ($1.29 with a file number on record, $2.04 without). Records read in the last day are kept, not read again.",
-        "For entities Palm holds: their agent, Palm's copy of the business, their mail (saved to Documents) and Palm's open questions.",
-        "Nothing is filed with the state, and nothing on the record is overwritten: blanks are filled, differences are flagged.",
-        "It can take a few minutes.",
-      ],
-      confirmLabel: live && palmPlan.cents ? `Sync all · ${dollars(palmPlan.cents)}` : "Sync all",
-    });
-    if (!ok) return;
-    setPalmSync({ running: true, results: [] });
-    try {
-      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({}) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.message || "Couldn't sync with Palm.");
-      setPalmSync({ running: false, results: j.entities ?? [], mode: j.mode });
-    } catch (err) {
-      setPalmSync({ running: false, results: [], error: (err as Error).message });
-    }
-  }
-
-  /** Read every entity's documents and operating agreement, entity by entity. */
-  async function scanAll() {
-    const ok = await confirmDialog({
-      title: "Scan every entity's documents?",
-      message:
-        "Each document not read yet is read once and filed into its empty slot; blank facts are filled, the tax class is checked, and each operating agreement is read into the entity's profile. Nothing already on record is overwritten — disagreements are flagged.",
-      confirmLabel: "Scan all",
-    });
-    if (!ok) return;
-    const { db, authReady } = await import("../store");
-    await authReady;
-    const { ref, get, update } = await import("../store");
-    const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, any>;
-    setScan({ entity: "", index: 0, total: Object.keys(all).length, step: "Starting", notes: [], done: false });
-    try {
-      await scanAllEntities(all, (path, patch) => update(ref(db, path), patch), setScan);
-    } catch (err) {
-      console.error("scan failed", err);
-      setScan((s) => (s ? { ...s, done: true, paused: "The scan stopped on an error — run it again to pick up where it left off." } : s));
-    }
-  }
-  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [q, setQ] = useState("");
-  const [typeF, setTypeF] = useState<"all" | "LLC" | "C-Corp" | "LP" | "Trust">("all");
-  const [stateF, setStateF] = useState<string[]>([]);
-  const [attention, setAttention] = useState(false);
-  const [editingTag, setEditingTag] = useState<string | null>(null);
-  const [tagDraft, setTagDraft] = useState("");
-  const [copiedEin, setCopiedEin] = useState<string | null>(null);
-  const [menuRow, setMenuRow] = useState<string | null>(null);
-
-  const [choice, setChoice] = useState<EntView | null>(readStoredView);
-  const [narrow] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches);
-  const view: EntView = choice ?? (narrow ? "list" : "map");
-  const pickView = (v: EntView) => {
+  // ── View, filters, sort ────────────────────────────────────────────────
+  const [choice, setChoice] = useState<View | null>(storedView);
+  const view: View = choice ?? (phone ? "list" : "map");
+  const pickView = (v: View) => {
     setChoice(v);
     try {
       localStorage.setItem(VIEW_KEY, v);
@@ -1067,235 +257,101 @@ function StaffAssets() {
       /* the choice just doesn't persist */
     }
   };
+  const [q, setQ] = useState("");
+  const [typeF, setTypeF] = useState<"all" | EntityType>("all");
+  const [stateF, setStateF] = useState<string[]>([]);
+  const [recordsF, setRecordsF] = useState<"all" | "incomplete" | "disagree">("all");
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "name", dir: 1 });
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let alive = true;
-
-    async function setup() {
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, onValue, get, update } = await import("../store");
-
-      // (The browser used to seed entities, EINs, owners and tax classes
-      // from hard-coded tables on first load. Those were guesses — every
-      // LLC was stamped "Disregarded Entity" — so the record now comes only
-      // from people and from the documents on file.)
-
-      // One-time fix: early seeding saved every non-Inc entity as an "LLC",
-      // the family trust included. Store trusts as trusts.
-      if (!localStorage.getItem("bfo-trust-type-v1")) {
-        try {
-          const snap4 = await get(ref(db, "assets"));
-          const all4 = (snap4.val() || {}) as Record<string, { name?: string; type?: string }>;
-          for (const [fbId, v] of Object.entries(all4)) {
-            if (v?.type === "LLC" && /\btrust\b/i.test(v?.name ?? "")) {
-              await update(ref(db, `assets/${fbId}`), { type: "Trust" });
-            }
-          }
-          localStorage.setItem("bfo-trust-type-v1", "1");
-        } catch (err) {
-          console.error("Trust type fix error:", err);
-        }
-      }
-
-      if (!alive) return;
-      unsubscribe = onValue(
-        ref(db, "assets"),
-        (snapshot) => {
-          const data = snapshot.val();
-          if (data) {
-            const arr = Object.entries(data).map(([id, value]) => {
-              const a = { id, ...(value as Omit<Asset, "id">) };
-              // Old records stored the trust as an "LLC"; show its real type.
-              return { ...a, type: entityType(a) };
-            });
-            setAssets(arr);
-          } else {
-            setAssets([]);
-          }
-          setLoadError("");
-          setLoading(false);
-        },
-        (err) => {
-          console.error("Assets load error:", err);
-          setLoadError("Couldn't load entities.");
-          setLoading(false);
-        },
-      );
-    }
-
-    setup().catch((err) => {
-      console.error("Assets load error:", err);
-      if (!alive) return;
-      setLoadError("Couldn't load entities.");
-      setLoading(false);
-    });
-    return () => {
-      alive = false;
-      unsubscribe?.();
-    };
-  }, []);
-
-  async function handleCreate(fields: { name: string; type: "LLC" | "C-Corp" | "LP" | "Trust"; state: string; ein: string }) {
-    const { db } = await import("../store");
-    const { push, ref } = await import("../store");
-    await push(ref(db, "assets"), {
-      name: fields.name.trim(),
-      type: fields.type,
-      state: fields.state.trim(),
-      ein: fields.ein.trim(),
-      createdAt: Date.now(),
-    });
-  }
-
-  async function saveInitials(asset: Asset, raw: string) {
-    const initials = raw.trim().toUpperCase().slice(0, 4);
-    try {
-      const { db } = await import("../store");
-      const { ref, update } = await import("../store");
-      await update(ref(db, `assets/${asset.id}`), { initials });
-      // Books tags pick the change up immediately, not just next session.
-      setEntityTagLocal(asset.name, initials || null);
-    } catch {
-      setToast("Couldn't save those initials.");
-    }
-  }
-
-  function copyEin(ein: string) {
-    void navigator.clipboard?.writeText(ein).then(() => {
-      setCopiedEin(ein);
-      setTimeout(() => setCopiedEin(null), 1200);
-    });
-  }
-
-  async function updateOwner(assetId: string, ownerId: string) {
-    try {
-      const { db } = await import("../store");
-      const { ref, update } = await import("../store");
-      await update(ref(db, `assets/${assetId}`), { ownerId: ownerId || "" });
-    } catch {
-      setToast("Couldn't change the owner.");
-    }
-  }
-
-  // ── Derived data ─────────────────────────────────────────────────────────
+  // ── Derived ────────────────────────────────────────────────────────────
   const byId = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
-  const scores = useMemo(() => new Map<string, Score>(assets.map((a) => [a.id, entityCompleteness(a)])), [assets]);
-  const scoreOf = (a: Asset) => scores.get(a.id) ?? entityCompleteness(a);
-  // Children by owner (only owners that exist; a self-owner is a root).
-  const childrenOf = useMemo(() => {
-    const m = new Map<string, Asset[]>();
-    for (const a of assets) {
-      if (!a.ownerId || a.ownerId === a.id || !byId.has(a.ownerId)) continue;
-      const list = m.get(a.ownerId) ?? [];
-      list.push(a);
-      m.set(a.ownerId, list);
-    }
-    return m;
-  }, [assets, byId]);
-  const ownerName = (a: Asset) => (a.ownerId ? (byId.get(a.ownerId)?.name ?? "") : "");
+  const records = useMemo(() => new Map(assets.map((a) => [a.id, recordsOf(a, byId)])), [assets, byId]);
+  const taxes = useMemo(() => new Map(assets.map((a) => [a.id, taxLine(a, byId)])), [assets, byId]);
+  const owners = useMemo(() => new Map(assets.map((a) => [a.id, ownersOf(a, byId)])), [assets, byId]);
   const tagOf = (a: { name: string; initials?: string }) => a.initials || entityTag(a.name);
-  const filingCount = (a: Asset) => FILING_KEYS.filter((k) => !!a[k]).length;
+  const tags = assets.map((a) => ({ id: a.id, name: a.name, tag: tagOf(a) }));
+  const shared = sharedInitials(tags);
+  const live = assets.filter((a) => !isDissolved(a));
+  const dissolved = assets.length - live.length;
+  const choices = useMemo(() => stateChoices(assets), [assets]);
+  const rec = (a: Rec) => records.get(a.id)!;
 
-  function descendantsOf(id: string): Set<string> {
-    const out = new Set<string>();
-    const stack = [id];
-    while (stack.length) {
-      const cur = stack.pop()!;
-      for (const k of childrenOf.get(cur) ?? []) {
-        if (out.has(k.id)) continue;
-        out.add(k.id);
-        stack.push(k.id);
-      }
-    }
-    return out;
-  }
-
-  // Entities per state (US states folded to their names) for the state menu.
-  const stateCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const a of assets) {
-      const st = canonState(a.state);
-      if (st) m.set(st, (m.get(st) ?? 0) + 1);
-    }
-    return m;
-  }, [assets]);
-  const statelessCount = assets.filter((a) => !canonState(a.state)).length;
-  const inStates = (a: Asset) => !stateF.length || stateF.includes(canonState(a.state) || NO_STATE);
-
-  // ── Filtering ────────────────────────────────────────────────────────────
   const needle = q.trim().toLowerCase();
   const digits = needle.replace(/\D/g, "");
-  const filtered = Boolean(needle) || typeF !== "all" || stateF.length > 0 || attention;
-  const matches = (a: Asset) => {
+  const matches = (a: Rec) => {
     if (typeF !== "all" && a.type !== typeF) return false;
-    const st = (a.state || "").trim();
-    if (!inStates(a)) return false;
-    if (attention && scoreOf(a).score >= 100) return false;
-    return matchesNeedle(a, st);
-  };
-  function matchesNeedle(a: Asset, st = (a.state || "").trim()) {
+    if (!inStates(a, stateF)) return false;
+    if (recordsF === "incomplete" && rec(a).score >= 100) return false;
+    if (recordsF === "disagree" && !rec(a).conflicts.length) return false;
     if (!needle) return true;
     return (
       a.name.toLowerCase().includes(needle) ||
-      st.toLowerCase().includes(needle) ||
-      (a.ein || "").toLowerCase().includes(needle) ||
-      (digits.length >= 2 && (a.ein || "").replace(/\D/g, "").includes(digits)) ||
+      formedIn(a).toLowerCase().includes(needle) ||
+      (a.state ?? "").toLowerCase().includes(needle) ||
+      (digits.length >= 2 && (a.ein ?? "").replace(/\D/g, "").includes(digits)) ||
       tagOf(a).toLowerCase() === needle
     );
-  }
+  };
   const matched = assets.filter(matches);
   const matchedIds = new Set(matched.map((a) => a.id));
-  function clearFilters() {
+  const filtered = !!needle || typeF !== "all" || stateF.length > 0 || recordsF !== "all";
+  const clearFilters = () => {
     setQ("");
     setTypeF("all");
     setStateF([]);
-    setAttention(false);
-  }
+    setRecordsF("all");
+  };
+  const incomplete = live.filter((a) => rec(a).score < 100).length;
+  const disagree = live.filter((a) => rec(a).conflicts.length).length;
 
-  // ── Sorting ──────────────────────────────────────────────────────────────
-  // Sorting by Entity keeps the ownership tree (siblings ordered by name);
-  // any other column flattens the list so e.g. the weakest records rise to
-  // the top across the whole family. Blank values always sort last.
-  const treeMode = sort.key === "name";
-  const textKey = (a: Asset): string => {
+  const childrenOf = useMemo(() => {
+    const m = new Map<string, Rec[]>();
+    for (const a of assets) {
+      if (!a.ownerId || a.ownerId === a.id || !byId.has(a.ownerId)) continue;
+      m.set(a.ownerId, [...(m.get(a.ownerId) ?? []), a]);
+    }
+    return m;
+  }, [assets, byId]);
+  const descendants = (id: string) => {
+    const out = new Set<string>();
+    const stack = [id];
+    while (stack.length) for (const k of childrenOf.get(stack.pop()!) ?? []) if (!out.has(k.id)) (out.add(k.id), stack.push(k.id));
+    return out;
+  };
+
+  const docsOn = (a: Rec) => CORE_DOCS.filter((d) => !!a[d.key as keyof Rec]).length;
+  const sortText = (a: Rec): string | number => {
     switch (sort.key) {
-      case "type":
-        return a.type || "";
-      case "llcType":
-        return a.llcType || "";
-      case "state":
-        return (a.state || "").trim();
-      case "ein":
-        return (a.ein || "").trim();
+      case "tax":
+        return taxes.get(a.id)?.value ?? "";
       case "owner":
-        return ownerName(a);
+        return (owners.get(a.id)?.[0]?.name ?? trustPeople(a)) || "";
+      case "docs":
+        return docsOn(a);
+      case "records":
+        return rec(a).score;
       default:
         return a.name;
     }
   };
-  const cmp = (a: Asset, b: Asset): number => {
-    const dir = sort.dir === "asc" ? 1 : -1;
-    if (sort.key === "score" || sort.key === "filings") {
-      const d = sort.key === "score" ? scoreOf(a).score - scoreOf(b).score : filingCount(a) - filingCount(b);
-      return d * dir || a.name.localeCompare(b.name);
-    }
-    const x = textKey(a);
-    const y = textKey(b);
+  const cmp = (a: Rec, b: Rec) => {
+    const x = sortText(a);
+    const y = sortText(b);
+    if (typeof x === "number" && typeof y === "number") return (x - y) * sort.dir || a.name.localeCompare(b.name);
     if (!x !== !y) return x ? -1 : 1;
-    return x.localeCompare(y) * dir || a.name.localeCompare(b.name);
+    return String(x).localeCompare(String(y)) * sort.dir || a.name.localeCompare(b.name);
   };
-  const onSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  const tree = sort.key === "name";
 
-  type Row = { asset: Asset; depth: number; kids: number; context: boolean };
-  // The tree: matches plus their ancestors (shown muted, for context), in
-  // pre-order. Cycles (A owns B owns A) fall back to roots so nothing hides.
-  function buildRows(respectCollapse: boolean): Row[] {
-    if (!treeMode) return [...matched].sort(cmp).map((asset) => ({ asset, depth: 0, kids: 0, context: false }));
+  type Row = { a: Rec; depth: number; kids: number; context: boolean };
+  // The tree: matches plus their owners (shown for context), in pre-order.
+  // Cycles (A owns B owns A) fall back to roots so nothing hides.
+  const buildRows = (respectCollapse: boolean): Row[] => {
+    if (!tree) return [...matched].sort(cmp).map((a) => ({ a, depth: 0, kids: 0, context: false }));
     const visible = new Set<string>();
     for (const a of matched) {
-      let cur: Asset | undefined = a;
+      let cur: Rec | undefined = a;
       const guard = new Set<string>();
       while (cur && !guard.has(cur.id)) {
         guard.add(cur.id);
@@ -1303,32 +359,29 @@ function StaffAssets() {
         cur = cur.ownerId && cur.ownerId !== cur.id ? byId.get(cur.ownerId) : undefined;
       }
     }
-    const inSet = assets.filter((a) => visible.has(a.id));
     const kidsOf = (id: string) => (childrenOf.get(id) ?? []).filter((k) => visible.has(k.id)).sort(cmp);
     const out: Row[] = [];
     const seen = new Set<string>();
-    const walk = (a: Asset, depth: number) => {
+    const walk = (a: Rec, depth: number) => {
       if (seen.has(a.id)) return;
       seen.add(a.id);
       const kids = kidsOf(a.id);
-      out.push({ asset: a, depth, kids: kids.length, context: !matchedIds.has(a.id) });
+      out.push({ a, depth, kids: kids.length, context: !matchedIds.has(a.id) });
       if (respectCollapse && collapsed.has(a.id)) {
-        // Mark the hidden subtree seen so the cycle sweep doesn't resurface it.
-        for (const d of descendantsOf(a.id)) seen.add(d);
+        for (const d of descendants(a.id)) seen.add(d);
         return;
       }
       for (const k of kids) walk(k, depth + 1);
     };
-    const roots = inSet.filter((a) => !a.ownerId || a.ownerId === a.id || !visible.has(a.ownerId)).sort(cmp);
-    for (const r of roots) walk(r, 0);
-    for (const a of inSet.sort(cmp)) if (!seen.has(a.id)) walk(a, 0);
+    const inSet = assets.filter((a) => visible.has(a.id)).sort(cmp);
+    for (const r of inSet.filter((a) => !a.ownerId || a.ownerId === a.id || !visible.has(a.ownerId))) walk(r, 0);
+    for (const a of inSet) if (!seen.has(a.id)) walk(a, 0);
     return out;
-  }
+  };
   const rows = buildRows(true);
   const cardRows = buildRows(false).filter((r) => !r.context);
   const parentIds = [...childrenOf.keys()];
-  const allExpanded = collapsed.size === 0;
-  const toggleNode = (id: string, open?: boolean) =>
+  const toggle = (id: string, open?: boolean) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
       const isOpen = !next.has(id);
@@ -1337,1215 +390,809 @@ function StaffAssets() {
       return next;
     });
 
-  const ownerOptions = (a: Asset) => {
-    // An entity can't be owned by itself or by anything beneath it.
-    const banned = descendantsOf(a.id);
-    banned.add(a.id);
-    if (a.ownerId) banned.delete(a.ownerId);
-    return [
-      { value: "", label: "No owner" },
-      ...[...assets]
-        .filter((o) => !banned.has(o.id))
-        .sort((x, y) => x.name.localeCompare(y.name))
-        .map((o) => ({
-          value: o.id,
-          label: o.name,
-          icon: <span className={`${TAG_PILL} ${entityTagClass(o.name, isDark)}`}>{tagOf(o)}</span>,
-        })),
-    ];
-  };
+  // ── EINs: masked; staff may show one for 30 seconds ────────────────────
+  const [shown, setShown] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!shown.size) return;
+    const t = window.setTimeout(() => setShown(new Map([...shown].filter(([, until]) => until > Date.now()))), 1000);
+    return () => window.clearTimeout(t);
+  }, [shown]);
+  const reveal = (id: string) => setShown((m) => new Map(m).set(id, Date.now() + 30_000));
+  const copyEin = (ein: string) =>
+    void navigator.clipboard
+      ?.writeText(ein)
+      .then(() => toast({ message: "Copied the EIN" }))
+      .catch(() => toast({ message: "Couldn't copy. Select the EIN and copy it instead." }));
 
-  // ── Summary (the filtered set, like the ledger's strip) ──────────────────
-  const total = matched.length;
-  const llcs = matched.filter((a) => a.type === "LLC").length;
-  const corps = matched.filter((a) => a.type === "C-Corp").length;
-  const trusts = matched.filter((a) => a.type === "Trust").length;
-  const stateCount = new Set(matched.map((a) => (a.state || "").trim()).filter(Boolean)).size;
-  const avg = total ? Math.round(matched.reduce((s, a) => s + scoreOf(a).score, 0) / total) : 0;
-  const complete = matched.filter((a) => scoreOf(a).score >= 100).length;
-  const attentionAll = assets.filter((a) => scoreOf(a).score < 100).length;
-  const attentionShown = total - complete;
+  // ── Palm ───────────────────────────────────────────────────────────────
+  const [palmMode, setPalmMode] = useState<PalmMode | null>(null);
+  useEffect(() => {
+    if (!admin) return;
+    let alive = true;
+    palmCall<{ mode: PalmMode | null }>("status")
+      .then((r) => alive && setPalmMode(r.mode))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [admin]);
+  const palmPlan = useMemo(() => {
+    const per = assets.map((a) => ({ a, cost: stateReadCost(a, palmMode, { freshMs: SYNC_FRESH_MS }) }));
+    const states = per.flatMap((x) => x.cost.states.map((s) => ({ ...s, entity: x.a })));
+    const withNumber = states.filter((s) => s.cents === stateRecordCents(true) && palmMode === "live").length;
+    const skipped = assets.filter((a) => !statesToRead(a).length && !a.palm?.[palmMode ?? ""]);
+    return {
+      cents: per.reduce((n, x) => n + x.cost.cents, 0),
+      states: states.length,
+      withNumber,
+      withoutNumber: states.length - withNumber,
+      entities: per.filter((x) => x.cost.states.length || x.a.palm?.[palmMode ?? ""]).length,
+      skipped,
+    };
+  }, [assets, palmMode]);
+  const lastRead = useMemo(() => {
+    const times = assets.map((a) => a.stateRecord?.checkedAt ?? 0).filter(Boolean);
+    return times.length ? Math.max(...times) : null;
+  }, [assets]);
+  const readCount = assets.filter((a) => a.stateRecord?.checkedAt).length;
+  const readable = assets.filter((a) => statesToRead(a).length).length;
 
-  // ── Skins (books-shared tokens) ──────────────────────────────────────────
-  const { t1, t2, t3 } = tiers(isDark);
-  const card = `rounded-2xl border ${cardSurface(isDark)}`;
-  const rule = ruleBorder(isDark);
-  const hair = hairline(isDark);
-  const field = textInput(isDark);
-  const searchField = `h-[40px] sm:h-9 w-full pl-9 pr-4 rounded-full text-[16px] sm:text-sm placeholder:text-sm border cursor-text [&::-webkit-search-cancel-button]:appearance-none ${field}`;
-  const segContainer = `inline-flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"}`;
-  const segment = "inline-flex items-center justify-center h-full min-w-[44px] sm:min-w-0 px-3 rounded-full text-sm font-medium whitespace-nowrap transition-colors cursor-pointer";
-  const segOn = isDark ? "bg-white/[0.1] text-gray-100" : "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200";
-  const segOff = isDark ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]" : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
-  const viewSeg = `h-full w-[40px] sm:w-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${TAP.seg}`;
-  const hover = isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50";
-  // The row whose menu is open holds a tint, so it reads as "the one you touched".
-  const activeRow = isDark ? "bg-white/[0.04]" : "bg-gray-50";
-  const cell = "px-2 py-3.5 lg:py-3";
-  // "No owner" is the soft pill with its fill withdrawn until hover, so the
-  // column only speaks where there is an owner.
-  const noOwner = isDark
-    ? "[&>button]:text-gray-500 [&>button:not(:hover):not([aria-expanded=true])]:bg-transparent"
-    : "[&>button]:text-gray-500/100 [&>button:not(:hover):not([aria-expanded=true])]:bg-transparent";
-  const chevBtn = `relative after:content-[''] after:absolute after:-inset-x-[10px] after:-inset-y-[13px] lg:after:inset-0 w-5 h-5 rounded-md inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors ${t3} ${
-    isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"
-  }`;
-  const kpiSize = "text-xl lg:text-3xl leading-none";
-  const kpi = `block mt-1 ${kpiSize} font-semibold tracking-tight truncate`;
-
-  // ── Pieces shared by list and cards ──────────────────────────────────────
-  const tagChip = (a: Asset, touch = false) =>
-    editingTag === a.id ? (
-      <input
-        autoFocus
-        value={tagDraft}
-        aria-label={`Initials for ${a.name}`}
-        onChange={(e) => setTagDraft(e.target.value.toUpperCase().slice(0, 4))}
-        onBlur={() => {
-          void saveInitials(a, tagDraft);
-          setEditingTag(null);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") {
-            e.preventDefault();
-            setEditingTag(null);
+  async function syncWithPalm() {
+    if (!palmMode || running) return;
+    const live = palmMode === "live";
+    const why = (a: Rec) => (entityType(a) === "Trust" ? "a trust has no state record" : isDissolved(a) ? "dissolved" : isForming(a) ? "still being formed" : !formedIn(a) ? "no state on record" : "nothing to read");
+    const skipped = palmPlan.skipped;
+    const ok = await confirm({
+      title: `Sync ${palmPlan.entities} of ${format.count(assets.length, "entity", "entities")} with Palm?`,
+      message:
+        "Reads each entity's state record in its home state and each state it's registered in. Nothing is filed. Blanks are filled and differences are flagged, with two updates: where Palm has become the agent, the agent changes to Palm, and Palm's copy of each name is set to ours.",
+      details: [
+        ...(skipped.length ? [`Not synced: ${format.list(skipped.slice(0, 4).map((a) => `${a.name} (${why(a)})`))}${skipped.length > 4 ? ` and ${skipped.length - 4} more` : ""}.`] : []),
+        "Agent mail is saved to each entity's Documents, which anyone with access to that entity can see.",
+        ...(lastRead ? [`State records last read ${format.dateTime(new Date(lastRead))}. Records read in the last day aren't read or billed again.`] : []),
+        "It can take a few minutes.",
+      ],
+      receipt: live
+        ? {
+            lines: [
+              ...(palmPlan.withNumber ? [{ label: `${palmPlan.withNumber} with a file number × ${format.money(stateRecordCents(true) / 100)}`, cents: palmPlan.withNumber * stateRecordCents(true), estimate: true }] : []),
+              ...(palmPlan.withoutNumber ? [{ label: `${palmPlan.withoutNumber} without one × ${format.money(stateRecordCents(false) / 100)}`, cents: palmPlan.withoutNumber * stateRecordCents(false), estimate: true }] : []),
+              ...(!palmPlan.states ? [{ label: "No state records to read", cents: 0 }] : []),
+            ],
+            mode: "live",
           }
-        }}
-        className={`${touch ? "h-6 lg:h-5" : "h-5"} w-[52px] shrink-0 px-1.5 rounded-md text-xs font-semibold tracking-[0.04em] uppercase border focus-visible:outline-0! ${
-          isDark ? "bg-white/10 border-white/25 text-white" : "bg-white border-gray-300 text-gray-900"
-        }`}
-      />
-    ) : (
-      <button
-        type="button"
-        onClick={() => {
-          setEditingTag(a.id);
-          setTagDraft(tagOf(a));
-        }}
-        title="Edit initials"
-        aria-label={`Initials ${tagOf(a)} — edit`}
-        className={`${TAG_PILL} ${touch ? "h-6 px-2 lg:h-5 lg:px-1.5" : ""} ${TAP.line} cursor-pointer transition-[filter] hover:brightness-110 ${entityTagClass(a.name, isDark)}`}
-      >
-        {tagOf(a)}
-      </button>
-    );
+        : { lines: [{ label: `${format.count(palmPlan.states, "state record")}`, cents: 0 }], mode: "test" },
+      confirmLabel: live && palmPlan.cents ? `Sync for up to ${dollars(palmPlan.cents)}` : "Sync state records",
+      tone: "commit",
+    });
+    if (!ok) return;
+    setRunning("Syncing state records with Palm. This can take a few minutes.");
+    try {
+      // The mode and the approved amount travel with the request, so a switch to live (or a dearer plan) can be refused.
+      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({ mode: palmMode, maxCents: palmPlan.cents }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || "Couldn't sync with Palm.");
+      setRun({ title: "Synced with Palm", results: j.entities ?? [], mode: j.mode });
+    } catch (err) {
+      setRun({ title: "Sync with Palm", results: [], error: (err as Error).message });
+    } finally {
+      setRunning(null);
+    }
+  }
 
-  const typeBadge = (a: Asset) => (
-    <span
-      title={a.type === "LLC" && a.llcType ? `LLC · ${a.llcType}` : a.type}
-      className={`inline-flex items-center shrink-0 h-5 px-1.5 rounded-md text-xs font-medium leading-none ${
-        a.type === "C-Corp" || a.type === "Trust" || a.type === "LP"
-          ? isDark
-            ? "border border-white/15 text-gray-300"
-            : "border border-gray-300 text-gray-700"
-          : isDark
-            ? "bg-white/[0.05] text-gray-400"
-            : "bg-gray-100 text-gray-500/100"
-      }`}
-    >
-      {a.type || "—"}
-    </span>
-  );
+  async function runPalmCheck(action: "monitor-all" | "ein-all", plan: PalmChecksPlan) {
+    setChecksOpen(false);
+    const title = action === "monitor-all" ? "Palm Monitor" : "EINs checked with the IRS";
+    setRunning(action === "monitor-all" ? "Starting Palm Monitor on each registration." : "Checking EINs with the IRS through Palm.");
+    try {
+      const r = await authFetch("/api/palm-sync", { method: "POST", body: JSON.stringify({ action, mode: plan.mode, maxCents: action === "monitor-all" ? plan.monitor.cents : plan.ein.cents }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || "Palm didn't finish.");
+      setRun({ title, results: j.entities ?? [], mode: j.mode });
+    } catch (err) {
+      setRun({ title, results: [], error: (err as Error).message });
+    } finally {
+      setRunning(null);
+    }
+  }
 
-  const scoreCard = (a: Asset, s: Score) => (
+  // ── The document scan ──────────────────────────────────────────────────
+  const [scan, setScan] = useState<ScanProgress | null>(null);
+  const stopScan = useRef(false);
+  const unread = useMemo(() => {
+    let docs = 0;
+    let ents = 0;
+    for (const a of assets) {
+      const n = Object.values(a.documents ?? {}).filter((d) => d?.storagePath && /pdf|image\//i.test(d.contentType ?? "") && !(d.factsCheckedAt && d.classReadAt)).length;
+      docs += n;
+      if (n) ents++;
+    }
+    return { docs, ents };
+  }, [assets]);
+
+  async function scanAll() {
+    const ok = await confirm({
+      title: `Scan documents for ${format.count(assets.length, "entity", "entities")}?`,
+      message:
+        "Each document not read yet is sent to Anthropic (Claude) to be read. It's filed into its empty slot, and what it says fills blank facts; where it disagrees with the record, the difference is flagged, not written. Member lists read earlier from governing documents are read again.",
+      details: [
+        unread.docs ? `${format.count(unread.docs, "document")} not read yet, across ${format.count(unread.ents, "entity", "entities")}.` : "Every document has been read; only the operating agreements are checked again.",
+        "It runs in this tab: keep it open until it finishes. You can stop it at any time.",
+        "Each change shows in the entity's history as the document scan, started by you.",
+      ],
+      confirmLabel: "Scan documents",
+      tone: "commit",
+    });
+    if (!ok) return;
+    const { db, ref, get } = await import("../store");
+    const all = ((await get(ref(db, "assets"))).val() ?? {}) as Parameters<typeof scanAllEntities>[0];
+    stopScan.current = false;
+    const extra: string[] = [];
+    // The scan's writes are credited to the scan (api/tree.ts `source`), and an EIN that's
+    // already another entity's (a W-9 carrying its owner's number) is left off, not written.
+    const write = async (path: string, patch: Record<string, unknown>) => {
+      if (stopScan.current) throw new Stopped();
+      const send = (value: Record<string, unknown>) => authFetch("/api/tree", { method: "POST", body: JSON.stringify({ source: "scan", ops: [{ op: "update", path, value }] }) });
+      let r = await send(patch);
+      if (!r.ok && "ein" in patch) {
+        const j = await r.json().catch(() => ({}));
+        const { ein: _ein, ...rest } = patch;
+        void _ein;
+        extra.push(`${j.message ?? "An EIN read from a document wasn't recorded."} Not recorded; check the EIN letter.`);
+        r = await send(rest);
+      }
+      if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { message?: string }).message ?? "A change couldn't be saved.");
+    };
+    setScan({ entity: "", index: 0, total: Object.keys(all).length, step: "Starting", notes: [], done: false });
+    try {
+      const end = await scanAllEntities(all, write, (p) => {
+        if (stopScan.current) throw new Stopped();
+        setScan({ ...p, notes: [...p.notes, ...extra] });
+      });
+      setScan({ ...end, notes: [...end.notes, ...extra] });
+    } catch (err) {
+      setScan((s) => (s ? { ...s, done: true, paused: err instanceof Stopped ? "Stopped. Scan again to pick up where it left off." : `The scan stopped on an error: ${(err as Error).message} Scan again to pick up where it left off.` } : s));
+    } finally {
+      // The store learns of the scan's writes on its next poll; ask for it now.
+      window.dispatchEvent(new Event("focus"));
+    }
+  }
+
+  // ── Header ─────────────────────────────────────────────────────────────
+  const stateCount = new Set(live.map(formedIn).filter(Boolean)).size;
+  const avg = live.length ? Math.round(live.reduce((s, a) => s + rec(a).score, 0) / live.length) : 0;
+  const stale = lastRead != null && Date.now() - lastRead > STALE_MS;
+  const context = loading ? undefined : (
     <>
-      <div className="flex items-baseline justify-between gap-3">
-        <p className={`text-sm font-semibold ${t1}`}>Compliance {s.score}</p>
-        {s.missing.length > 0 && <p className={`text-xs ${t2}`}>+{100 - s.score} available</p>}
-      </div>
-      {s.missing.length > 0 ? (
-        <>
-          <p className={`mt-2.5 mb-1 ${MICRO} ${t2}`}>Missing</p>
-          <ul className="space-y-1">
-            {s.missing.map((m) => (
-              <li key={m.key} className="flex items-baseline justify-between gap-4 text-xs">
-                <span className={t1}>{m.label}</span>
-                <span className={t2}>+{Math.round((m.weight / s.items.reduce((n, i) => n + i.weight, 0)) * 100)}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : (
-        <p className={`mt-1 text-xs ${incomeTone(isDark)}`}>
-          Every requirement for {a.type === "C-Corp" ? "a C-Corp" : a.type === "Trust" ? "a trust" : a.type === "LP" ? "a limited partnership" : "an LLC"} is on file.
-        </p>
+      {format.count(live.length, "entity", "entities")}
+      {stateCount ? ` in ${format.count(stateCount, "state")}` : ""} · records {avg}% complete on average
+      {dissolved ? ` · ${dissolved} dissolved, not counted` : ""}
+      {lastRead != null && (
+        <span className={stale ? "text-warning" : undefined}>
+          {" "}
+          · state records read {format.date(new Date(lastRead))}
+          {readable ? ` (${readCount} of ${readable})` : ""}
+        </span>
       )}
     </>
   );
-
-  const filingsCard = (a: Asset, s: Score) => {
-    const filings = s.items.filter((i) => (FILING_KEYS as readonly string[]).includes(i.key));
-    return (
-      <>
-        <p className={`mb-1.5 ${MICRO} ${t2}`}>Filings</p>
-        <ul className="space-y-1">
-          {filings.map((f) => (
-            <li key={f.key} className="flex items-center gap-2 text-xs">
-              {f.done ? (
-                <Icon d={PATHS.check} strokeWidth={2.5} className={`w-3 h-3 shrink-0 ${incomeTone(isDark)}`} />
-              ) : (
-                <span aria-hidden className={`w-3 h-3 shrink-0 inline-flex items-center justify-center`}>
-                  <span className={`w-[7px] h-[7px] rounded-full border-[1.5px] ${isDark ? "border-white/30" : "border-gray-400"}`} />
-                </span>
-              )}
-              <span className={f.done ? t1 : t2}>{f.label}</span>
-              <span className={`ml-auto ${f.done ? t2 : amberTone(isDark)}`}>{f.done ? "On file" : "Missing"}</span>
-            </li>
-          ))}
-        </ul>
-        {a.stateLink && <p className={`mt-2 text-xs ${t2}`}>State filing link in the ⋯ menu.</p>}
-      </>
-    );
-  };
-
-  const filingPips = (a: Asset, s: Score) => {
-    const filings = s.items.filter((i) => (FILING_KEYS as readonly string[]).includes(i.key));
-    const on = filings.filter((f) => f.done);
-    // Trusts carry no filing slots, so there is nothing to show.
-    if (!filings.length) return null;
-    return (
-      <Tip
-        isDark={isDark}
-        label={`Filings: ${on.length} of ${filings.length} on file${
-          on.length < filings.length
-            ? ` — missing ${filings
-                .filter((f) => !f.done)
-                .map((f) => f.label)
-                .join(", ")}`
-            : ""
-        }`}
-        content={filingsCard(a, s)}
-        className={`h-7 px-1.5 -mx-1.5 gap-[4px] ${TAP.head} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
-      >
-        {filings.map((f) => (
-          <span
-            key={f.key}
-            aria-hidden
-            className={`w-[7px] h-[7px] rounded-full ${f.done ? (isDark ? "bg-emerald-400" : "bg-emerald-600") : `border-[1.5px] ${isDark ? "border-white/25" : "border-gray-300"}`}`}
-          />
-        ))}
-      </Tip>
-    );
-  };
-
-  const rowActions = (a: Asset): RowAction[] => [
-    { label: "Open entity", run: () => navigate(`/assets/${a.id}`) },
-    {
-      label: "Edit initials",
-      run: () => {
-        setEditingTag(a.id);
-        setTagDraft(tagOf(a));
-      },
-    },
-    ...(a.ein ? [{ label: "Copy EIN", run: () => copyEin(a.ein) }] : []),
-    ...(a.stateLink ? [{ label: "State filing", href: a.stateLink }] : []),
+  const scanning = !!scan && !scan.done;
+  const menu: MenuItem[] = [
+    ...(admin && palmMode
+      ? [
+          {
+            label: "Sync state records with Palm…",
+            hint: palmMode === "test" ? "Free in test mode" : palmPlan.cents ? `About ${dollars(palmPlan.cents)}` : "Free",
+            onSelect: () => void syncWithPalm(),
+            disabled: !!running,
+            disabledReason: "Running",
+          },
+          { label: "Monitor and verify with Palm…", onSelect: () => setChecksOpen(true), disabled: !!running, disabledReason: "Running" },
+        ]
+      : []),
+    ...(writer ? [{ label: "Scan documents…", hint: unread.docs ? `${unread.docs} unread` : undefined, onSelect: () => void scanAll(), disabled: scanning, disabledReason: "Scanning" }] : []),
   ];
 
-  // A column header: a sort button (ledger recipe — the caret is an arrow,
-  // revealed on hover, solid when active).
-  const th = (label: string, key: SortKey | null, className = "", extra?: ReactNode) => {
-    const thCls = `px-2 py-2.5 font-medium text-left ${className}`;
-    if (!key) {
-      return (
-        <th scope="col" className={thCls}>
-          {label}
-        </th>
-      );
+  // ── Row actions ────────────────────────────────────────────────────────
+  const rowItems = (a: Rec): MenuItem[] => [
+    ...(phone ? [{ label: "Open entity", onSelect: () => navigate(`/assets/${a.id}`) }, { label: `Records ${rec(a).score}%: what's missing`, onSelect: () => setRecordsFor(a.id) }] : []),
+    ...(writer && a.ein ? [{ label: "Copy EIN", onSelect: () => copyEin(a.ein!) }] : []),
+    ...(a.stateLink ? [{ label: "Open state filing", hint: "State's site", onSelect: () => window.open(a.stateLink, "_blank", "noopener,noreferrer") }] : []),
+    { label: "History", onSelect: () => navigate(`/assets/${a.id}/activity`) },
+    ...(writer
+      ? [
+          { divider: true as const },
+          { label: "Edit initials…", onSelect: () => setInitialsFor(a.id) },
+          ...(a.type !== "Trust" ? [{ label: "Change owner…", onSelect: () => setOwnerFor({ id: a.id }), disabled: !admin, disabledReason: "Owners and admins only" }] : []),
+        ]
+      : []),
+  ];
+
+  // ── Pieces ─────────────────────────────────────────────────────────────
+  const mark = (a: Rec) => (
+    <span aria-hidden="true" className="inline-flex h-6 min-w-[40px] shrink-0 items-center justify-center rounded-mark bg-sunken px-1 text-caption font-medium text-ink-2">
+      {tagOf(a)}
+    </span>
+  );
+  const sharedMark = (a: Rec) =>
+    shared.has(a.id) ? (
+      <Tooltip label={`Another entity also uses ${tagOf(a)}. Change one in ⋯ › Edit initials.`}>
+        <span className="inline-flex shrink-0 text-warning" role="img" aria-label="Initials shared with another entity">
+          <Icon name="warning" size={16} />
+        </span>
+      </Tooltip>
+    ) : null;
+  const exception = (a: Rec) => (isDissolved(a) ? "Dissolved" : isForming(a) ? "Forming" : null);
+
+  const einCell = (a: Rec, t: TaxLine) => {
+    if (!a.ein) return t.value === "Grantor trust" ? <span className="text-ink-3">Grantor&apos;s SSN</span> : null;
+    const open = (shown.get(a.id) ?? 0) > Date.now();
+    if (open) return <span className="font-mono text-small text-ink">{a.ein}</span>;
+    return writer ? (
+      <button type="button" onClick={() => reveal(a.id)} aria-label={`Show EIN for ${a.name}`} className="cursor-pointer rounded-control text-ink-2 tabular-nums hover:text-ink touch:min-h-[44px]">
+        {format.maskEin(a.ein)}
+      </button>
+    ) : (
+      <span className="text-ink-2 tabular-nums">{format.maskEin(a.ein)}</span>
+    );
+  };
+
+  const ownerText = (a: Rec): { text: string; more: string; full: string; none: boolean } => {
+    if (a.type === "Trust") {
+      const people = trustPeople(a);
+      return { text: people || "Trustees not recorded", more: "", full: people, none: !people };
     }
-    const active = sort.key === key;
+    const list = owners.get(a.id) ?? [];
+    if (!list.length) return { text: "Owner not recorded", more: "", full: "", none: true };
+    const changed = a.ownerChangedAt ? ` Recorded ${format.date(a.ownerChangedAt, "medium")}${a.ownerChangedBy?.name ? ` by ${a.ownerChangedBy.name}` : ""}${a.ownerEffective ? `, effective ${format.date(a.ownerEffective, "medium")}` : ""}.` : "";
+    return { text: ownerPhrase(list[0]), more: list.length > 1 ? `and ${format.count(list.length - 1, "other owner")}` : "", full: list.map(ownerPhrase).join(" · ") + changed, none: false };
+  };
+
+  const recordsTip = (a: Rec, slot = true) => {
+    const r = rec(a);
+    const g = TONE_GLYPH[r.tone];
     return (
-      <th scope="col" aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} className={`group/th ${thCls}`}>
-        <span className="inline-flex items-center gap-2">
+      <Popover
+        label={`Records: ${a.name}`}
+        width={340}
+        trigger={
           <button
             type="button"
-            onClick={() => onSort(key)}
-            className={`inline-flex items-center gap-1 h-6 -my-0.5 px-1.5 -mx-1.5 rounded-md cursor-pointer transition-colors ${TAP.head} ${
-              active ? t1 : isDark ? "hover:text-gray-100 hover:bg-white/[0.04]" : "hover:text-gray-900 hover:bg-gray-100"
-            }`}
+            aria-label={`Records ${r.score}%${g.word ? `, ${g.word}` : ""}`}
+            className="inline-flex cursor-pointer items-center gap-[6px] rounded-control text-body text-ink tabular-nums hover:text-ink touch:min-h-[44px]"
           >
-            {label}
-            <Icon
-              d={active && sort.dir === "asc" ? PATHS.up : PATHS.down}
-              strokeWidth={2}
-              className={`w-3 h-3 shrink-0 transition-opacity ${active ? "opacity-100" : "opacity-0 group-hover/th:opacity-60"}`}
-            />
+            {(slot || g.icon) && <span className={cx("inline-flex size-[16px] shrink-0", g.cls)}>{g.icon && <Icon name={g.icon} size={16} />}</span>}
+            {r.score}%
           </button>
-          {extra}
+        }
+      >
+        <RecordsCard a={a} r={r} />
+      </Popover>
+    );
+  };
+
+  const docsCell = (a: Rec) => {
+    if (a.type === "Trust") return null;
+    const on = docsOn(a);
+    const have = CORE_DOCS.filter((d) => !!a[d.key as keyof Rec]).map((d) => d.label);
+    const lack = CORE_DOCS.filter((d) => !a[d.key as keyof Rec]).map((d) => d.label);
+    return (
+      <Tooltip label={[have.length ? `On file: ${format.list(have)}.` : "", lack.length ? `Missing: ${format.list(lack)}.` : ""].filter(Boolean).join(" ")}>
+        <span tabIndex={0} className="rounded-control text-ink-2 tabular-nums">
+          {on} of {CORE_DOCS.length}
         </span>
+      </Tooltip>
+    );
+  };
+
+  const taxCell = (t: TaxLine) => (
+    <span className="flex min-w-0 flex-col" title={t.source ? `From ${t.source}` : undefined}>
+      <span className="truncate text-ink">
+        {taxLabel(t.value)}
+        {t.value && t.isDefault && <span className="text-ink-3"> (default)</span>}
+      </span>
+      {t.files && <span className="line-clamp-2 text-small text-ink-2">{t.files}</span>}
+    </span>
+  );
+
+  // ── Toolbar ────────────────────────────────────────────────────────────
+  const typeOptions: Option<"all" | EntityType>[] = [
+    { value: "all", label: "All types" },
+    { value: "LLC", label: "LLC" },
+    { value: "C-Corp", label: "Corporation" },
+    { value: "LP", label: "LP" },
+    { value: "Trust", label: "Trust" },
+  ];
+  const stateOptions: Option<string>[] = [
+    ...[...choices.formed.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n, c]) => ({ value: `formed:${n}`, label: n, short: `Formed in ${n}`, hint: String(c), group: "Formed in" })),
+    ...[...choices.foreign.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n, c]) => ({ value: `foreign:${n}`, label: n, short: `Registered in ${n}`, hint: String(c), group: "Registered in, as a foreign entity" })),
+    ...(choices.none ? [{ value: NO_STATE, label: "No state on record", hint: String(choices.none), group: "Formed in" }] : []),
+  ];
+  const recordsOptions: Option<"all" | "incomplete" | "disagree">[] = [
+    { value: "all", label: "All records" },
+    { value: "incomplete", label: "Incomplete", hint: String(incomplete) },
+    { value: "disagree", label: "Records disagree", hint: String(disagree) },
+  ];
+  const stateName = (v: string) => stateOptions.find((o) => o.value === v)?.short ?? stateOptions.find((o) => o.value === v)?.label ?? v;
+  const active = [
+    ...(typeF !== "all" ? [{ label: TYPE_LABEL[typeF], onRemove: () => setTypeF("all") }] : []),
+    ...stateF.map((v) => ({ label: stateName(v), onRemove: () => setStateF(stateF.filter((x) => x !== v)) })),
+    ...(recordsF !== "all" ? [{ label: recordsF === "incomplete" ? "Records incomplete" : "Records disagree", onRemove: () => setRecordsF("all") }] : []),
+  ];
+  const toolbar = (
+    <Toolbar
+      search={<SearchField value={q} onChange={setQ} placeholder="Search entities" label="Search entities by name, EIN, state or initials" />}
+      filters={
+        <>
+          <Select size="sm" label="Type" value={typeF} onChange={setTypeF} options={typeOptions} />
+          <MultiSelect size="sm" label="State" placeholder="All states" value={stateF} onChange={setStateF} options={stateOptions} footnote="Only states with entities on record are listed." />
+          <Select size="sm" label="Records" value={recordsF} onChange={setRecordsF} options={recordsOptions} />
+        </>
+      }
+      view={
+        <Segmented
+          label="View"
+          value={view}
+          onChange={pickView}
+          options={[
+            { value: "list", label: "List" },
+            { value: "cards", label: "Cards" },
+            { value: "map", label: "Map" },
+          ]}
+        />
+      }
+      activeFilters={active}
+      onClearFilters={clearFilters}
+    />
+  );
+
+  // ── Views ──────────────────────────────────────────────────────────────
+  const sortHead = (label: string, key: SortKey, className = "") => {
+    const on = sort.key === key;
+    return (
+      <th scope="col" aria-sort={on ? (sort.dir === 1 ? "ascending" : "descending") : "none"} className={cx("sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised px-3 text-left font-medium", className)}>
+        <button
+          type="button"
+          onClick={() => setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))}
+          className={cx("inline-flex cursor-pointer items-center gap-1 rounded-control text-caption font-medium hover:text-ink", on ? "text-ink" : "text-ink-2")}
+        >
+          {label}
+          {on && <Icon name={sort.dir === 1 ? "arrowUp" : "arrowDown"} size={12} />}
+        </button>
       </th>
     );
   };
 
-  // ── Toolbar pieces ───────────────────────────────────────────────────────
-  const searchBox = () => (
-    <div className="relative order-1 flex-1 min-w-0 lg:min-w-[10rem] lg:max-w-[20rem] xl:flex-none xl:w-72">
-      <Icon d={PATHS.search} className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${t3}`} strokeWidth={2} />
-      {/* data-page-search: "/" focuses it (the app's global shortcuts). */}
-      <input
-        type="search"
-        data-page-search
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        aria-label="Search entities by name, EIN or state"
-        placeholder="Search entities…"
-        className={searchField}
-      />
-    </div>
-  );
-  const typeSegments = () => (
-    <div role="group" aria-label="Entity type" className={segContainer}>
-      {(
-        [
-          ["all", "All"],
-          ["LLC", "LLC"],
-          ["C-Corp", "C-Corp"],
-          ["LP", "LP"],
-          ["Trust", "Trust"],
-        ] as const
-      ).map(([value, label]) => (
-        <button key={value} type="button" onClick={() => setTypeF(value)} aria-pressed={typeF === value} className={`${segment} ${TAP.seg} ${typeF === value ? segOn : segOff}`}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-  const stateMenu = () => <StateMegaMenu isDark={isDark} value={stateF} onChange={setStateF} counts={stateCounts} noState={statelessCount} />;
-  // On the map the state filter and the search light the matching entities (by name).
-  const mapHighlight = useMemo(
-    () => (stateF.length || needle ? new Set(assets.filter((a) => inStates(a) && matchesNeedle(a)).map((a) => a.name.toLowerCase())) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [assets, stateF, needle],
-  );
-  const attentionToggle = () => (
-    <button
-      type="button"
-      aria-pressed={attention}
-      onClick={() => setAttention((v) => !v)}
-      title="Compliance below 100"
-      className={`${BTN_BASE} h-[40px] sm:h-9 px-3.5 gap-2 text-sm whitespace-nowrap ${TAP.md} ${
-        attention
-          ? isDark
-            ? "border border-amber-500/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
-            : "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-          : outlineBtn(isDark)
-      }`}
-    >
-      <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${isDark ? "bg-amber-400" : "bg-amber-500"}`} />
-      Needs attention
-      <span className={`font-normal ${attention ? "" : t2}`}>{attentionAll}</span>
-    </button>
-  );
-  const clearButton = () => (
-    <button type="button" onClick={clearFilters} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${TAP.md} ${outlineBtn(isDark)}`}>
-      Clear
-    </button>
-  );
-  const viewToggle = () => (
-    <div role="group" aria-label="View" className={segContainer}>
-      {(
-        [
-          ["list", "List view", PATHS.list],
-          ["cards", "Card view", PATHS.grid],
-          ["map", "Map view", "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"],
-        ] as const
-      ).map(([v, name, d]) => (
-        <button key={v} type="button" aria-label={name} title={name} aria-pressed={view === v} onClick={() => pickView(v)} className={`${viewSeg} ${view === v ? segOn : segOff}`}>
-          <Icon d={d} className="w-3.5 h-3.5" />
-        </button>
-      ))}
-    </div>
-  );
-
-  // ── Strip ────────────────────────────────────────────────────────────────
-  const ready = !loading;
-  const strip: Array<{ label: string; value: string; tone?: string; sub?: ReactNode }> = [
-    { label: "Entities", value: String(total), sub: total ? `${complete} complete` : "—" },
-    { label: "LLCs", value: String(llcs) },
-    { label: trusts ? "C-Corps · Trusts" : "C-Corps", value: trusts ? `${corps} · ${trusts}` : String(corps) },
-    { label: "States", value: String(stateCount) },
-    {
-      label: "Avg compliance",
-      value: total ? `${avg}%` : "—",
-      tone: total && avg >= 100 ? incomeTone(isDark) : "",
-      sub: !total ? (
-        "—"
-      ) : attentionShown > 0 ? (
-        <button
-          type="button"
-          onClick={() => setAttention((v) => !v)}
-          aria-pressed={attention}
-          className={`relative cursor-pointer hover:underline underline-offset-2 ${TAP.line} ${amberTone(isDark)}`}
-        >
-          {attentionShown} need{attentionShown === 1 ? "s" : ""} attention
-        </button>
-      ) : (
-        <span className={incomeTone(isDark)}>All complete</span>
-      ),
-    },
-  ];
-  const stripBorder = ["", "border-l", "border-t md:border-t-0 md:border-l", "border-l border-t md:border-t-0", "col-span-2 md:col-span-1 border-t md:border-t-0 md:border-l"] as const;
-
-  // ── Skeletons ────────────────────────────────────────────────────────────
-  const bar = (cls: string) => <div className={`shimmer ${cls}`} aria-hidden />;
-  const listSkeleton = (
-    <table className="w-full table-fixed text-sm" aria-busy="true" aria-label="Loading entities">
-      <thead>
-        <tr className={`text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
-          <th scope="col" className="pl-4 pr-2 py-2.5 font-medium">
-            Entity
-          </th>
-          <th scope="col" className={`${COLS.type} px-2 py-2.5 font-medium`}>
-            Type
-          </th>
-          <th scope="col" className={`${COLS.llcType} px-2 py-2.5 font-medium`}>
-            Tax classification
-          </th>
-          <th scope="col" className={`${COLS.state} px-2 py-2.5 font-medium`}>
-            State
-          </th>
-          <th scope="col" className={`${COLS.ein} px-2 py-2.5 font-medium`}>
-            EIN
-          </th>
-          <th scope="col" className={`${COLS.owner} px-2 py-2.5 font-medium`}>
-            Owned by
-          </th>
-          <th scope="col" className={`${COLS.filings} px-2 py-2.5 font-medium`}>
-            Filings
-          </th>
-          <th scope="col" className={`${COLS.score} px-2 py-2.5 font-medium`}>
-            Compliance
-          </th>
-          <th scope="col" className={COLS.menu}>
-            <span className="sr-only">Actions</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {Array.from({ length: 8 }, (_, i) => (
-          <tr key={i} className={i === 0 ? "" : `border-t ${hair}`}>
-            <td className={`pl-4 pr-2 py-3.5 lg:py-3`}>
-              <div className="flex items-center gap-2" style={{ paddingLeft: [0, 18, 36, 36, 18, 36, 54, 0][i] }}>
-                {bar("w-5 h-3 opacity-0")}
-                {bar("h-5 w-9 rounded-md!")}
-                {bar("h-3 w-44")}
-              </div>
-            </td>
-            <td className={`${cell} ${COLS.type}`}>{bar("h-5 w-10 rounded-md!")}</td>
-            <td className={`${cell} ${COLS.llcType}`}>{bar("h-3 w-24")}</td>
-            <td className={`${cell} ${COLS.state}`}>{bar("h-3 w-14")}</td>
-            <td className={`${cell} ${COLS.ein}`}>{bar("h-3 w-20")}</td>
-            <td className={`${cell} ${COLS.owner}`}>{bar("h-7 w-32 rounded-full!")}</td>
-            <td className={`${cell} ${COLS.filings}`}>{bar("h-2 w-10")}</td>
-            <td className={`${cell} ${COLS.score}`}>{bar("h-3 w-12")}</td>
-            <td />
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-  const cardsSkeleton = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 p-4" aria-busy="true" aria-label="Loading entities">
-      {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className={`rounded-xl border p-3 flex flex-col gap-2.5 ${cardSurface(isDark)}`}>
-          <div className="flex items-center gap-3">
-            {bar("h-6 w-9 rounded-md!")}
-            <div className="flex-1 min-w-0">
-              {bar("h-3.5 w-2/3")}
-              {bar("mt-1.5 h-2.5 w-1/2")}
-            </div>
-            {bar("w-8 h-8 rounded-full!")}
-          </div>
-          {bar("h-2.5 w-3/4")}
-          <div className="flex items-center gap-2">
-            {bar("h-8 lg:h-7 w-36 rounded-full!")}
-            {bar("h-2 w-10")}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  // ── Render ───────────────────────────────────────────────────────────────
-  return (
-    <div className="w-full tabular-nums">
-      {/* Header: the actions wrap onto their own row when the title would be squeezed. */}
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 mb-5">
-        <div className="min-w-0 flex-1 basis-[14rem]">
-          <h1 className={`text-2xl font-semibold tracking-tight leading-tight ${t1}`}>Entities</h1>
-          <p className={`mt-1 text-xs ${t2}`}>
-            {loading ? (
-              <span className="shimmer inline-block h-[1em] w-40 rounded! align-middle" aria-hidden />
-            ) : (
-              <>
-                {assets.length} {assets.length === 1 ? "entity" : "entities"}
-                {attentionAll > 0 && (
-                  <>
-                    {" · "}
-                    {attentionAll} below 100%
-                  </>
-                )}
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {isAdmin() && palmMode && (
-            <button
-              type="button"
-              onClick={() => void syncAllWithPalm()}
-              disabled={!!palmSync?.running}
-              title="Every entity's state records, and for the ones Palm holds, their agent, Palm's copy and their mail"
-              aria-label={`Sync everything with Palm, ${palmMode === "test" ? "free in test mode" : palmPlan.cents ? `estimated ${dollars(palmPlan.cents)}` : "free"}`}
-              className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
-                isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <Icon
-                d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                strokeWidth={1.8}
-                className={`w-3.5 h-3.5 ${palmSync?.running && !palmSync.title ? "animate-spin" : ""}`}
-              />
-              <span className="max-sm:hidden">{palmSync?.running && !palmSync.title ? "Syncing with Palm…" : "Sync everything with Palm"}</span>
-              <span className={t2}>{palmMode === "test" ? "free in test mode" : palmPlan.cents ? `est. ${dollars(palmPlan.cents)}` : "free"}</span>
-            </button>
-          )}
-          {isAdmin() && palmMode && (
-            <button
-              type="button"
-              onClick={() => void openPalmChecks()}
-              disabled={!!palmSync?.running}
-              title="Palm Monitor on every registration, and every EIN checked with the IRS"
-              aria-label="Monitor and verify with Palm"
-              className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
-                isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <Icon
-                d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178zM15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                strokeWidth={1.8}
-                className="w-3.5 h-3.5"
-              />
-              <span className="max-sm:hidden">{palmSync?.running && palmSync.title ? "Working with Palm…" : "Monitor & verify"}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void scanAll()}
-            disabled={!!scan && !scan.done}
-            title="Read every entity's documents: file them, fill blank facts, check the tax class, and read each operating agreement"
-            className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 px-3.5 gap-1.5 text-sm ${TAP.md} disabled:opacity-60 disabled:cursor-wait ${
-              isDark ? "border border-white/15 text-gray-200 hover:bg-white/[0.06]" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            {scan && !scan.done ? `Scanning ${scan.index}/${scan.total}…` : "Scan all documents"}
-          </button>
-          <button type="button" onClick={() => setShowForm(true)} className={`${BTN_BASE} shrink-0 h-[40px] sm:h-9 pl-3.5 pr-4 gap-1.5 text-sm ${TAP.md} ${primaryBtn(isDark)}`}>
-            <Icon d="M12 4.5v15m7.5-7.5h-15" strokeWidth={2.2} className="w-3.5 h-3.5" />
-            New entity
-          </button>
-        </div>
-      </div>
-
-      {palmChecks &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center"
-            onClick={() => setPalmChecks(null)}
-            onKeyDown={(e) => e.key === "Escape" && setPalmChecks(null)}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Monitor and verify with Palm"
-              onClick={(e) => e.stopPropagation()}
-              className={`w-full max-w-[520px] overflow-hidden rounded-2xl border shadow-2xl ${isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"}`}
-            >
-              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
-                <p className="text-sm font-semibold">Monitor &amp; verify with Palm{palmChecks.plan?.mode === "test" ? " (test mode)" : ""}</p>
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={() => setPalmChecks(null)}
-                  className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
-                >
-                  Close
+  const table = (
+    <Card flush>
+      <table className="w-full table-fixed border-separate border-spacing-0 text-body text-ink">
+        <caption className="sr-only">Entities{tree ? ", by ownership" : ""}</caption>
+        <colgroup>
+          <col />
+          <col className="hidden w-[232px] lg:table-column" />
+          <col className="hidden w-[132px] xl:table-column" />
+          <col className="w-[200px]" />
+          <col className="hidden w-[124px] lg:table-column" />
+          <col className="w-[96px]" />
+          <col className="w-[52px]" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" aria-sort={tree ? "ascending" : "none"} className="sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised pr-3 pl-5 text-left font-medium">
+              <span className="flex items-center gap-3">
+                <button type="button" onClick={() => setSort({ key: "name", dir: 1 })} className={cx("inline-flex cursor-pointer items-center gap-1 text-caption font-medium hover:text-ink", tree ? "text-ink" : "text-ink-2")}>
+                  Entity
                 </button>
-              </div>
-              <div className="px-5 py-2">
-                {palmChecks.error ? (
-                  <p className="py-3 text-sm text-red-500">{palmChecks.error}</p>
-                ) : !palmChecks.plan ? (
-                  <p className={`py-3 text-sm ${t2}`}>Working out what's left to do…</p>
-                ) : (
-                  (() => {
-                    const p = palmChecks.plan;
-                    const live = p.mode === "live";
-                    const rows = [
-                      {
-                        key: "monitor-all" as const,
-                        title: "Watch every registration",
-                        text: `Palm tells you when a state's record changes and when a filing comes due or goes overdue. ${p.monitor.count ? `${p.monitor.count} not watched yet` : p.monitor.unidentified ? "None ready to watch" : "Every registration is watched"}${p.monitor.on ? ` · ${p.monitor.on} already on` : ""}${p.monitor.unidentified ? ` · ${p.monitor.unidentified} need a file number first (sync with Palm to read it)` : ""}.${live ? " $1.99 a month each while on; turn any off on its Compliance tab." : ""}`,
-                        count: p.monitor.count,
-                        label: `Watch ${p.monitor.count}${live && p.monitor.cents ? ` · ${dollars(p.monitor.cents)}/mo` : ""}`,
-                      },
-                      {
-                        key: "ein-all" as const,
-                        title: "Check every EIN with the IRS",
-                        text: `Each EIN asked against its legal name. ${p.ein.count ? `${p.ein.count} to check` : "Nothing to check"}${p.ein.settled ? ` · ${p.ein.settled} already confirmed, not checked again` : ""}.${live ? " 99¢ each, once." : ""}`,
-                        count: p.ein.count,
-                        label: `Check ${p.ein.count}${live && p.ein.cents ? ` · ${dollars(p.ein.cents)}` : ""}`,
-                      },
-                    ];
-                    return rows.map((row) => (
-                      <div
-                        key={row.key}
-                        className={`flex flex-col gap-2 border-b py-3.5 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${isDark ? "border-white/[0.06]" : "border-gray-100"}`}
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium">{row.title}</p>
-                          <p className={`mt-0.5 text-[12.5px] leading-snug ${t2}`}>{row.text}</p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={!row.count}
-                          onClick={() => void runPalmCheck(row.key)}
-                          className={`${BTN_BASE} h-[40px] shrink-0 px-3.5 text-sm sm:h-9 ${TAP.md} disabled:cursor-not-allowed disabled:opacity-50 ${primaryBtn(isDark)}`}
-                        >
-                          {row.label}
-                        </button>
-                      </div>
-                    ));
-                  })()
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-
-      {palmSync &&
-        !palmSync.running &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center"
-            onClick={() => setPalmSync(null)}
-            onKeyDown={(e) => e.key === "Escape" && setPalmSync(null)}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label={palmSync.title ?? "Synced with Palm"}
-              onClick={(e) => e.stopPropagation()}
-              className={`flex max-h-[80vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border shadow-2xl ${isDark ? "border-white/10 bg-[#111113] text-white" : "border-gray-200 bg-white text-gray-900"}`}
-            >
-              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${isDark ? "border-white/10" : "border-gray-200"}`}>
-                <p className="text-sm font-semibold">
-                  {palmSync.title
-                    ? `${palmSync.title}${palmSync.error ? ": didn't finish" : ` · ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"}`}${palmSync.mode === "test" ? " (test mode)" : ""}`
-                    : palmSync.error
-                      ? "Couldn't sync with Palm"
-                      : `Synced ${palmSync.results.length} ${palmSync.results.length === 1 ? "entity" : "entities"} with Palm${palmSync.mode === "test" ? " (test mode)" : ""}`}
-                </p>
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={() => setPalmSync(null)}
-                  className={`cursor-pointer rounded-md px-2 py-1 text-xs ${t2} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="overflow-y-auto px-5 py-3">
-                {palmSync.error && <p className="text-sm text-red-500">{palmSync.error}</p>}
-                {palmSync.results.map((e) => (
-                  <div key={e.id} className={`border-b py-3 last:border-0 ${isDark ? "border-white/[0.06]" : "border-gray-100"}`}>
-                    <Link to={`/assets/${e.id}`} className="text-sm font-medium hover:underline">
-                      {e.name}
-                    </Link>
-                    <ul className="mt-1.5 space-y-1">
-                      {e.lines.map((l, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[12.5px] leading-snug">
-                          <span
-                            aria-hidden="true"
-                            className={`mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full ${l.tone === "good" ? "bg-emerald-400" : l.tone === "warn" ? "bg-amber-400" : l.tone === "bad" ? "bg-red-400" : isDark ? "bg-gray-600" : "bg-gray-300"}`}
-                          />
-                          <span className="min-w-0">
-                            <span className="font-medium">{l.label}</span>
-                            <span className={l.tone === "bad" ? "text-red-500" : t2}> · {l.text}</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-
-      {scan &&
-        createPortal(
-          <div className="pointer-events-none fixed inset-x-0 z-[80] flex justify-center px-4" style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
-            <div
-              role="status"
-              aria-live="polite"
-              className={`toast-in pointer-events-auto w-full max-w-[440px] rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-xl ${
-                isDark ? "border-white/10 bg-[#111113]/95 text-white" : "border-gray-200 bg-white/95 text-gray-900"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[13px] font-medium">{scan.paused ? "Scan paused" : scan.done ? "Scan complete" : `Scanning ${scan.index} of ${scan.total}`}</p>
-                {scan.done && (
-                  <button type="button" onClick={() => setScan(null)} className={`text-[12px] ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-black"}`}>
-                    Close
+                {tree && parentIds.length > 0 && (
+                  <button type="button" onClick={() => setCollapsed(collapsed.size ? new Set() : new Set(parentIds))} className="cursor-pointer text-caption text-accent hover:underline">
+                    {collapsed.size ? "Expand all" : "Collapse all"}
                   </button>
                 )}
-              </div>
-              <p className={`mt-0.5 truncate text-[12px] ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-                {scan.paused ?? (scan.done ? `${scan.notes.length} change${scan.notes.length === 1 ? "" : "s"} across ${scan.total} entities` : `${scan.entity} · ${scan.step}`)}
-              </p>
-              <div className={`mt-2 h-1 overflow-hidden rounded-full ${isDark ? "bg-white/10" : "bg-gray-100"}`}>
-                <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${Math.round(((scan.done ? scan.total : scan.index - 1) / Math.max(1, scan.total)) * 100)}%` }} />
-              </div>
-              {scan.done && scan.notes.length > 0 && (
-                <ul className={`mt-2 max-h-40 space-y-0.5 overflow-y-auto text-[11.5px] ${isDark ? "text-gray-400" : "text-gray-600"}`}>
-                  {scan.notes.map((n, i) => (
-                    <li key={i}>{n}</li>
-                  ))}
-                </ul>
+                {!tree && (
+                  <button type="button" onClick={() => setSort({ key: "name", dir: 1 })} className="cursor-pointer text-caption text-accent hover:underline">
+                    Show ownership tree
+                  </button>
+                )}
+              </span>
+            </th>
+            {sortHead("Tax classification", "tax", "hidden lg:table-cell")}
+            <th scope="col" className="sticky top-0 z-sticky hidden h-8 border-b border-line-strong bg-raised px-3 text-left text-caption font-medium text-ink-2 xl:table-cell">
+              EIN
+            </th>
+            {sortHead("Owner", "owner")}
+            {sortHead("Core documents", "docs", "hidden lg:table-cell")}
+            {sortHead("Records", "records")}
+            <th scope="col" className="sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised pr-5">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ a, depth, kids, context }) => {
+            const t = taxes.get(a.id)!;
+            const o = ownerText(a);
+            const ex = exception(a);
+            const shut = collapsed.has(a.id);
+            return (
+              <tr key={a.id} className="group">
+                <td className="border-b border-line py-2 pr-3 pl-5 align-middle group-last:border-b-0">
+                  <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: depth * 20 }}>
+                    {tree && (
+                      <span className="inline-flex w-6 shrink-0 justify-center">
+                        {kids > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggle(a.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                                e.preventDefault();
+                                toggle(a.id, e.key === "ArrowRight");
+                              }
+                            }}
+                            aria-expanded={!shut}
+                            aria-label={`${shut ? "Expand" : "Collapse"} ${a.name}`}
+                            className="inline-flex size-6 cursor-pointer items-center justify-center rounded-control text-ink-3 hover:bg-hover hover:text-ink"
+                          >
+                            <Icon name={shut ? "chevronRight" : "chevronDown"} size={16} />
+                          </button>
+                        )}
+                      </span>
+                    )}
+                    {mark(a)}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Link to={`/assets/${a.id}`} className={cx("line-clamp-2 min-w-0 break-words hover:underline", context ? "text-ink-2" : "font-medium text-ink")} title={a.name}>
+                          {a.name}
+                        </Link>
+                        {sharedMark(a)}
+                        {shut && kids > 0 && <span className="shrink-0 text-small text-ink-2">+{kids}</span>}
+                      </span>
+                      <span className="truncate text-small text-ink-2">
+                        {context ? "Shown as an owner" : [TYPE_LABEL[a.type as EntityType], formedIn(a), ex].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                  </div>
+                </td>
+                <td className="hidden border-b border-line px-3 py-2 align-middle group-last:border-b-0 lg:table-cell">{!context && taxCell(t)}</td>
+                <td className="hidden border-b border-line px-3 py-2 align-middle group-last:border-b-0 xl:table-cell">{!context && einCell(a, t)}</td>
+                <td className="border-b border-line px-3 py-2 align-middle group-last:border-b-0">
+                  {!context && (
+                    <span className="flex min-w-0 flex-col" title={o.full || undefined}>
+                      <span className={cx("line-clamp-2 break-words", o.none ? "text-ink-3" : "text-ink")}>{o.text}</span>
+                      {o.more && <span className="truncate text-small text-ink-2">{o.more}</span>}
+                    </span>
+                  )}
+                </td>
+                <td className="hidden border-b border-line px-3 py-2 align-middle group-last:border-b-0 lg:table-cell">{!context && docsCell(a)}</td>
+                <td className="border-b border-line px-3 py-2 align-middle group-last:border-b-0">{!context && recordsTip(a)}</td>
+                <td className="border-b border-line py-2 pr-3 text-right align-middle group-last:border-b-0">
+                  <Menu label={a.name} align="end" items={rowItems(a)} trigger={<IconButton icon="more" label={`Actions for ${a.name}`} />} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Card>
+  );
+
+  // Phones: the tree as rows, 12px a level, names wrapping to two lines.
+  const phoneList = (
+    <Card flush>
+      <ul aria-label="Entities" className="flex flex-col">
+        {rows.map(({ a, depth, kids, context }) => {
+          const r = rec(a);
+          const g = TONE_GLYPH[r.tone];
+          const shut = collapsed.has(a.id);
+          const ex = exception(a);
+          return (
+            <li key={a.id} className="flex min-h-(--row-2) items-center border-b border-line last:border-b-0" style={{ paddingLeft: 8 + depth * 12 }}>
+              {tree && (
+                <span className="flex w-8 shrink-0 justify-center">
+                  {kids > 0 && (
+                    <IconButton icon={shut ? "chevronRight" : "chevronDown"} label={`${shut ? "Expand" : "Collapse"} ${a.name}`} noTooltip aria-expanded={!shut} className="-mx-[6px]" onClick={() => toggle(a.id)} />
+                  )}
+                </span>
               )}
+              <Link to={`/assets/${a.id}`} className="flex min-w-0 flex-1 flex-col py-2 pr-2">
+                <span className={cx("line-clamp-2 break-words", context ? "text-ink-2" : "font-medium text-ink")}>
+                  {a.name}
+                  {shut && kids > 0 ? <span className="font-normal text-ink-2"> +{kids}</span> : null}
+                </span>
+                <span className="flex min-w-0 items-center gap-1 text-small text-ink-2">
+                  {context ? (
+                    "Shown as an owner"
+                  ) : (
+                    <>
+                      <span className="truncate">{[TYPE_LABEL[a.type as EntityType], formedIn(a), ex].filter(Boolean).join(" · ")}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className={cx("inline-flex shrink-0", g.cls)}>{g.icon && <Icon name={g.icon} size={12} />}</span>
+                      <span className="shrink-0 tabular-nums">Records {r.score}%</span>
+                    </>
+                  )}
+                </span>
+              </Link>
+              <span className="shrink-0 pr-1">
+                <Menu label={a.name} align="end" items={rowItems(a)} trigger={<IconButton icon="more" label={`Actions for ${a.name}`} noTooltip />} />
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+
+  const cards = (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {cardRows.map(({ a }) => {
+        const t = taxes.get(a.id)!;
+        const r = rec(a);
+        const o = ownerText(a);
+        const ex = exception(a);
+        return (
+          <Card
+            key={a.id}
+            title={
+              <span className="flex items-center gap-2">
+                {mark(a)}
+                <Link to={`/assets/${a.id}`} className="hover:underline">
+                  {a.name}
+                </Link>
+                {sharedMark(a)}
+              </span>
+            }
+            menu={rowItems(a)}
+          >
+            <div className="flex flex-col gap-2 text-small text-ink-2">
+              <p className="flex flex-wrap items-center gap-x-1">
+                {[TYPE_LABEL[a.type as EntityType], formedIn(a), ex].filter(Boolean).join(" · ")}
+                {(a.ein || t.value === "Grantor trust") && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    {einCell(a, t)}
+                  </>
+                )}
+              </p>
+              <p>
+                <span className="text-ink">{taxLabel(t.value)}</span>
+                {t.value && t.isDefault ? " (default)" : ""}
+                {t.files ? ` · ${t.files}` : ""}
+              </p>
+              <p className={o.none ? "text-ink-3" : undefined} title={o.full || undefined}>
+                {a.type === "Trust" || o.none ? o.text : `Owner: ${o.text}${o.more ? `, ${o.more}` : ""}`}
+              </p>
+              <div className="mt-1 flex items-center gap-2 border-t border-line pt-3 text-body">
+                {recordsTip(a, false)}
+                <span className="min-w-0 truncate text-small text-ink-2">{r.conflicts.length ? "Records disagree" : missingLine(r)}</span>
+              </div>
             </div>
-          </div>,
-          document.body,
+          </Card>
+        );
+      })}
+    </div>
+  );
+
+  const body = loading ? (
+    view === "cards" ? (
+      <Skeleton kind="card" rows={4} />
+    ) : (
+      <Card flush>
+        <Skeleton kind="table" rows={8} columns={["44%", "20%", "20%", "16%"]} />
+      </Card>
+    )
+  ) : assets.length === 0 ? (
+    <Empty
+      title="No entities yet"
+      size="page"
+      action={
+        writer ? (
+          <Button variant="primary" icon="plus" onClick={() => setNewOpen(true)}>
+            New entity
+          </Button>
+        ) : undefined
+      }
+    >
+      The family&apos;s LLCs, corporations, partnerships and trusts appear here with their owners, documents and records. Only the office team sees this list.
+    </Empty>
+  ) : matched.length === 0 ? (
+    <Card>
+      <Empty
+        action={
+          <Button variant="quiet" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        }
+      >
+        {needle ? `No entities match “${q.trim()}”.` : "No entities match these filters."}
+      </Empty>
+    </Card>
+  ) : view === "list" ? (
+    phone ? (
+      phoneList
+    ) : (
+      table
+    )
+  ) : (
+    cards
+  );
+
+  const owning = ownerFor ? (byId.get(ownerFor.id) ?? null) : null;
+  const tagging = initialsFor ? (byId.get(initialsFor) ?? null) : null;
+
+  return (
+    <Page
+      width="workspace"
+      header={<PageHeader title="Entities" context={context} menu={menu.length ? menu : undefined} create={writer ? { label: "New entity", onClick: () => setNewOpen(true) } : undefined} />}
+    >
+      {loadError && (
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => (setLoading(true), setLoadError(""), setReload((n) => n + 1))}>
+              Try again
+            </Button>
+          }
+        >
+          {loadError}
+        </Banner>
+      )}
+      {running && <Banner tone="info">{running}</Banner>}
+      {scan && <ScanBanner scan={scan} onStop={() => (stopScan.current = true)} onDismiss={() => setScan(null)} />}
+      <div className="flex flex-col gap-4">
+        {toolbar}
+        {view === "map" ? (
+          <EstateMapView
+            embedded
+            highlight={filtered ? matchedIds : null}
+            onAddEntity={writer ? () => setNewOpen(true) : undefined}
+            onChangeOwner={admin ? (id, to) => setOwnerFor({ id, proposed: to }) : undefined}
+          />
+        ) : (
+          body
         )}
+        {view !== "map" && !loading && filtered && matched.length > 0 && (
+          <p role="status" className="text-small text-ink-2">
+            Showing {matched.length} of {format.count(assets.length, "entity", "entities")}
+            {view === "list" && tree && rows.some((r) => r.context) ? ". Their owners are shown too, for context." : "."}
+          </p>
+        )}
+      </div>
 
       <NewEntityDialog
-        isDark={isDark}
-        open={showForm}
-        onClose={() => setShowForm(false)}
-        onCreate={handleCreate}
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        entities={assets}
         onFormWithPalm={() => {
-          setShowForm(false);
-          setShowWizard(true);
+          setNewOpen(false);
+          setWizard(true);
+        }}
+        onCreated={(id, name) => {
+          setNewOpen(false);
+          toast({ message: `Added ${name}`, action: id ? { label: "Open", run: () => navigate(`/assets/${id}`) } : undefined });
         }}
       />
       <FormEntityWizard
-        open={showWizard}
-        onClose={() => setShowWizard(false)}
+        open={wizard}
+        onClose={() => setWizard(false)}
         entities={assets
           .filter((a) => a.type !== "Trust")
           .map((a) => ({ id: a.id, name: a.name, address: a.address }))
           .sort((a, b) => a.name.localeCompare(b.name))}
         onCreated={(id) => {
-          setShowWizard(false);
+          setWizard(false);
           navigate(`/assets/${id}`);
         }}
       />
+      <OwnerDialog entity={owning} proposed={ownerFor?.proposed} all={assets} onClose={() => setOwnerFor(null)} />
+      <InitialsDialog
+        entity={tagging}
+        current={tagging ? tagOf(tagging) : ""}
+        check={(raw) => (tagging ? initialsClash(raw, tagging.id, tags) : null)}
+        onClose={() => setInitialsFor(null)}
+        onSaved={(initials) => {
+          if (tagging) setEntityTagLocal(tagging.name, initials || null);
+          toast({ message: `Saved the initials ${initials}` });
+        }}
+      />
+      <PalmChecksDialog open={checksOpen} onClose={() => setChecksOpen(false)} onRun={(action, plan) => void runPalmCheck(action, plan)} />
+      <PalmResultsDialog run={run} onClose={() => setRun(null)} />
+      <Dialog open={!!recordsFor && byId.has(recordsFor)} onClose={() => setRecordsFor(null)} title={recordsFor ? `Records: ${byId.get(recordsFor)?.name ?? ""}` : "Records"}>
+        {recordsFor && byId.get(recordsFor) && <RecordsCard a={byId.get(recordsFor)!} r={rec(byId.get(recordsFor)!)} />}
+      </Dialog>
+    </Page>
+  );
+}
 
-      {/* Summary strip */}
-      <div className={`grid grid-cols-2 md:grid-cols-5 overflow-hidden mb-5 tabular-nums ${card}`}>
-        {strip.map(({ label, value, tone, sub }, i) => (
-          <div key={label} className={`min-w-0 px-4 py-3 ${stripBorder[i]} ${hair}`}>
-            <span className={`block text-xs font-medium ${t2}`}>{label}</span>
-            {!ready ? (
-              <span className={`mt-1 block ${kpiSize}`} aria-hidden>
-                <span className="shimmer inline-block h-[1em] w-14 rounded! align-top" />
-              </span>
-            ) : (
-              <span className={`${kpi} ${tone || t1}`}>{value}</span>
-            )}
-            {sub !== undefined &&
-              (!ready ? (
-                <span className="mt-1 block text-xs leading-tight" aria-hidden>
-                  <span className="shimmer inline-block h-[1em] w-24 rounded! align-top" />
+class Stopped extends Error {}
+
+/** What the records score is made of: the conflicts first, then what's missing, grouped, with the points each is worth. */
+function RecordsCard({ a, r }: { a: Rec; r: Records }) {
+  const groups = missingGroups(r);
+  return (
+    <div className="flex flex-col gap-3 text-body">
+      <div>
+        <p className="font-semibold text-ink">Records: {r.score} of 100</p>
+        <p className="text-small text-ink-2">How much of {a.name}&apos;s facts and documents are on file.</p>
+      </div>
+      {r.conflicts.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-medium text-ink-2">The records disagree</p>
+          <ul className="flex flex-col gap-2">
+            {r.conflicts.map((c) => (
+              <li key={c.key} className="flex gap-2">
+                <span className={cx("mt-[2px] inline-flex shrink-0", c.severity === "high" ? "text-negative" : "text-warning")}>
+                  <Icon name={c.severity === "high" ? "x" : "warning"} size={16} />
                 </span>
-              ) : (
-                <span className={`block mt-1 text-xs leading-tight truncate ${t2}`}>{sub}</span>
-              ))}
-          </div>
-        ))}
-      </div>
-
-      {loadError && (
-        <div role="alert" className={`mb-5 rounded-2xl px-4 py-2 text-sm fade-in ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>
-          {loadError}
+                <span className="min-w-0">
+                  <span className="block text-ink">{c.title}</span>
+                  <span className="block text-small text-pretty text-ink-2">{c.detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
-
-      <div className={card}>
-        {/* Toolbar: one DOM for every width. lg+: search · type · state ·
-            attention · clear … view toggle in one row. Below lg: search +
-            toggle, then the filters in a scrolling strip. */}
-        <div className={`px-4 py-3 ${view === "map" ? "" : `border-b ${rule}`}`}>
-          {view === "map" ? (
-            <div className="flex items-center gap-2">
-              <div className="shrink-0">{stateMenu()}</div>
-              {searchBox()}
-              <p className={`order-1 flex-1 min-w-0 truncate text-sm ${t2} hidden lg:block lg:ml-1`}>
-                {needle
-                  ? `${mapHighlight?.size ?? 0} matching ${mapHighlight?.size === 1 ? "entity is" : "entities are"} lit`
-                  : stateF.length
-                    ? "Entities in the chosen states are lit"
-                    : "Ownership map"}
-                <span className="hidden lg:inline [@media(pointer:coarse)]:!hidden"> — drag to pan, scroll to zoom</span>
-                <span className="hidden [@media(pointer:coarse)]:lg:inline"> — drag to pan, pinch to zoom</span>
-              </p>
-              <div className="order-1 shrink-0 ml-auto">{viewToggle()}</div>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              {searchBox()}
-              <div className="order-2 shrink-0 lg:order-7">{viewToggle()}</div>
-              <div className="order-3 basis-[calc(100%+2rem)] -mx-4 px-4 py-2 -my-2 scroll-px-4 flex items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0 [mask-image:linear-gradient(to_right,#000_calc(100%-12px),transparent)] lg:[mask-image:none] lg:contents">
-                <div className="lg:order-2">{typeSegments()}</div>
-                <div className="lg:order-3">{stateMenu()}</div>
-                <div className="lg:order-4">{attentionToggle()}</div>
-                {filtered && <div className="lg:order-5">{clearButton()}</div>}
-                <div className="hidden lg:block lg:order-6 lg:ml-auto" aria-hidden />
-              </div>
-            </div>
-          )}
+      {groups.map((g) => (
+        <div key={g.label} className="flex flex-col gap-1">
+          <p className="text-small font-medium text-ink-2">{g.label}</p>
+          <ul className="flex flex-col gap-1">
+            {g.items.map((m) => (
+              <li key={m.key} className="flex items-baseline justify-between gap-4">
+                <span className="min-w-0 text-ink">{m.label}</span>
+                <span className="shrink-0 text-small text-ink-3 tabular-nums">{r.points.get(m.key)} pts</span>
+              </li>
+            ))}
+          </ul>
         </div>
-
-        {view === "map" ? null : loading ? (
-          view === "list" ? (
-            listSkeleton
-          ) : (
-            cardsSkeleton
-          )
-        ) : assets.length === 0 ? (
-          <div className="px-4 py-16 text-center">
-            <Icon d={PATHS.building} className={`w-6 h-6 mx-auto ${t3}`} strokeWidth={1.4} />
-            <p className={`mt-3 text-sm font-medium ${t1}`}>No entities yet</p>
-            <p className={`mt-1 text-xs ${t2}`}>Create one to get started.</p>
-            <button type="button" onClick={() => setShowForm(true)} className={`${BTN_BASE} mt-4 h-[40px] sm:h-9 px-4 text-sm ${primaryBtn(isDark)}`}>
-              New entity
-            </button>
-          </div>
-        ) : matched.length === 0 ? (
-          <div className="px-4 py-16 text-center">
-            <Icon d={PATHS.search} className={`w-6 h-6 mx-auto ${t3}`} strokeWidth={1.4} />
-            <p className={`mt-3 text-sm font-medium ${t1}`}>No entities match</p>
-            <p className={`mt-1 text-xs ${t2}`}>Try another search or clear the filters.</p>
-            <button type="button" onClick={clearFilters} className={`${BTN_BASE} mt-4 h-[40px] sm:h-9 px-4 text-sm ${outlineBtn(isDark)}`}>
-              Clear filters
-            </button>
-          </div>
-        ) : view === "list" ? (
-          /* ── List: the ownership tree, one calm line per entity ── */
-          <table aria-label="Entities" className="w-full table-fixed text-sm tabular-nums">
-            <thead className="sticky top-[calc(3.5rem+1px+env(safe-area-inset-top))] lg:top-0 z-10">
-              <tr className={`text-left text-xs font-medium ${t2} ${headSkin(isDark)}`}>
-                {th(
-                  "Entity",
-                  "name",
-                  "pl-4",
-                  treeMode && parentIds.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => setCollapsed(allExpanded ? new Set(parentIds) : new Set())}
-                      className={`relative h-6 -my-0.5 px-1.5 rounded-md font-normal cursor-pointer transition-colors ${TAP.head} ${t3} ${
-                        isDark ? "hover:text-gray-100 hover:bg-white/[0.04]" : "hover:text-gray-900 hover:bg-gray-100"
-                      }`}
-                    >
-                      {allExpanded ? "Collapse all" : "Expand all"}
-                    </button>
-                  ) : !treeMode ? (
-                    <button
-                      type="button"
-                      onClick={() => setSort({ key: "name", dir: "asc" })}
-                      title="Sorted flat by another column — back to the ownership tree"
-                      className={`relative h-6 -my-0.5 px-1.5 rounded-md font-normal cursor-pointer transition-colors ${TAP.head} ${t3} ${
-                        isDark ? "hover:text-gray-100 hover:bg-white/[0.04]" : "hover:text-gray-900 hover:bg-gray-100"
-                      }`}
-                    >
-                      Show tree
-                    </button>
-                  ) : undefined,
-                )}
-                {th("Type", "type", COLS.type)}
-                {th("Tax classification", "llcType", COLS.llcType)}
-                {th("State", "state", COLS.state)}
-                {th("EIN", "ein", COLS.ein)}
-                {th("Owned by", "owner", COLS.owner)}
-                {th("Filings", "filings", COLS.filings)}
-                {th("Compliance", "score", COLS.score)}
-                <th scope="col" className={COLS.menu}>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="fade-in">
-              {rows.map(({ asset: a, depth, kids, context }, ri) => {
-                const s = scoreOf(a);
-                const isCollapsed = collapsed.has(a.id);
-                const menuOpen = menuRow === a.id;
-                const mute = context ? "opacity-55" : "";
-                return (
-                  <tr key={a.id} className={`group transition-colors duration-100 ${ri === 0 ? "" : `border-t ${hair}`} ${menuOpen ? activeRow : hover}`}>
-                    <td className={`pl-4 pr-2 py-3.5 lg:py-3`}>
-                      <div className="flex items-center gap-2 min-w-0" style={{ paddingLeft: depth * 18 }}>
-                        {treeMode &&
-                          (kids > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleNode(a.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === "ArrowRight") {
-                                  e.preventDefault();
-                                  toggleNode(a.id, true);
-                                } else if (e.key === "ArrowLeft") {
-                                  e.preventDefault();
-                                  toggleNode(a.id, false);
-                                }
-                              }}
-                              aria-expanded={!isCollapsed}
-                              aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${a.name}`}
-                              className={chevBtn}
-                            >
-                              <Icon d={PATHS.chevronRight} strokeWidth={2.2} className={`w-3 h-3 transition-transform motion-reduce:transition-none ${isCollapsed ? "" : "rotate-90"}`} />
-                            </button>
-                          ) : (
-                            <span className="w-5 shrink-0" aria-hidden />
-                          ))}
-                        <span className={`shrink-0 inline-flex ${mute}`}>{tagChip(a)}</span>
-                        <Link
-                          to={`/assets/${a.id}`}
-                          title={a.name}
-                          className={`min-w-0 truncate text-sm hover:underline underline-offset-2 py-[13px] -my-[13px] lg:py-0 lg:my-0 ${context ? `font-normal ${t2}` : `font-medium ${t1}`}`}
-                        >
-                          {a.name}
-                        </Link>
-                        {isCollapsed && kids > 0 && <span className={`shrink-0 text-xs ${t2}`}>+{kids}</span>}
-                      </div>
-                    </td>
-                    <td className={`${cell} ${COLS.type} ${mute}`}>{typeBadge(a)}</td>
-                    <td className={`${cell} ${COLS.llcType} truncate ${a.llcType ? t2 : t3} ${mute}`} title={a.llcType || undefined}>
-                      {a.llcType || "—"}
-                    </td>
-                    <td className={`${cell} ${COLS.state} truncate ${a.state ? t2 : t3} ${mute}`} title={a.state || undefined}>
-                      {a.state || "—"}
-                    </td>
-                    <td className={`${cell} ${COLS.ein} whitespace-nowrap ${mute}`}>
-                      {a.ein ? (
-                        <button
-                          type="button"
-                          onClick={() => copyEin(a.ein)}
-                          title="Copy EIN"
-                          className={`font-mono text-xs tabular-nums cursor-pointer rounded hover:underline decoration-dotted underline-offset-2 ${copiedEin === a.ein ? incomeTone(isDark) : t2}`}
-                        >
-                          {copiedEin === a.ein ? "Copied" : a.ein}
-                        </button>
-                      ) : (
-                        <span className={t3}>—</span>
-                      )}
-                    </td>
-                    <td className={`${cell} ${COLS.owner} ${mute}`}>
-                      {entityType(a) === "Trust" ? (
-                        <TrusteesCell a={a} t3={t3} onOpen={() => navigate(`/assets/${a.id}`)} />
-                      ) : (
-                        <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
-                          <Menu
-                            value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
-                            options={ownerOptions(a)}
-                            onChange={(v) => void updateOwner(a.id, v)}
-                            isDark={isDark}
-                            tone="soft"
-                            size="sm"
-                            touch
-                            chevron="hover"
-                            label="Owned by"
-                          />
-                        </div>
-                      )}
-                    </td>
-                    <td className={`${cell} ${COLS.filings} ${mute}`}>{filingPips(a, s)}</td>
-                    <td className={`${cell} ${COLS.score} ${mute}`}>
-                      <Tip
-                        isDark={isDark}
-                        label={`Compliance ${s.score}. ${missingSummary(s, 99)}`}
-                        content={scoreCard(a, s)}
-                        className={`h-7 px-1.5 -mx-1.5 gap-2 ${TAP.head} ${isDark ? "hover:bg-white/[0.06]" : "hover:bg-gray-100"}`}
-                      >
-                        <Ring score={s.score} size={16} isDark={isDark} />
-                        <span className={`text-sm font-medium tabular-nums ${scoreText(s.score, isDark, t1)}`}>{s.score}</span>
-                      </Tip>
-                    </td>
-                    <td className="pr-2 text-right align-middle">
-                      <RowMenu
-                        isDark={isDark}
-                        name={a.name}
-                        actions={rowActions(a)}
-                        onOpenChange={(o) => setMenuRow(o ? a.id : null)}
-                        className={menuOpen ? "" : "lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          /* ── Cards: one per entity, ownership order ── */
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3 p-4 fade-in">
-            {cardRows.map(({ asset: a }) => {
-              const s = scoreOf(a);
-              const menuOpen = menuRow === a.id;
-              const surface = menuOpen
-                ? isDark
-                  ? "border-white/[0.12] bg-white/[0.05]"
-                  : "border-gray-300 bg-gray-50"
-                : isDark
-                  ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]"
-                  : "border-gray-200 bg-white hover:bg-gray-50";
-              return (
-                <div key={a.id} className={`group relative flex flex-col gap-2.5 rounded-xl border p-3 transition-colors duration-100 ${surface}`}>
-                  <div className="flex items-center gap-3">
-                    {tagChip(a, true)}
-                    <div className="flex-1 min-w-0">
-                      <Link
-                        to={`/assets/${a.id}`}
-                        title={a.name}
-                        className={`block truncate text-base lg:text-sm font-medium leading-5 hover:underline underline-offset-2 py-[13px] -my-[13px] lg:py-0 lg:my-0 ${t1}`}
-                      >
-                        {a.name}
-                      </Link>
-                      <p className={`mt-0.5 truncate text-sm lg:text-xs ${t2}`}>
-                        {a.type}
-                        {a.state ? ` · ${a.state}` : ""}
-                        {a.ein ? (
-                          <>
-                            {" · "}
-                            <span className="font-mono">{a.ein}</span>
-                          </>
-                        ) : (
-                          <span className={t3}> · No EIN</span>
-                        )}
-                      </p>
-                    </div>
-                    <Tip
-                      isDark={isDark}
-                      label={`Compliance ${s.score}. ${missingSummary(s, 99)}`}
-                      content={scoreCard(a, s)}
-                      className="rounded-full shrink-0 relative after:content-[''] after:absolute after:-inset-[4px] lg:after:inset-0"
-                    >
-                      <Ring score={s.score} size={34} stroke={2.5} isDark={isDark}>
-                        <span className={`text-[11px] font-semibold tabular-nums ${scoreText(s.score, isDark, t1)}`}>{s.score}</span>
-                      </Ring>
-                    </Tip>
-                  </div>
-                  {s.missing.length === 0 ? (
-                    <p className={`text-sm lg:text-xs truncate ${incomeTone(isDark)}`}>All requirements on file</p>
-                  ) : (
-                    <p className={`flex items-baseline gap-1 min-w-0 text-sm lg:text-xs ${t2}`} title={missingSummary(s, 99)}>
-                      <span className="truncate">Missing: {s.missing.map((m) => m.label).join(", ")}</span>
-                      <span className={`shrink-0 ${amberTone(isDark)}`} title="Points the record gains once these are on file">
-                        +{100 - s.score} pts
-                      </span>
-                    </p>
-                  )}
-                  <div className="mt-auto flex items-center gap-3 min-w-0">
-                    {entityType(a) === "Trust" ? (
-                      <div className="min-w-0">
-                        <TrusteesCell a={a} t3={t3} onOpen={() => navigate(`/assets/${a.id}`)} />
-                      </div>
-                    ) : (
-                      <div className={`min-w-0 [&>button]:max-w-full ${a.ownerId && byId.has(a.ownerId) ? "" : noOwner}`}>
-                        <Menu
-                          value={a.ownerId && byId.has(a.ownerId) ? a.ownerId : ""}
-                          options={ownerOptions(a)}
-                          onChange={(v) => void updateOwner(a.id, v)}
-                          isDark={isDark}
-                          tone="soft"
-                          size="sm"
-                          touch
-                          label="Owned by"
-                          leading={<Icon d={PATHS.building} className="w-3.5 h-3.5 shrink-0 opacity-60" />}
-                        />
-                      </div>
-                    )}
-                    <span className="shrink-0">{filingPips(a, s)}</span>
-                    <RowMenu isDark={isDark} name={a.name} actions={rowActions(a)} onOpenChange={(o) => setMenuRow(o ? a.id : null)} className="ml-auto -mr-1.5 shrink-0" />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {view !== "map" && !loading && matched.length > 0 && (
-          <div className={`flex items-center justify-between gap-3 px-4 py-3 border-t ${hair}`}>
-            <span role="status" aria-live="polite" className={`text-xs ${t2}`}>
-              {filtered ? `Showing ${matched.length} of ${assets.length} entities` : `${assets.length} entities`}
-              {view === "list" && treeMode && filtered && rows.some((r) => r.context) && " · owners shown for context"}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {view === "map" && (
-        <div className="mt-5">
-          <EstateMapView embedded highlight={mapHighlight} onAddEntity={() => setShowForm(true)} />
-        </div>
-      )}
-
-      <Toast message={toast} isDark={isDark} onClose={() => setToast("")} />
+      ))}
+      {!r.missing.length && <p className="text-ink-2">Every fact and document its rules call for is on file.</p>}
+      <p className="border-t border-line pt-3 text-small text-ink-2">
+        State standing and deadlines are on{" "}
+        <Link to="/tools/compliance" className="text-accent underline underline-offset-[3px] hover:text-accent-hover">
+          Entity compliance
+        </Link>
+        .
+      </p>
     </div>
   );
 }
 
-// ── New entity dialog ───────────────────────────────────────────────────────
-/** The create form (same fields, same write), as a dialog in the Books idiom. */
-function NewEntityDialog({
-  isDark,
-  open,
-  onClose,
-  onCreate,
-  onFormWithPalm,
-}: {
-  isDark: boolean;
-  open: boolean;
-  onClose: () => void;
-  onCreate: (fields: { name: string; type: "LLC" | "C-Corp" | "LP" | "Trust"; state: string; ein: string }) => Promise<void>;
-  /** Hand off to the Palm formation wizard: a brand-new entity, filed with the state. */
-  onFormWithPalm: () => void;
-}) {
-  const { t1, t2 } = tiers(isDark);
-  const ref = useRef<HTMLFormElement>(null);
-  const [name, setName] = useState("");
-  const [type, setType] = useState<"LLC" | "C-Corp" | "LP" | "Trust">("LLC");
-  const [state, setState] = useState("");
-  const [ein, setEin] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useFocusTrap(ref, open);
-
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    if (!open) return;
-    setError("");
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCloseRef.current();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  if (!open) return null;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await onCreate({ name, type, state, ein });
-      setName("");
-      setState("");
-      setEin("");
-      onClose();
-    } catch {
-      setError("Couldn't create that entity.");
-    } finally {
-      setBusy(false);
-    }
+/** The document scan as it runs, and what it changed once it's done. */
+function ScanBanner({ scan, onStop, onDismiss }: { scan: ScanProgress; onStop: () => void; onDismiss: () => void }) {
+  const pct = Math.round(((scan.done ? scan.total : Math.max(0, scan.index - 1)) / Math.max(1, scan.total)) * 100);
+  if (!scan.done) {
+    return (
+      <Banner
+        tone="info"
+        action={
+          <Button variant="quiet" size="sm" onClick={onStop}>
+            Stop
+          </Button>
+        }
+      >
+        <p>
+          Reading documents: {scan.index} of {scan.total}
+          {scan.entity ? ` · ${scan.entity}` : ""}
+        </p>
+        <p className="text-small text-ink-2">{scan.step}. Keep this tab open until it finishes.</p>
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-sunken" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Scan progress">
+          <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+        </div>
+      </Banner>
+    );
   }
-
-  const fieldCls = `w-full h-[40px] sm:h-9 px-3.5 rounded-full text-[16px] sm:text-sm border ${textInput(isDark)}`;
-  const segContainer = `flex items-center h-[40px] sm:h-9 p-0.5 rounded-full border ${isDark ? "border-white/10 bg-white/[0.04]" : "border-gray-200 bg-gray-50"}`;
-  const segOn = isDark ? "bg-white/[0.1] text-gray-100" : "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200";
-  const segOff = isDark ? "text-gray-400 hover:text-gray-100 hover:bg-white/[0.06]" : "text-gray-500/100 hover:text-gray-900 hover:bg-gray-200/60";
-  const label = `block ${MICRO} ${t2} mb-1`;
-
-  // Portalled to <body>: inside <main> (its own stacking context) the overlay
-  // would sit beneath the sidebar and the phone top bar.
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] fade-in"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <form ref={ref} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="new-entity-title" className={`w-full max-w-md rounded-2xl border p-5 pop-in ${popoverSurface(isDark)}`}>
-        <h2 id="new-entity-title" className={`text-lg font-semibold tracking-tight ${t1}`}>
-          New entity
-        </h2>
-        <p className={`mt-1 mb-3 text-xs ${t2}`}>Record an entity that already exists; filings and the rest live on its page.</p>
-        <button
-          type="button"
-          onClick={onFormWithPalm}
-          className={`mb-4 flex w-full cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
-            isDark ? "border-[#818cf8]/30 bg-[#818cf8]/[0.08] hover:bg-[#818cf8]/[0.14]" : "border-[#4f46e5]/25 bg-[#4f46e5]/[0.05] hover:bg-[#4f46e5]/[0.09]"
-          }`}
-        >
-          <Icon d="M12 4.5v15m7.5-7.5h-15" strokeWidth={2.2} className={`h-4 w-4 shrink-0 ${isDark ? "text-[#a5b4fc]" : "text-[#4f46e5]"}`} />
-          <span className="min-w-0 flex-1">
-            <span className={`block text-sm font-medium ${t1}`}>Form a new entity with Palm</span>
-            <span className={`block text-xs ${t2}`}>A wizard files a new LLC or corporation with the state. Nothing is filed until you confirm.</span>
-          </span>
-          <Icon d="M9 5l7 7-7 7" className={`h-3.5 w-3.5 shrink-0 ${t2}`} />
-        </button>
-        <p className={`mb-2 ${MICRO} ${t2}`}>Or record an existing one</p>
-
-        <span id="new-entity-type" className={label}>
-          Type
-        </span>
-        <div role="group" aria-labelledby="new-entity-type" className={`${segContainer} mb-3`}>
-          {(["LLC", "C-Corp", "LP", "Trust"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={type === t}
-              onClick={() => setType(t)}
-              className={`flex-1 h-full rounded-full text-sm font-medium transition-colors cursor-pointer ${type === t ? segOn : segOff}`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-
-        <label htmlFor="new-entity-name" className={label}>
-          Name
-        </label>
-        <input id="new-entity-name" data-autofocus type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Entity name" required className={`${fieldCls} mb-3`} />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <div>
-            <label htmlFor="new-entity-state" className={label}>
-              State of formation
-            </label>
-            <input id="new-entity-state" type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder="e.g. Delaware" className={fieldCls} />
-          </div>
-          <div>
-            <label htmlFor="new-entity-ein" className={label}>
-              EIN
-            </label>
-            <input id="new-entity-ein" type="text" inputMode="numeric" value={ein} onChange={(e) => setEin(e.target.value)} placeholder="Optional" className={`${fieldCls} font-mono`} />
-          </div>
-        </div>
-
-        {error && (
-          <p role="alert" className="mb-3 text-xs text-red-500">
-            {error}
-          </p>
-        )}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm ${ghostBtn(isDark)}`}>
-            Cancel
-          </button>
-          <button type="submit" disabled={!name.trim()} aria-busy={busy || undefined} className={`${BTN_BASE} h-[40px] sm:h-9 px-4 text-sm aria-busy:pointer-events-none ${primaryBtn(isDark)}`}>
-            {busy ? "Creating…" : `Create ${type}`}
-          </button>
-        </div>
-      </form>
-    </div>,
-    document.body,
+  return (
+    <Banner tone={scan.paused ? "warning" : "positive"} onDismiss={onDismiss}>
+      <p>{scan.paused ?? `Scan finished: ${format.count(scan.notes.length, "change")} across ${format.count(scan.total, "entity", "entities")}.`}</p>
+      {scan.notes.length > 0 && (
+        <Disclosure label="What changed" count={scan.notes.length} className="mt-1">
+          <ul className="mt-1 flex max-h-48 flex-col gap-1 overflow-y-auto text-small text-ink-2">
+            {scan.notes.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
+        </Disclosure>
+      )}
+    </Banner>
   );
 }

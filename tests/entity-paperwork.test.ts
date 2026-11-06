@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressState, documentRules, entityType, obligations, paperworkChecks, stateCode, taxClassOf, taxHome } from "../app/entity-paperwork";
+import { addressState, documentRules, entityType, filingAgency, obligations, paperworkChecks, slotCurrent, stateCode, taxClassIssues, taxClassOf, taxHome } from "../app/entity-paperwork";
 import { entityCompleteness } from "../app/entity-completeness";
 
 const PHX = "11201 N Tatum Blvd Ste 300, PMB 44879, Phoenix, AZ 85028";
@@ -168,13 +168,15 @@ describe("completeness on the rule book", () => {
       einLetter: {},
       w9: {},
       operatingAgreement: {},
+      // Answered: it does business in Arizona, so the registration there counts.
+      foreign: { AZ: { confirmed: true } },
     };
     const before = entityCompleteness(base, today);
     expect(before.score).toBeLessThan(100);
     expect(before.missing.map((m) => m.key)).toEqual(expect.arrayContaining(["foreignRegistration", "foreign:AZ"]));
     // Registered there takes the filing and an Arizona statutory agent.
     expect(entityCompleteness({ ...base, foreignRegistration: {} }, today).score).toBeLessThan(100);
-    expect(entityCompleteness({ ...base, foreignRegistration: {}, foreign: { AZ: { agent: "Palm", agentAddress: "2 N Central Ave, Phoenix, AZ 85004" } } }, today).score).toBe(100);
+    expect(entityCompleteness({ ...base, foreignRegistration: {}, foreign: { AZ: { confirmed: true, agent: "Palm", agentAddress: "2 N Central Ave, Phoenix, AZ 85004" } } }, today).score).toBe(100);
   });
 
   it("never scores recommended paperwork", () => {
@@ -183,3 +185,111 @@ describe("completeness on the rule book", () => {
     expect(r.recommended.map((i) => i.key)).toContain("goodStanding");
   });
 });
+
+// Made-up records: periods, records of filing, and the returns the rule book now knows.
+describe("periods", () => {
+  const nov = new Date("2026-11-06T12:00:00Z");
+  const nv = { name: "Northwind Holdings, LLC", state: "Nevada", formationDate: "2023-08-11" };
+  const annual = (o: ReturnType<typeof obligations>) => o.find((x) => x.key === "state-annual")!;
+
+  it("keeps the period that came due beside the next one, unrecorded until someone says", () => {
+    const a = annual(obligations(nv, nov));
+    expect(a.last).toMatchObject({ key: "state-annual-2026", label: "2026", due: "2026-08-31", status: "unrecorded", daysLate: 67 });
+    expect(a.next).toMatchObject({ key: "state-annual-2027", due: "2027-08-31", status: "upcoming" });
+    expect(a.due).toBe("2027-08-31");
+    expect(a.overdue).toBeFalsy();
+  });
+
+  it("calls it overdue when the state shows filings behind, and puts it first", () => {
+    const rec = { mode: "live", checkedAt: Date.parse("2026-11-02"), status: "active", standing: { registration: "not_compliant" } };
+    const o = obligations({ ...nv, stateRecord: rec }, nov);
+    expect(o[0].key).toBe("state-annual");
+    expect(o[0]).toMatchObject({ overdue: true, due: "2026-08-31", lateFee: "$75 list + $100 license" });
+    expect(o[0].consequence).toMatch(/revokes its charter/);
+  });
+
+  it("takes the state's word that it's current when read after the due date, but not a sandbox read", () => {
+    const ok = { mode: "live", checkedAt: Date.parse("2026-10-01"), status: "active", standing: { registration: "compliant" } };
+    expect(annual(obligations({ ...nv, stateRecord: ok }, nov)).last).toMatchObject({ status: "current", source: "state" });
+    expect(annual(obligations({ ...nv, stateRecord: { ...ok, mode: "test" } }, nov)).last?.status).toBe("unrecorded");
+    expect(annual(obligations({ ...nv, stateRecord: { ...ok, checkedAt: Date.parse("2026-07-01") } }, nov)).last?.status).toBe("unrecorded");
+  });
+
+  it("counts a period recorded as filed, or that year's copy in Documents", () => {
+    const filed = annual(obligations({ ...nv, filedPeriods: { "state-annual-2026": { on: "2026-08-20", confirmation: "X1" } } }, nov));
+    expect(filed.last).toMatchObject({ status: "filed", record: { on: "2026-08-20" } });
+    expect(annual(obligations({ ...nv, annualReportYear: 2026 }, nov)).last).toMatchObject({ status: "filed", source: "documents" });
+  });
+
+  it("moves a return to its extended date, and back to unrecorded once that passes", () => {
+    const p = { name: "Alder, LLC", llcType: "Partnership", formationDate: "2020-01-01" };
+    const ext = { "fed-2025": { on: "2026-03-10", kind: "extended" as const } };
+    const sep = obligations({ ...p, filedPeriods: ext }, new Date("2026-09-01T12:00:00Z")).find((x) => x.key === "fed")!;
+    expect(sep.last).toMatchObject({ status: "extended", extendedTo: "2026-09-15" });
+    expect(sep.due).toBe("2026-09-15");
+    const later = obligations({ ...p, filedPeriods: ext }, nov).find((x) => x.key === "fed")!;
+    expect(later.last).toMatchObject({ status: "unrecorded", daysLate: 52 });
+  });
+
+  it("has no past period before the entity existed, and follows a fiscal year", () => {
+    expect(obligations({ name: "New, LLC", llcType: "Partnership", formationDate: "2026-06-01" }, nov).find((x) => x.key === "fed")!.last).toBeNull();
+    const fy = obligations({ name: "Fiscal, Inc", type: "C-Corp", taxYearEnd: 6 }, nov).find((x) => x.key === "fed")!;
+    expect(fy.last).toMatchObject({ label: "FY ending Jun 30, 2026", due: "2026-10-15" });
+    expect(fy.next).toMatchObject({ label: "FY ending Jun 30, 2027", due: "2027-10-15" });
+  });
+
+  it("adds Arizona's returns, estimates and information returns, the last two only on their condition", () => {
+    const keys = (o: ReturnType<typeof obligations>) => o.map((x) => x.key);
+    const az = obligations({ name: "Alder, LLC", state: "Arizona", llcType: "Partnership" }, nov);
+    expect(az.find((x) => x.key === "az-return")).toMatchObject({ title: "Arizona Form 165 (partnership return)", due: "2027-03-15" });
+    const corp = obligations({ name: "Alder, Inc", type: "C-Corp", state: "Arizona" }, nov);
+    expect(keys(corp)).toEqual(expect.arrayContaining(["fed", "az-return", "fed-estimates", "1099"]));
+    const est = corp.find((x) => x.key === "fed-estimates")!;
+    expect(est).toMatchObject({ due: null, when: "2026-12-15" });
+    expect(est.conditional).toMatch(/\$500/);
+    expect(corp.find((x) => x.key === "1099")?.conditional).toMatch(/\$2,000 or more for services in 2026/);
+    expect(corp.at(-1)?.conditional).toBeTruthy(); // conditional ones last
+  });
+
+  it("says where a disregarded LLC's income goes, and the owners' estimates when it's a 1040", () => {
+    const o = obligations({ name: "Alder, LLC", llcType: "Disregarded Entity" }, nov, "Alex Rivera’s Form 1040");
+    expect(o.find((x) => x.key === "fed")?.note).toMatch(/Schedule C if it runs a business/);
+    expect(o.find((x) => x.key === "owner-estimates")?.when).toBe("2027-01-15");
+  });
+
+  it("doesn't assume a trust's class: revocable by name is read as grantor, otherwise unknown", () => {
+    expect(obligations({ name: "Rivera Family Revocable Trust", type: "Trust" }, nov).find((x) => x.key === "fed")?.note).toMatch(/read as a grantor trust/);
+    expect(obligations({ name: "Rivera Family Trust", type: "Trust" }, nov).find((x) => x.key === "fed")).toMatchObject({ title: "Tax classification unknown", missing: "Tax classification" });
+    expect(paperworkChecks({ name: "Rivera Family Trust", type: "Trust", trustees: "A" }).map((i) => i.key)).toContain("trust-class");
+  });
+
+  it("names a slot stale when the annual report on file is for an older year", () => {
+    const r = documentRules({ ...nv, annualReport: {} }, nov).find((x) => x.key === "annualReport")!;
+    expect(r.period).toBe(2026);
+    expect(slotCurrent(r, { ...nv, annualReport: {}, annualReportYear: 2025 })).toBe(false);
+    expect(slotCurrent(r, { ...nv, annualReport: {}, annualReportYear: 2026 })).toBe(true);
+  });
+});
+
+describe("tax home and conflicts", () => {
+  const recs: Record<string, any> = {
+    t: { name: "Rivera Family Trust", type: "Trust", llcType: "Grantor trust", grantors: "Alex Rivera, Sam Rivera" },
+    u: { name: "Rivera Holding Trust", type: "Trust" },
+    a: { name: "Alder, LLC", llcType: "Disregarded Entity", ownerId: "t" },
+    b: { name: "Birch, LLC", llcType: "Disregarded Entity", ownerId: "u" },
+  };
+  const find = (id: string) => recs[id];
+  it("names the grantors and the trust they report through", () => {
+    expect(taxHome(recs.a, find)).toEqual({ name: "Alex Rivera and Sam Rivera", form: "Form 1040", via: "Rivera Family Trust" });
+    expect(taxHome(recs.b, find)).toMatchObject({ form: "return", unknown: true });
+    expect(taxHome({ ...recs.a, ownerCount: 3 }, find)).toBeNull();
+  });
+  it("lists the tax-class issues that hold paperwork back", () => {
+    expect(taxClassIssues({ name: "X, LLC", llcType: "Disregarded Entity", ownerCount: 3 }).map((i) => i.key)).toEqual(["disregarded-many-owners"]);
+    expect(taxClassIssues({ name: "X, LLC", llcType: "Partnership", ownerCount: 2, llcTypeConflict: { value: "S Corporation", docName: "Form 2553" } }).map((i) => i.key)).toEqual(["doc-class"]);
+    expect(filingAgency("Arizona", "LLC")).toBe("Arizona Corporation Commission");
+    expect(filingAgency("AZ", "LP")).toBe("Arizona Secretary of State");
+    expect(filingAgency("Nevada")).toBe("Nevada Secretary of State");
+  });
+});
+

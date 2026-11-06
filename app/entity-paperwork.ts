@@ -128,7 +128,7 @@ export type PaperworkInput = {
   /** How many of the family's entities it owns on record (a trust's funding depends on it). */
   ownsCount?: number;
   /** A document that reads the tax class differently from the record (set by the document check). */
-  llcTypeConflict?: { value: string; docName?: string } | null;
+  llcTypeConflict?: unknown;
   /** The latest annual report or list on file, by the year it was filed for (read from Documents). */
   annualReportYear?: number;
   /** Filings recorded as made, by period key (obligations() names the keys: "state-annual-2026", "fed-2025"). */
@@ -649,21 +649,79 @@ export function documentRules(a: PaperworkInput, today = new Date()): DocRule[] 
 
 // ── Recurring obligations ─────────────────────────────────────────────────
 
+/**
+ * Where one period of a recurring filing stands:
+ *   filed       recorded as filed (or, for a state's annual filing, that year's copy is in Documents)
+ *   extended    an extension is recorded and its date hasn't passed
+ *   current     not recorded, but the state's record, read after it came due, shows its filings current
+ *   overdue     the state's record shows filings behind, and this period isn't recorded as filed
+ *   unrecorded  past due, with nothing on record either way
+ *   upcoming    not due yet
+ */
+export type PeriodStatus = "filed" | "extended" | "current" | "overdue" | "unrecorded" | "upcoming";
+
+export type Period = {
+  /** The key a filing is recorded under (asset.filedPeriods): "state-annual-2026", "fed-2025". */
+  key: string;
+  /** "2026" for a state's annual filing, "2025 tax" for Delaware's, "2025" or "FY ending Jun 30, 2026" for a return. */
+  label: string;
+  /** As the rule sets it (ISO). */
+  due: string;
+  /** When an extension is recorded, the date it moves the filing to (ISO). */
+  extendedTo?: string;
+  status: PeriodStatus;
+  record?: FiledRecord | null;
+  /** Days past due (or past the extended date), when it isn't recorded as filed. */
+  daysLate?: number;
+  /** Where the status comes from when it isn't a record kept here: the state's record, or the copy in Documents. */
+  source?: "state" | "documents";
+  /** When the state's record that speaks to it was read (ms). */
+  sourceAt?: number;
+};
+
 export type Obligation = {
   key: string;
   title: string;
   agency: string;
-  /** Next due date (ISO), when it can be computed. */
+  /**
+   * The date that matters now (ISO): the overdue period's when the state
+   * shows it behind, the extended date while an extension runs, else the next
+   * period's. Null when it can't be dated, or when it applies only on a
+   * condition (then `when` has the date).
+   */
   due: string | null;
   /** How the due date is set, in words. */
   rule: string;
   fee?: string;
+  /** The penalty for filing late. */
+  lateFee?: string;
+  /** What happens if it stays unfiled. */
+  consequence?: string;
   note?: string;
   url?: string;
   urlLabel?: string;
+  /** The latest period that has come due, and where it stands; null when none has yet. */
+  last?: Period | null;
+  /** The period due next. */
+  next?: Period | null;
+  /** The latest period is overdue (the state shows filings behind): `due` is its date. */
+  overdue?: boolean;
+  /** Applies only if this holds ("if it paid a contractor $2,000 or more"): never overdue, never counted. */
+  conditional?: string;
+  /** A conditional obligation's next date (ISO). */
+  when?: string;
+  /** The fact that's missing to work it out ("Formation date", "Tax classification"). */
+  missing?: string;
 };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+const DAY_MS = 86_400_000;
+const utcDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function parseIso(s?: string | null): Date | null {
+  return s && /^\d{4}-\d{2}-\d{2}/.test(s) ? new Date(`${s.slice(0, 10)}T00:00:00Z`) : null;
+}
 
 /** Weekend due dates roll to Monday (IRS and most states). */
 function businessDay(d: Date): Date {
@@ -672,61 +730,189 @@ function businessDay(d: Date): Date {
   return out;
 }
 
-/** The next date ≥ today with this month/day. */
-function nextOn(month: number, day: number, today: Date, roll = true): Date {
-  const t = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  for (const y of [today.getUTCFullYear(), today.getUTCFullYear() + 1]) {
-    const lastDay = new Date(Date.UTC(y, month, 0)).getUTCDate();
-    const d = new Date(Date.UTC(y, month - 1, Math.min(day, lastDay)));
-    const due = roll ? businessDay(d) : d;
-    if (due.getTime() >= t) return due;
+/** Day `day` of month `month` of year `y` (a month past 12 runs into the next year), clamped to the month's end; rolled off a weekend when `roll`. */
+function dayOf(y: number, month: number, day: number, roll = false): Date {
+  const yy = y + Math.floor((month - 1) / 12);
+  const mm = ((((month - 1) % 12) + 12) % 12) + 1;
+  const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const d = new Date(Date.UTC(yy, mm - 1, Math.min(day, last)));
+  return roll ? businessDay(d) : d;
+}
+
+/** The first of these dates on or after today. */
+function nextOf(dates: (y: number) => Date[], today: Date): Date {
+  const t = utcDay(today);
+  const y = today.getUTCFullYear();
+  return [...dates(y - 1), ...dates(y), ...dates(y + 1)].filter((d) => d.getTime() >= t).sort((a, b) => a.getTime() - b.getTime())[0];
+}
+
+/** The month (1–12) its tax year ends; 12 unless the record says otherwise. */
+function yearEndMonth(v: PaperworkInput["taxYearEnd"]): number {
+  const n = typeof v === "string" ? Number.parseInt(v, 10) : (v ?? 12);
+  return Number.isInteger(n) && n >= 1 && n <= 12 ? n : 12;
+}
+
+/** A recurring filing's calendar: the due date of the period labelled `y`. */
+type Cycle = {
+  key: string;
+  due: (y: number) => Date;
+  label: (y: number) => string;
+  /** The first period there is (from the formation date), when known. */
+  first?: number;
+  /** The date an extension moves period `y` to. */
+  extend?: (y: number) => Date;
+  /** The state's record speaks to it (an annual report, list or tax). */
+  state?: boolean;
+};
+
+/** The period due next (today or later) and the one before it, which has come due. */
+function cycleYears(c: Cycle, today: Date): { last: number | null; next: number } {
+  const t = utcDay(today);
+  let y = today.getUTCFullYear() - 2;
+  while (c.due(y).getTime() < t) y++;
+  const next = c.first != null ? Math.max(y, c.first) : y;
+  const last = y - 1;
+  return { last: c.first != null && last < c.first ? null : last, next };
+}
+
+/** The year of the latest period of a recurring filing that has come due, or null. */
+function lastDue(c: Cycle, today: Date): number | null {
+  return cycleYears(c, today).last;
+}
+
+/** The state's annual report, list or tax as a calendar; null when it can't be dated (no formation date where it's needed). */
+function stateCycle(type: EntityType, st: string | null, formationDate?: string): Cycle | null {
+  if (!annualFiling(type, st)) return null;
+  const formed = parseIso(formationDate);
+  const key = "state-annual";
+  if (st === "DE") {
+    const corp = type === "C-Corp";
+    return { key, due: (y) => dayOf(y, corp ? 3 : 6, 1), label: (y) => `${y - 1} tax`, first: formed ? formed.getUTCFullYear() + 1 : undefined, state: true };
   }
-  return new Date(Date.UTC(today.getUTCFullYear() + 1, month - 1, day));
+  if (!formed) return null;
+  const m = formed.getUTCMonth() + 1;
+  if (st === "NV") return { key, due: (y) => dayOf(y, m, 31), label: (y) => String(y), first: formed.getUTCFullYear() + 1, state: true };
+  if (st === "AZ") return { key, due: (y) => dayOf(y, m, formed.getUTCDate()), label: (y) => String(y), first: formed.getUTCFullYear() + 1, state: true };
+  return null;
 }
 
 /**
- * What this entity must file, and when next — state filings and federal
- * returns. Ordered by due date; undated items last.
+ * A return's calendar by tax year: due the 15th day of the `after`th month
+ * after its year ends (rolled off a weekend), with an extension to
+ * `extendTo` months after. Tax year Y is the one that ends in Y.
+ */
+function returnCycle(key: string, end: number, after: number, extendTo: { months: number; day: number }, formed: Date | null): Cycle {
+  const firstYear = formed ? formed.getUTCFullYear() + (formed.getUTCMonth() + 1 > end ? 1 : 0) : undefined;
+  return {
+    key,
+    due: (y) => dayOf(y, end + after, 15, true),
+    extend: (y) => dayOf(y, end + extendTo.months, extendTo.day, true),
+    label: (y) => (end === 12 ? String(y) : `FY ending ${MONTHS[end - 1]} ${dayOf(y, end, 31).getUTCDate()}, ${y}`),
+    first: firstYear,
+  };
+}
+
+/** What the state's record says of its filings: current (and since when), or behind. Test-mode (sandbox) records say nothing. */
+function stateStanding(a: PaperworkInput, today: Date): { current: boolean; at: number } | null {
+  const r = a.stateRecord;
+  if (!r || r.mode === "test" || !r.checkedAt) return null;
+  const reg = r.standing?.registration ?? null;
+  const lapsed = (!!r.status && r.status !== "active") || reg === "not_compliant";
+  // Someone saw the state's own site say current over Palm's lagging copy (lib/registry.ts activeConfirmation).
+  const c = a.stateConfirmed;
+  if (lapsed && c && today.getTime() - c.at <= 365 * DAY_MS && (c.palmStatus ?? null) === (r.status ?? null) && (c.palmRegistration ?? null) === reg) return { current: true, at: c.at };
+  if (reg === "compliant") return { current: true, at: r.checkedAt };
+  if (reg === "not_compliant") return { current: false, at: r.checkedAt };
+  return null;
+}
+
+/** One period of a cycle, judged against what's recorded, what's in Documents and what the state says. */
+function judge(c: Cycle, y: number, a: PaperworkInput, today: Date): Period {
+  const t = utcDay(today);
+  const due = c.due(y);
+  const base = { key: `${c.key}-${y}`, label: c.label(y), due: iso(due) };
+  const rec = a.filedPeriods?.[base.key] ?? null;
+  const past = due.getTime() < t;
+  const late = (from: Date) => Math.max(0, Math.round((t - from.getTime()) / DAY_MS));
+  if (rec && rec.kind === "extended" && c.extend) {
+    const ext = c.extend(y);
+    return ext.getTime() >= t ? { ...base, extendedTo: iso(ext), status: "extended", record: rec } : { ...base, extendedTo: iso(ext), status: "unrecorded", record: rec, daysLate: late(ext) };
+  }
+  if (rec && rec.kind !== "extended") return { ...base, status: "filed", record: rec };
+  if (c.state && (a.annualReportYear ?? 0) >= y) return { ...base, status: "filed", source: "documents" };
+  if (!past) return { ...base, status: "upcoming" };
+  if (c.state) {
+    const s = stateStanding(a, today);
+    if (s?.current && s.at >= due.getTime()) return { ...base, status: "current", source: "state", sourceAt: s.at };
+    if (s && !s.current) return { ...base, status: "overdue", source: "state", sourceAt: s.at, daysLate: late(due) };
+  }
+  return { ...base, status: "unrecorded", daysLate: late(due) };
+}
+
+/** An obligation with periods: the latest that has come due and the next, and the date that matters now. */
+function dated(c: Cycle, a: PaperworkInput, today: Date, o: Omit<Obligation, "due" | "last" | "next" | "overdue">): Obligation {
+  const years = cycleYears(c, today);
+  const last = years.last != null ? judge(c, years.last, a, today) : null;
+  // Filed early: the one after is next.
+  let next = judge(c, years.next, a, today);
+  if (next.status === "filed") next = judge(c, years.next + 1, a, today);
+  const overdue = last?.status === "overdue";
+  const due = overdue ? last!.due : last?.status === "extended" ? last.extendedTo! : next.status === "extended" ? next.extendedTo! : next.due;
+  return { ...o, due, last, next, overdue };
+}
+
+/** "Robert Roe, Jane Roe" → ["Robert Roe", "Jane Roe"]: the names in a free-text list of people. */
+export function splitPeople(s?: string | null): string[] {
+  return (s ?? "")
+    .split(/\s*(?:,|;|&|\band\b)\s*/i)
+    .map((x) => x.trim())
+    .filter((x) => x && !/^(trustees?|grantors?|co-trustees?)$/i.test(x));
+}
+
+const joinNames = (n: string[]) => (n.length <= 1 ? (n[0] ?? "") : `${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}`);
+const possessive = (s: string) => (s.endsWith("s") ? `${s}’` : `${s}’s`);
+
+/**
+ * What this entity must file, and when: the state's recurring filing, the
+ * federal and state returns, and the payments and information returns that
+ * apply on a condition. Each recurring filing carries its latest period that
+ * has come due (filed, extended, current per the state, overdue or not
+ * recorded) and the next one. Overdue first, then by date; undated, then
+ * conditional, last.
  */
 export function obligations(a: PaperworkInput, today = new Date(), taxHomeName?: string | null): Obligation[] {
   const type = entityType(a);
   const st = stateCode(a.state);
-  const tax = taxClassOf(a).value;
+  const host = hostState(a);
+  const tax = taxClassOf(a);
   const out: Obligation[] = [];
-  const formed = a.formationDate && /^\d{4}-\d{2}-\d{2}/.test(a.formationDate) ? new Date(a.formationDate + "T00:00:00Z") : null;
+  const formed = parseIso(a.formationDate);
+  const end = yearEndMonth(a.taxYearEnd);
+  const fiscal = end !== 12;
+  const yearWord = fiscal ? "its tax year" : "the year";
 
-  // State
+  // ── State: the annual report, list or tax ──
   const annual = annualFiling(type, st);
-  if (annual && st === "AZ") {
-    out.push({
+  if (annual) {
+    const base = {
       key: "state-annual",
       title: annual.title,
-      agency: "Arizona Corporation Commission",
-      due: formed ? iso(nextOn(formed.getUTCMonth() + 1, formed.getUTCDate(), today, false)) : null,
-      rule: "Every year on the incorporation anniversary date",
+      agency: st === "AZ" ? "Arizona Corporation Commission" : st === "NV" ? "Nevada Secretary of State" : "Delaware Division of Corporations",
+      rule:
+        st === "AZ"
+          ? "Every year on the incorporation anniversary date"
+          : st === "NV"
+            ? "By the last day of the anniversary month"
+            : type === "C-Corp"
+              ? "Every March 1, for the year before"
+              : "Every June 1, for the year before",
       fee: annual.fee,
-      url: LINKS.azBusiness.url,
-    });
-  } else if (annual && st === "NV") {
-    out.push({
-      key: "state-annual",
-      title: annual.title,
-      agency: "Nevada Secretary of State",
-      due: formed ? iso(nextOn(formed.getUTCMonth() + 1, 31, today, false)) : null,
-      rule: "By the last day of the anniversary month",
-      fee: annual.fee,
-      url: LINKS.nvSilverflume.url,
-    });
-  } else if (annual && st === "DE") {
-    out.push({
-      key: "state-annual",
-      title: annual.title,
-      agency: "Delaware Division of Corporations",
-      due: iso(type === "C-Corp" ? nextOn(3, 1, today, false) : nextOn(6, 1, today, false)),
-      rule: type === "C-Corp" ? "Every March 1, for the prior year" : "Every June 1, for the prior year",
-      fee: annual.fee,
-      url: LINKS.deTax.url,
-    });
+      lateFee: annual.lateFee,
+      consequence: annual.consequence,
+      url: annualLink(st)?.url,
+    };
+    const cycle = stateCycle(type, st, a.formationDate);
+    out.push(cycle ? dated(cycle, a, today, base) : { ...base, due: null, missing: "Formation date", note: "Add the formation date to work out when it's due." });
   }
   if (st === "AZ" && type === "LLC") {
     out.push({
@@ -735,12 +921,11 @@ export function obligations(a: PaperworkInput, today = new Date(), taxHomeName?:
       agency: "Arizona Corporation Commission",
       due: null,
       rule: "Each January, if nothing was filed with the ACC in the last 2 years",
-      note: "Arizona LLCs file no annual report. Since 2026 the ACC emails LLCs with no filing in 2 years to confirm they still exist — no reply in 60 days starts administrative dissolution. Keep the statutory agent's email current.",
+      note: "Arizona LLCs file no annual report. Since 2026 the ACC emails LLCs with no filing in 2 years to confirm they still exist; no reply in 60 days starts administrative dissolution. Keep the statutory agent's email current.",
       url: LINKS.azBusiness.url,
       urlLabel: "Arizona Business Center",
     });
   }
-  const host = hostState(a);
   if (type === "C-Corp" && st && host === "NY" && st !== "NY") {
     out.push({
       key: "ny-biennial",
@@ -753,53 +938,181 @@ export function obligations(a: PaperworkInput, today = new Date(), taxHomeName?:
     });
   }
 
-  // Federal
+  // ── Federal ──
   const irs = "IRS";
+  const months = (n: number) => (fiscal ? `15th day of the ${n === 3 ? "3rd" : "4th"} month after its tax year ends` : n === 3 ? "March 15" : "April 15");
   if (type === "Trust") {
-    if (tax === "Non-grantor trust") {
-      out.push({ key: "fed", title: "Form 1041", agency: irs, due: iso(nextOn(4, 15, today)), rule: "April 15 (extension to Sept 30)", note: "Plus K-1s to beneficiaries who receive distributions." });
-    } else {
+    const grantors = splitPeople(a.grantors);
+    if (tax.value === "Non-grantor trust") {
+      out.push(
+        dated(returnCycle("fed", end, 4, { months: 9, day: 30 }, formed), a, today, {
+          key: "fed",
+          title: "Form 1041",
+          agency: irs,
+          rule: `${months(4)} (Form 7004 extends it ${fiscal ? "5½ months" : "to September 30"})`,
+          note: "Plus K-1s to the beneficiaries it distributes to.",
+          lateFee: "5% of the unpaid tax a month, up to 25%",
+        }),
+      );
+    } else if (tax.value === "Grantor trust") {
       out.push({
         key: "fed",
         title: "No separate return",
         agency: irs,
         due: null,
-        rule: "While the grantor is alive",
-        note: "A revocable (grantor) trust reports on the grantor's Form 1040 under their SSN. At the grantor's death it becomes irrevocable: it then needs a new EIN and files Form 1041.",
+        rule: "While a grantor is alive",
+        note: `${tax.isDefault ? "Its name says it's revocable, so it's read as a grantor trust until its tax class is recorded. " : ""}It reports on ${grantors.length ? `${possessive(joinNames(grantors))}` : "the grantors’"} Form 1040 under their SSNs (April 15). When a grantor dies it becomes irrevocable: it then needs its own EIN and files Form 1041.`,
+      });
+      out.push({
+        key: "trust-events",
+        title: "When a grantor dies or can no longer act",
+        agency: "The trustee",
+        due: null,
+        rule: "From the date of death",
+        conditional: "when a grantor dies",
+        note: `The trust (or that share of it) becomes irrevocable: it needs its own EIN and files Form 1041${st === "AZ" || !st ? " and Arizona Form 141AZ" : ""} from then on. The trustee tells the qualified beneficiaries within 60 days${st === "AZ" || !st ? " (A.R.S. 14-10813)" : ""}. A successor trustee steps in on incapacity as the trust agreement says.`,
+      });
+    } else {
+      out.push({
+        key: "fed",
+        title: "Tax classification unknown",
+        agency: irs,
+        due: null,
+        rule: "Record whether it's a grantor or a non-grantor trust",
+        missing: "Tax classification",
+        note: "A grantor (revocable) trust reports on the grantors' Form 1040 and files nothing itself. A non-grantor trust is its own taxpayer: it files Form 1041 by April 15, with K-1s to the beneficiaries it pays.",
       });
     }
-  } else if (tax === "Disregarded Entity") {
+  } else if (tax.value === "Disregarded Entity") {
+    const on1040 = /\bForm 1040\b/.test(taxHomeName ?? "");
     out.push({
       key: "fed",
       title: "No separate return",
       agency: irs,
       due: null,
       rule: "Disregarded for income tax",
-      note: `Its income and expenses go on ${taxHomeName ? taxHomeName : "its owner's"} return. It still keeps its own EIN for banking and payroll.`,
+      note: `Its income and expenses go on ${taxHomeName ? taxHomeName : "its owner's return"}${on1040 ? ": Schedule C if it runs a business (self-employment tax applies), Schedule E if it only holds rental property." : "."} It keeps its own EIN for banks and payroll.`,
     });
-  } else if (tax === "Partnership") {
+    if (on1040) {
+      const d = nextOf((y) => [dayOf(y, 4, 15, true), dayOf(y, 6, 15, true), dayOf(y, 9, 15, true), dayOf(y + 1, 1, 15, true)], today);
+      out.push({
+        key: "owner-estimates",
+        title: "Owners' estimated tax (Form 1040-ES)",
+        agency: irs,
+        due: null,
+        when: iso(d),
+        rule: "April 15, June 15, September 15 and January 15",
+        conditional: "if its profit leaves the owners owing $1,000 or more for the year",
+        note: "Paid by the owners on their own return, not by the LLC.",
+      });
+    }
+  } else if (tax.value === "Partnership" || tax.value === "S Corporation") {
+    const p = tax.value === "Partnership";
+    out.push(
+      dated(returnCycle("fed", end, 3, { months: 9, day: 15 }, formed), a, today, {
+        key: "fed",
+        title: p ? "Form 1065 + Schedule K-1s" : "Form 1120-S + Schedule K-1s",
+        agency: irs,
+        rule: `${months(3)} (Form 7004 extends it ${fiscal ? "6 months" : "to September 15"})`,
+        note: `K-1s go to every ${p ? "partner" : "shareholder"} by the same date.`,
+        lateFee: `a penalty for each ${p ? "partner" : "shareholder"}, for each month late (up to 12)`,
+      }),
+    );
+  } else if (tax.value === "C Corporation") {
+    out.push(
+      dated(returnCycle("fed", end, 4, { months: 10, day: 15 }, formed), a, today, {
+        key: "fed",
+        title: "Form 1120",
+        agency: irs,
+        rule: `${months(4)} (Form 7004 extends it ${fiscal ? "6 months" : "to October 15"})`,
+        lateFee: "5% of the unpaid tax a month, up to 25%",
+      }),
+    );
+    const d = nextOf((y) => [4, 6, 9, 12].map((m) => dayOf(y, end + m, 15, true)), today);
     out.push({
-      key: "fed",
-      title: "Form 1065 + Schedule K-1s",
+      key: "fed-estimates",
+      title: "Estimated tax (Form 1120-W)",
       agency: irs,
-      due: iso(nextOn(3, 15, today)),
-      rule: "15th day of the 3rd month (Form 7004 extends 6 months)",
-      note: "K-1s go to every partner by the same date.",
+      due: null,
+      when: iso(d),
+      rule: `15th day of the 4th, 6th, 9th and 12th months of ${yearWord}`,
+      conditional: "if it expects to owe $500 or more for the year",
     });
-  } else if (tax === "S Corporation") {
-    out.push({
-      key: "fed",
-      title: "Form 1120-S + Schedule K-1s",
-      agency: irs,
-      due: iso(nextOn(3, 15, today)),
-      rule: "15th day of the 3rd month (Form 7004 extends 6 months)",
-      note: "K-1s go to every shareholder by the same date.",
-    });
-  } else if (tax === "C Corporation") {
-    out.push({ key: "fed", title: "Form 1120", agency: irs, due: iso(nextOn(4, 15, today)), rule: "15th day of the 4th month (Form 7004 extends 6 months)" });
   }
 
-  return out.sort((x, y) => (x.due && y.due ? x.due.localeCompare(y.due) : x.due ? -1 : y.due ? 1 : 0));
+  // ── Arizona returns, where it's formed or run from ──
+  const az = st === "AZ" || host === "AZ";
+  const azdor = { agency: "Arizona Department of Revenue", url: "https://azdor.gov/forms", urlLabel: "Arizona Department of Revenue forms" };
+  if (az && type !== "Trust") {
+    if (tax.value === "Partnership")
+      out.push(
+        dated(returnCycle("az-return", end, 3, { months: 9, day: 15 }, formed), a, today, {
+          key: "az-return",
+          title: "Arizona Form 165 (partnership return)",
+          ...azdor,
+          rule: `${months(3)} (Form 204 extends it 6 months)`,
+          note: "Arizona taxes the partners, not the partnership; Form 165 reports their shares.",
+        }),
+      );
+    else if (tax.value === "S Corporation")
+      out.push(
+        dated(returnCycle("az-return", end, 3, { months: 9, day: 15 }, formed), a, today, {
+          key: "az-return",
+          title: "Arizona Form 120S",
+          ...azdor,
+          rule: `${months(3)} (Form 120EXT extends it 6 months)`,
+        }),
+      );
+    else if (tax.value === "C Corporation")
+      out.push(
+        dated(returnCycle("az-return", end, 4, { months: 10, day: 15 }, formed), a, today, {
+          key: "az-return",
+          title: "Arizona Form 120",
+          ...azdor,
+          rule: `${months(4)} (Form 120EXT extends it 6 months)`,
+        }),
+      );
+  }
+  if (type === "Trust" && tax.value === "Non-grantor trust" && (st === "AZ" || host === "AZ"))
+    out.push(
+      dated(returnCycle("az-return", end, 4, { months: 9, day: 30 }, formed), a, today, {
+        key: "az-return",
+        title: "Arizona Form 141AZ",
+        ...azdor,
+        rule: `${months(4)} (an extension follows the federal one)`,
+      }),
+    );
+
+  // ── Nevada's Commerce Tax, on revenue over $4 million ──
+  if (type !== "Trust" && (st === "NV" || host === "NV")) {
+    out.push({
+      key: "nv-commerce",
+      title: "Nevada Commerce Tax return",
+      agency: "Nevada Department of Taxation",
+      due: null,
+      when: iso(nextOf((y) => [dayOf(y, 8, 14, true)], today)),
+      rule: "August 14, for the year to June 30",
+      conditional: "only if its Nevada gross revenue tops $4 million for the year to June 30",
+    });
+  }
+
+  // ── Information returns, for a payer ──
+  if (type !== "Trust") {
+    const d = nextOf((y) => [dayOf(y, 1, 31, true)], today);
+    const paidIn = d.getUTCFullYear() - 1;
+    out.push({
+      key: "1099",
+      title: "Forms 1099-NEC (and 1096 on paper)",
+      agency: irs,
+      due: null,
+      when: iso(d),
+      rule: "January 31, for the year before; a copy to each payee by the same day",
+      conditional: `if it paid a person or a partnership (not a corporation) ${paidIn >= 2026 ? "$2,000" : "$600"} or more for services in ${paidIn}`,
+    });
+  }
+
+  const rank = (o: Obligation) => (o.overdue ? 0 : o.conditional ? 3 : o.due ? 1 : 2);
+  return out.sort((x, y) => rank(x) - rank(y) || String(x.due ?? x.when ?? "9").localeCompare(String(y.due ?? y.when ?? "9")));
 }
 
 // ── Consistency checks ────────────────────────────────────────────────────
@@ -857,10 +1170,20 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
         key: "disregarded-many-owners",
         severity: "high",
         title: "Classified as disregarded, but it has several owners",
-        detail:
-          "An LLC with two or more members is a partnership by default and files Form 1065 — unless the members are spouses holding it as Arizona community property (Rev. Proc. 2002-69) or all are disregarded into the same person.",
+        detail: `${a.ownerCount} owners are on record. An LLC with two or more members is a partnership by default and files Form 1065 with K-1s, unless the members are spouses holding it as community property (Rev. Proc. 2002-69) or all are disregarded into the same person. Until it's settled BFO won't fill in its W-9 or draft its operating agreement.`,
       });
     }
+  }
+
+  // A document (the CP 575, an election, a return) reads the class differently from the record.
+  const docSays = a.llcTypeConflict && typeof a.llcTypeConflict === "object" ? (a.llcTypeConflict as { value?: unknown; docName?: unknown }) : null;
+  if (docSays && typeof docSays.value === "string" && docSays.value && docSays.value !== recorded) {
+    out.push({
+      key: "doc-class",
+      severity: "high",
+      title: `A document says it's taxed as ${docSays.value}`,
+      detail: `${typeof docSays.docName === "string" && docSays.docName ? docSays.docName : "A document"} reads it as ${docSays.value}; the record says ${recorded || "nothing"}. Settle which is right under Tax classification on the Overview.`,
+    });
   }
 
   if (tax.value === "S Corporation" && owner && ownerType) {
@@ -882,7 +1205,7 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
       key: "foreign",
       severity: "medium",
       title: `Does it do business in ${stateName(host)}?`,
-      detail: `Its address is in ${stateName(host)}. If it does business there beyond simply owning property, it must register there as a foreign ${type === "C-Corp" ? "corporation" : "entity"} (${foreignTitle(type, host)}). Answer on the Overview's Addresses card.`,
+      detail: `Its address is in ${stateName(host)}. If it does business there beyond simply owning property, it must register there as a foreign ${type === "C-Corp" ? "corporation" : "entity"} (${foreignTitle(type, host)}). If it only gets mail there, nothing is filed.`,
     });
   }
 
@@ -899,6 +1222,14 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
   }
 
   if (type === "Trust") {
+    if (!recorded || !TAX_CLASSES.Trust.includes(recorded as TaxClass)) {
+      out.push({
+        key: "trust-class",
+        severity: "medium",
+        title: "Its tax classification isn't on record",
+        detail: `${revocableByName(a.name) ? "Its name says it's revocable, which makes it a grantor trust while the grantors live, and BFO reads it that way for now. " : ""}A grantor trust reports on the grantors' Form 1040 under their SSNs and needs no EIN of its own; a non-grantor trust is its own taxpayer, with an EIN and Form 1041 by April 15. Record which under Edit.`,
+      });
+    }
     if (tax.value === "Non-grantor trust" && !a.ein?.trim()) {
       out.push({
         key: "trust-ein",
@@ -940,31 +1271,62 @@ export function paperworkChecks(a: PaperworkInput): PaperworkIssue[] {
   return out;
 }
 
+/** Where a disregarded entity's income is reported, from `taxHome`. */
+export type TaxHome = {
+  /** Who files: an entity's name, or the grantors' names ("Robert Roe and Jane Roe"). */
+  name: string;
+  /** "Form 1040", "Form 1065", "Form 1041"; "return" when the owner's class isn't known. */
+  form: string;
+  /** The grantor trust the income passes through on its way to the grantors. */
+  via?: string;
+  /** The trust's class was read from its name ("Revocable"), not recorded. */
+  assumed?: boolean;
+  /** The owner's class isn't on record, so whose return it is can't be said. */
+  unknown?: boolean;
+};
+
 /**
  * Whose return a disregarded entity's income lands on: follow disregarded
  * owners up the chain to the first one that files. `lookup` resolves an
- * owner id to its record.
+ * owner id to its record. Null when it isn't disregarded, or when its own
+ * class conflicts with its owners on record (two or more can't be disregarded).
  */
-export function taxHome<T extends PaperworkInput & { ownerId?: string }>(a: T, lookup: (id: string) => T | undefined): { name: string; form: string } | null {
+export function taxHome<T extends PaperworkInput & { ownerId?: string }>(a: T, lookup: (id: string) => T | undefined): TaxHome | null {
   if (taxClassOf(a).value !== "Disregarded Entity") return null;
+  if ((a.ownerCount ?? 0) >= 2) return null;
   const seen = new Set<string>();
   let cur: T | undefined = a.ownerId ? lookup(a.ownerId) : undefined;
   while (cur) {
     const t = entityType(cur);
-    const tax = taxClassOf(cur).value;
+    const tax = taxClassOf(cur);
     if (t === "Trust") {
-      return tax === "Non-grantor trust"
-        ? { name: cur.name ?? "the trust", form: "Form 1041" }
-        : { name: `the grantor${cur.grantors ? ` (${cur.grantors})` : ""}, through ${cur.name ?? "the trust"}`, form: "Form 1040" };
+      if (tax.value === "Non-grantor trust") return { name: cur.name ?? "the trust", form: "Form 1041" };
+      if (tax.value === "Grantor trust") {
+        const grantors = splitPeople(cur.grantors);
+        return { name: grantors.length ? joinNames(grantors) : "the grantors", form: "Form 1040", via: cur.name ?? "the trust", ...(tax.isDefault ? { assumed: true } : {}) };
+      }
+      return { name: cur.name ?? "the trust", form: "return", unknown: true };
     }
-    if (tax === "Partnership") return { name: cur.name ?? "its owner", form: "Form 1065" };
-    if (tax === "S Corporation") return { name: cur.name ?? "its owner", form: "Form 1120-S" };
-    if (tax === "C Corporation") return { name: cur.name ?? "its owner", form: "Form 1120" };
-    if (!cur.ownerId || seen.has(cur.ownerId)) return { name: cur.name ?? "its owner", form: "return" };
+    if (tax.value === "Partnership") return { name: cur.name ?? "its owner", form: "Form 1065" };
+    if (tax.value === "S Corporation") return { name: cur.name ?? "its owner", form: "Form 1120-S" };
+    if (tax.value === "C Corporation") return { name: cur.name ?? "its owner", form: "Form 1120" };
+    if (!cur.ownerId || seen.has(cur.ownerId)) return { name: cur.name ?? "its owner", form: "return", ...(tax.value ? {} : { unknown: true }) };
     seen.add(cur.ownerId);
     cur = lookup(cur.ownerId);
   }
   return null;
+}
+
+/**
+ * The tax-class problems that must be settled before a W-9, an operating
+ * agreement or a return is prepared from the record: a class that doesn't fit
+ * the type, a class that contradicts the owners on record, a document that
+ * reads it differently, an owner that breaks an S election, or a trust whose
+ * class isn't recorded.
+ */
+export function taxClassIssues(a: PaperworkInput): PaperworkIssue[] {
+  const keys = new Set(["class-type", "disregarded-many-owners", "partnership-one-owner", "doc-class", "s-corp-owner", "trust-class"]);
+  return paperworkChecks(a).filter((i) => keys.has(i.key));
 }
 
 /** Federal BOI reporting — kept here so the app can answer the question. */

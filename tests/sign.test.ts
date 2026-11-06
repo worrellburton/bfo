@@ -11,8 +11,20 @@ import {
   fieldRect,
   fitInside,
   fontSafe,
+  archiveBlocker,
+  cleanTimeZone,
+  consentProblem,
+  deleteBlocker,
+  deviceSummary,
+  ESIGN_DISCLOSURE_VERSION,
+  filedPath,
   GAME_NOTE,
   hashToken,
+  linkExpired,
+  linkExpiry,
+  looksLikeEntity,
+  sha256Hex,
+  signerCapacity,
   isUploadPath,
   newToken,
   pdfKey,
@@ -197,10 +209,14 @@ describe("emails", () => {
     expect(m.html).toContain("Waiting on the other party");
     expect(signedNoticeEmail({ id: "x", title: "MSA" }, "Sam", true).subject).toBe("Signed by everyone: MSA");
   });
-  it("tells a game-mode signer to open it on a computer", () => {
+  it("tells a game-mode signer what comes first, and that a phone signs straight away", () => {
     const m = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: null, mode: "game" }, party("b"), "https://www.burtonfamilyoffice.com/sign/abc");
     expect(m.text).toContain(GAME_NOTE);
-    expect(m.html).toContain("Play and sign");
+    expect(GAME_NOTE).toMatch(/phone or tablet.*sign straight away/);
+    expect(m.html).toContain("Review and sign");
+    // Every signer's email links the disclosure and the privacy notice.
+    expect(m.html).toContain("/sign/abc#disclosure");
+    expect(m.html).toContain("/legal/privacy");
     const plain = signRequestEmail({ title: "MSA", created_by_name: "Robert", brand: null, mode: "normal" }, party("b"), "x");
     expect(plain.html).not.toContain(GAME_NOTE);
     expect(plain.html).toContain("Review and sign");
@@ -296,5 +312,127 @@ describe("upload paths", () => {
     expect(isUploadPath(id, `signatures/22222222-2222-4222-8222-222222222222/upload-abc-0011aabb.pdf`)).toBe(false);
     expect(isUploadPath(id, `signatures/${id}/upload-abc-0011aabb.pdf/../x`)).toBe(false);
     expect(versionPath(id, "current")).not.toBe(versionPath(id, "current"));
+  });
+});
+
+describe("what may be deleted, and what is archived instead", () => {
+  it("deletes only a draft that never went out", () => {
+    expect(deleteBlocker({ status: "draft", sent_at: null })).toBeNull();
+    for (const status of ["sent", "partial", "completed", "declined", "voided"] as const) expect(deleteBlocker({ status, sent_at: "2026-11-02T00:00:00Z" })).toMatch(/Archive/);
+    // A request that went out and came back to draft is still a record.
+    expect(deleteBlocker({ status: "draft", sent_at: "2026-11-02T00:00:00Z" })).not.toBeNull();
+  });
+  it("archives a finished request, never an open one or a fresh draft, and only once", () => {
+    expect(archiveBlocker({ status: "completed", sent_at: "x", archived_at: null })).toBeNull();
+    expect(archiveBlocker({ status: "voided", sent_at: "x", archived_at: null })).toBeNull();
+    expect(archiveBlocker({ status: "partial", sent_at: "x", archived_at: null })).toMatch(/Void it first/);
+    expect(archiveBlocker({ status: "draft", sent_at: null, archived_at: null })).toMatch(/deleted/);
+    expect(archiveBlocker({ status: "completed", sent_at: "x", archived_at: "y" })).toMatch(/already/);
+  });
+});
+
+describe("the record a signature leaves", () => {
+  it("takes consent only when agreed, to a disclosure version the server knows", () => {
+    expect(consentProblem(true, ESIGN_DISCLOSURE_VERSION)).toBeNull();
+    expect(consentProblem(false, ESIGN_DISCLOSURE_VERSION)).toBe("consent");
+    expect(consentProblem("yes", ESIGN_DISCLOSURE_VERSION)).toBe("consent");
+    expect(consentProblem(true, undefined)).toBe("consent_version");
+    expect(consentProblem(true, "1999-01-01")).toBe("consent_version");
+  });
+  it("fingerprints a file with SHA-256", () => {
+    expect(sha256Hex(new TextEncoder().encode("abc"))).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  });
+  it("prints the consent, the device, the method, the mode and both fingerprints on the certificate", () => {
+    const lines = certificateLines({
+      ...row({ mode: "race", original_sha256: "a".repeat(64), executed_sha256: "b".repeat(64), completed_at: "2026-11-05T13:49:00Z" }),
+      parties: [
+        party("a", "signed", {
+          signedAt: "2026-11-05T13:49:00Z",
+          ip: "1.2.3.4",
+          device: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+          method: "drawn",
+          via: "page",
+          consent: { version: ESIGN_DISCLOSURE_VERSION, at: "2026-11-05T13:48:00Z", ip: "1.2.3.4" },
+          viewedAt: "2026-11-04T10:00:00Z",
+          viewIp: "5.6.7.8",
+        }),
+        party("b", "signed", { signedAt: "2026-11-05T14:00:00Z", via: "game", method: "typed", entity: "Northwind Holdings, LLC", title: "Manager" }),
+      ],
+    });
+    const text = lines.join("\n");
+    expect(text).toContain(`Agreed to use electronic records and signatures Nov 5, 2026, 6:48 AM MST from 1.2.3.4 (disclosure of ${ESIGN_DISCLOSURE_VERSION})`);
+    expect(text).toContain("Signed Nov 5, 2026, 6:49 AM MST from 1.2.3.4 · Safari on iPhone");
+    expect(text).toContain("Signature drawn on the signing page (the Racetrack game was offered first and skipped)");
+    expect(text).toContain("Signature typed on the signing page, after the Racetrack game");
+    expect(text).toContain("First opened Nov 4, 2026, 3:00 AM MST from 5.6.7.8");
+    expect(text).toContain("## Client: Northwind Holdings, LLC, by Ada Client, Manager");
+    expect(text).toContain(`Original document SHA-256: ${"a".repeat(64)}`);
+    expect(text).toContain(`Signed pages SHA-256 (pages 1 to 1, before this certificate): ${"b".repeat(64)}`);
+    expect(text).toContain("Signing mode: Racetrack game");
+    // It says what the system knows: the document was opened, not read.
+    expect(certificateFooter(null).join(" ")).toMatch(/opened the document and signed it/);
+    expect(certificateFooter(null).join(" ")).not.toMatch(/read the document/);
+  });
+  it("lays a long certificate out without throwing", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const long = "x".repeat(400);
+    const out = await appendCertificate(await doc.save(), {
+      ...row({ original_sha256: "a".repeat(64) }),
+      parties: [party("a", "signed", { signedAt: "2026-11-05T13:49:00Z", device: long }), party("b", "signed", { signedAt: "2026-11-05T13:49:00Z", device: long })],
+    });
+    expect((await PDFDocument.load(out)).getPageCount()).toBeGreaterThanOrEqual(2);
+  });
+  it("reads a device in a few words", () => {
+    expect(deviceSummary("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36")).toBe("Chrome on Windows");
+    expect(deviceSummary("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15")).toBe("Safari on Mac");
+    expect(deviceSummary(undefined)).toBe("");
+  });
+  it("stamps the date in a real time zone only", () => {
+    expect(cleanTimeZone("America/New_York")).toBe("America/New_York");
+    expect(cleanTimeZone("Mars/Olympus")).toBeUndefined();
+    expect(cleanTimeZone("'; drop")).toBeUndefined();
+  });
+});
+
+describe("signing for a company", () => {
+  it("knows a company's name from a person's", () => {
+    expect(looksLikeEntity("Ledger Louise, LLC")).toBe(true);
+    expect(looksLikeEntity("Northwind Holdings Inc.")).toBe(true);
+    expect(looksLikeEntity("The Rivera Family Trust")).toBe(true);
+    expect(looksLikeEntity("Robert W. Burton")).toBe(false);
+    expect(looksLikeEntity("Philip Marco")).toBe(false);
+  });
+  it("won't send until a company has a person and a title signing for it", () => {
+    const company = party("a", "pending", { name: "Northwind Holdings, LLC" });
+    expect(sendBlocker(row({ parties: [company, party("b")] }))).toMatch(/is a company/);
+    const through = party("a", "pending", { name: "Alex Rivera", entity: "Northwind Holdings, LLC" });
+    expect(sendBlocker(row({ parties: [through, party("b")] }))).toMatch(/title/);
+    expect(sendBlocker(row({ parties: [{ ...through, title: "Manager" }, party("b")] }))).toBeNull();
+    expect(signerCapacity({ ...through, title: "Manager" })).toBe("Northwind Holdings, LLC, by Alex Rivera, Manager");
+  });
+  it("won't send two parties to one address", () => {
+    expect(sendBlocker(row({ parties: [party("a"), party("b", "pending", { email: "a@example.com" })] }))).toMatch(/same email/);
+  });
+  it("keeps the company and title through an edit, and drops a title without a company", () => {
+    expect(cleanParty({ role: "Member", name: "Alex Rivera", email: "a@x.com", entity: "Northwind Holdings, LLC", title: "Manager" }, "a")).toMatchObject({
+      entity: "Northwind Holdings, LLC",
+      title: "Manager",
+    });
+    expect(cleanParty({ role: "Member", name: "Alex Rivera", email: "a@x.com", title: "Manager" }, "a")).not.toHaveProperty("title");
+  });
+});
+
+describe("links and filing", () => {
+  it("runs a link out after its days", () => {
+    const sent = new Date("2026-11-01T00:00:00Z");
+    const expiresAt = linkExpiry(sent);
+    expect(linkExpired({ expiresAt }, new Date("2026-12-01T00:00:00Z"))).toBe(false);
+    expect(linkExpired({ expiresAt }, new Date("2027-01-15T00:00:00Z"))).toBe(true);
+    expect(linkExpired({}, new Date("2030-01-01T00:00:00Z"))).toBe(false);
+  });
+  it("files the signed copy under the entity, by a path the documents check accepts", () => {
+    const path = filedPath("-E2x", "Operating Agreement – Northwind/Holdings", "11111111-1111-4111-8111-111111111111", 1700000000000);
+    expect(path).toBe("assets/-E2x/1700000000000-Operating Agreement Northwind Holdings (signed 11111111).pdf");
   });
 });

@@ -1,12 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, currentUser, handleError, sbFetch as db, type AppUser } from "../../lib/auth.js";
 import { storageUpload } from "../../lib/storage.js";
+import { writeLog } from "../../lib/books/audit.js";
+import { writeTolerant } from "../../lib/books/db.js";
 
 /**
- * Upload a receipt/document file for a transaction into the private storage
- * bucket. The client sends the file as base64 JSON; we store the bytes and
- * record a book_txn_receipt pointing at the object path (served later through
- * a short-lived signed URL, never a public link).
+ * Upload a receipt or supporting document for a transaction into the private
+ * storage bucket. The client sends the file as base64 JSON; we store the
+ * bytes and record a book_txn_receipt pointing at the object path (served
+ * later through a short-lived signed URL, never a public link), with who
+ * added it, and note it in the transaction's history.
+ *
+ * HTTP surface: POST /api/books/upload-receipt {transaction_id, filename, content_type, data_base64}.
+ * Who may call it: anyone who can write (canWrite); partners are refused.
+ * Env: SUPABASE_URL and SUPABASE_SERVICE_KEY, and the storage bucket's settings (lib/storage.ts).
  */
 export const config = { api: { bodyParser: { sizeLimit: "8mb" } } };
 
@@ -43,15 +50,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${txnId}/${Date.now()}-${safe}`;
     await storageUpload(path, new Uint8Array(bytes), contentType);
-    const r = await db("book_txn_receipt", {
-      method: "POST",
-      headers: { Prefer: "return=representation" },
-      body: JSON.stringify({ transaction_id: txnId, path, label: filename, content_type: contentType, source: "upload" }),
-    });
+    const r = await writeTolerant(
+      db,
+      "book_txn_receipt",
+      "POST",
+      { transaction_id: txnId, path, label: filename, content_type: contentType, source: "upload", uploaded_by: user.id, uploaded_by_name: user.name ?? null },
+      ["uploaded_by", "uploaded_by_name"],
+      { Prefer: "return=representation" },
+    );
     if (!r.ok) return res.status(500).json({ error: "record_failed" });
-    return res.json({ receipt: ((await r.json()) as any[])[0] ?? null });
+    await writeLog([{ transaction_id: txnId, field: "receipt", old_value: null, new_value: filename, source: "receipt", actor: user.id, actor_name: user.name ?? null }]);
+    return res.json({ receipt: ((await r.json()) as Array<Record<string, unknown>>)[0] ?? null });
   } catch (err: any) {
     console.error("receipt upload error:", err.message);
-    return res.status(500).json({ error: "upload_failed", message: err.message?.slice(0, 200) });
+    return res.status(500).json({ error: "upload_failed", message: "The upload didn't finish. Try again." });
   }
 }

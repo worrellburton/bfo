@@ -14,7 +14,7 @@ describe("entity activity", () => {
     );
     expect(two[0].summary).toBe("Changed the principal office and owner");
     expect((two[0].detail!.fields as any[]).find((f) => f.key === "ownerId")).toMatchObject({ from: "Ledger Louise, LLC", to: "Burton Family Trust" });
-    expect(describeChange({ ...base, notes: "a" }, { ...base, notes: "b" })[0]).toMatchObject({ summary: "Edited the notes", detail: { fields: [{ from: null, to: null }] } });
+    expect(describeChange({ ...base, notes: "a" }, { ...base, notes: "b" })[0]).toMatchObject({ summary: "Edited the notes", detail: { fields: [{ from: "a", to: "b" }] } });
   });
 
   it("ignores bookkeeping the app does on its own", () => {

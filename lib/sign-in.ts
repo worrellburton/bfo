@@ -17,7 +17,7 @@
  */
 
 import { audit } from "./audit.js";
-import { CODE_RESEND_MS, ConfigError, sb } from "./auth.js";
+import { CODE_RESEND_MS, ConfigError, publicUser, sb, type AppUser } from "./auth.js";
 import { countRows } from "./db-pages.js";
 import { log } from "./log.js";
 import { RETENTION } from "./terms.js";
@@ -60,6 +60,17 @@ export function deviceOf(headers: Record<string, string | string[] | undefined>)
 export function lastFour(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return `•• ${digits.slice(-4)}`;
+}
+
+/**
+ * The signed-in person as sign-in and the session answer them: publicUser,
+ * when their number was verified, and the Terms version they agreed to
+ * (left out entirely while the database has no such column, so the app
+ * doesn't ask on every sign-in).
+ */
+export function signedInUser(user: AppUser) {
+  const extra = user as AppUser & { terms_version?: string | null };
+  return { ...publicUser(user), verifiedAt: user.verified_at ?? null, ...("terms_version" in extra ? { termsVersion: extra.terms_version ?? null } : {}) };
 }
 
 /** Whether a failed write names a column the database doesn't have yet (its migration not applied). */

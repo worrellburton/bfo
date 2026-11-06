@@ -12,6 +12,8 @@ let rows: any[] = [];
 let sendAnswer: { status: number; body: unknown } = { status: 202, body: {} };
 let lookup: { status: number; body: unknown } = { status: 200, body: {} };
 let me: any = null;
+/** What BFO has exchanged with the number being texted (the history lookup before a send). */
+let history: any[] = [];
 
 vi.mock("../lib/auth.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/auth")>();
@@ -21,6 +23,7 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
     sb: async (path: string, init?: any) => {
       db.push({ path, init });
       if (path.startsWith("sms_messages?id=eq.") && !init?.method) return rows;
+      if (path.startsWith("sms_messages?or=") && !init?.method) return history;
       return null;
     },
     birdPlatformFetch: async (path: string, init: { method?: string; body?: any; headers?: Record<string, string> } = {}) => {
@@ -47,7 +50,9 @@ beforeEach(() => {
   db.length = 0;
   bird.length = 0;
   rows = [];
-  me = { id: "u1", name: "Robert", role: "owner", status: "approved" };
+  me = { id: "u1", name: "Alex Rivera", role: "owner", status: "approved" };
+  // By default the number texted the office first: a reply, which needs no consent and no STOP line.
+  history = [{ direction: "in", body: "Can you call me?", received_at: "2026-10-30T15:00:00Z" }];
   sendAnswer = { status: 202, body: { id: "sms_01out", direction: "outbound", status: "accepted", to: "+14805551234", from: OURS, created_at: "2026-10-30T16:00:00Z" } };
   lookup = { status: 200, body: {} };
   delete process.env.BIRD_SMS_FROM;
@@ -183,7 +188,35 @@ describe("/api/texts send", () => {
       status: "accepted",
     });
     expect(stored?.init.body.read_at).toBeTruthy();
-    expect(out.json.text).toMatchObject({ id: "sms_01out", direction: "out", to: "+14805551234", status: "accepted", body: "On my way." });
+    expect(out.json.text).toMatchObject({ id: "sms_01out", direction: "out", to: "+14805551234", status: "accepted", body: "On my way.", sentBy: "Alex Rivera" });
+    // The send is in the audit log: who texted which number, never the words.
+    const logged = db.find((c) => c.path === "audit_log")?.init.body;
+    expect(logged).toMatchObject({ action: "phone.send", actor_id: "u1", target_type: "phone_number", target_id: "+14805551234", summary: "Texted (480) 555-1234" });
+    expect(JSON.stringify(logged)).not.toMatch(/On my way/);
+  });
+
+  it("refuses a number whose newest keyword is STOP, until it sends START", async () => {
+    history = [
+      { direction: "in", body: "STOP", received_at: "2026-10-30T16:00:00Z" },
+      { direction: "in", body: "hello", received_at: "2026-10-30T15:00:00Z" },
+    ];
+    const out = await callTexts("POST", { action: "send", to: "4805551234", text: "hi" });
+    expect(out).toMatchObject({ status: 422, json: { error: "opted_out", message: expect.stringMatching(/replied STOP/) } });
+    expect(bird).toEqual([]);
+    history = [{ direction: "in", body: "start", received_at: "2026-10-31T09:00:00Z" }, ...history];
+    expect((await callTexts("POST", { action: "send", to: "4805551234", text: "hi" })).status).toBe(200);
+  });
+
+  it("asks for consent before a first text, then ends it with the STOP line and records the consent", async () => {
+    history = [];
+    const refused = await callTexts("POST", { action: "send", to: "4805551234", text: "Hello" });
+    expect(refused).toMatchObject({ status: 422, json: { error: "consent_needed" } });
+    expect(bird).toEqual([]);
+    const out = await callTexts("POST", { action: "send", to: "4805551234", text: "Burton Family Office: Hello", consent: true });
+    expect(out.status).toBe(200);
+    expect(bird[0].body.text).toBe("Burton Family Office: Hello\nReply STOP to opt out.");
+    const audits = db.filter((c) => c.path === "audit_log").map((c) => c.init.body.action);
+    expect(audits).toEqual(["phone.consent", "phone.send"]);
   });
 
   it("refuses before asking Bird: a bad number, an empty text, one too long", async () => {
@@ -197,7 +230,8 @@ describe("/api/texts send", () => {
     expect(await callTexts("POST", { action: "send", to: "8445192725", text: "hi" })).toMatchObject({ status: 400, json: { message: "That's BFO's own number." } });
     expect(await callTexts("POST", { action: "send", text: "hi" })).toMatchObject({ status: 400 });
     expect(bird).toEqual([]);
-    expect(db).toEqual([]);
+    // Nothing kept: at most the history was read.
+    expect(db.filter((c) => c.init?.method)).toEqual([]);
   });
 
   it("answers Bird's refusal with one plain sentence and keeps nothing", async () => {
@@ -219,7 +253,7 @@ describe("/api/texts send", () => {
     };
     const out = await callTexts("POST", { action: "send", to: "4805551234", text: "hi" });
     expect(out).toMatchObject({ status: 422, json: { error: "bird_refused", message: expect.stringMatching(/valid phone number/) } });
-    expect(db).toEqual([]);
+    expect(db.filter((c) => c.init?.method)).toEqual([]);
     // The log keeps Bird's structured answer, never its message (which can quote the number).
     expect(warn).toHaveBeenCalledWith("sms-send: Bird refused a text", { status: 422, type: "validation_error", code: "E00002", name: "ValidationFailed", param: "to" });
     expect(JSON.stringify(warn.mock.calls)).not.toMatch(/480/);

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deflateSync } from "node:zlib";
 import { PDFDocument } from "pdf-lib";
-import { hashToken, type SignatureRequestRow } from "../lib/sign";
+import { ESIGN_DISCLOSURE_VERSION, hashToken, type SignatureRequestRow } from "../lib/sign";
 
 /**
  * api/sign.ts against a fake signature_requests row and a fake bucket. The
@@ -158,8 +158,8 @@ describe("signing", () => {
     readsExpected = 2;
     gated = 4;
     const [ra, rb] = await Promise.all([
-      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true }),
-      call({ action: "sign", token: tokenB, name: "Łukasz Ğül", signature: png, consent: true }),
+      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION }),
+      call({ action: "sign", token: tokenB, name: "Łukasz Ğül", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION }),
     ]);
     expect([ra.statusCode, rb.statusCode]).toEqual([200, 200]);
     expect(row.parties.map((p) => p.status)).toEqual(["signed", "signed"]);
@@ -177,8 +177,8 @@ describe("signing", () => {
     readsExpected = 2;
     gated = 4;
     const [r1, r2] = await Promise.all([
-      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true }),
-      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true }),
+      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION }),
+      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION }),
     ]);
     expect([r1.statusCode, r2.statusCode].sort()).toEqual([200, 409]);
     expect(row.events.filter((e) => e.kind === "signed")).toHaveLength(1);
@@ -190,7 +190,10 @@ describe("signing", () => {
     readsExpected = 2;
     gated = 2;
     const view: any = { statusCode: 200, setHeader: () => view, status: (c: number) => ((view.statusCode = c), view), json: (b: unknown) => ((view.body = b), view), end: () => view };
-    await Promise.all([call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true }), handler({ method: "GET", query: { token: tokenB }, headers: {} } as any, view)]);
+    await Promise.all([
+      call({ action: "sign", token: tokenA, name: "Robert", signature: png, consent: true, consentVersion: ESIGN_DISCLOSURE_VERSION }),
+      handler({ method: "GET", query: { token: tokenB }, headers: {} } as any, view),
+    ]);
     expect(row.parties[0].status).toBe("signed");
   });
 });

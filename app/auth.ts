@@ -1,3 +1,10 @@
+/**
+ * The browser's side of signing in (docs/DESIGN.md §9.4): the session in
+ * localStorage, every account signed in on this device (Gmail-style), and
+ * the role checks the screens use. The server decides access (lib/auth.ts);
+ * these only choose what to show.
+ */
+
 /** "email" = Email only: signs in to their own inbox and nothing else. */
 /** "partner" = an entity's owner or member, invited to see only the entities they're on. */
 export type Role = "owner" | "admin" | "member" | "viewer" | "email" | "partner";
@@ -23,6 +30,8 @@ type Session = {
   token: string;
   expiresAt: string;
   user: User;
+  /** When it stopped being the current account (ms), while it waits in the list. */
+  waitingSince?: number;
 };
 
 const STORAGE_KEY = "bfo-session";
@@ -69,7 +78,7 @@ function readAccounts(): Session[] {
   if (typeof window === "undefined") return [];
   try {
     const list = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) ?? "[]") as Session[];
-    return Array.isArray(list) ? list.filter((s) => s?.token && s?.user && !expired(s)) : [];
+    return Array.isArray(list) ? list.filter((s) => s?.token && s?.user && !expired(s) && s.user.role !== "partner") : [];
   } catch {
     return [];
   }
@@ -79,6 +88,40 @@ function writeAccounts(list: Session[]) {
   if (typeof window === "undefined") return;
   if (list.length) localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
   else localStorage.removeItem(ACCOUNTS_KEY);
+}
+
+/** Ends a session on the server (best effort) and forgets what the palette remembered for it. */
+function revoke(session: Session) {
+  void fetch("/api/auth/session", { method: "DELETE", headers: { Authorization: `Bearer ${session.token}` } }).catch(() => {});
+  forgetRecents(session.user.id);
+}
+
+/** The palette's recent places for an account (app/shell-model.ts recentKey), and the old shared list. */
+function forgetRecents(userId: string) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.removeItem(`bfo-recent:${userId}`);
+    localStorage.removeItem("bfo-recent");
+  } catch {
+    // Nothing kept, then.
+  }
+}
+
+/**
+ * Whether a session may wait in the list for a one-tap switch. A partner's
+ * never does: on a shared browser, the next person mustn't be a tap away
+ * from an invited owner's entities.
+ */
+function keepsWaiting(session: Session | null): session is Session {
+  return !!session && !expired(session) && session.user.role !== "partner";
+}
+
+/** Moves the current session into the waiting list (or ends it, for a partner). */
+function stepAside(current: Session | null, rest: Session[]): Session[] {
+  if (!current) return rest;
+  if (keepsWaiting(current)) return [{ ...current, waitingSince: Date.now() }, ...rest.filter((s) => s.user.id !== current.user.id)];
+  if (!expired(current)) revoke(current);
+  return rest;
 }
 
 /** A session just signed in becomes current; the same person waiting in the list is dropped. */
@@ -96,24 +139,41 @@ export function otherAccounts(): User[] {
     .map((s) => s.user);
 }
 
-/** Make another signed-in account the current one. The caller reloads. */
-export function switchAccount(userId: string): boolean {
+/** How long an account can wait in the list and still be switched to without a fresh code. */
+export const SWITCH_IDLE_MS = 15 * 60_000;
+
+/**
+ * Make another signed-in account the current one. The caller reloads.
+ * "stale": it has waited longer than `maxIdleMs`, so it is signed out and
+ * needs a fresh code (the caller sends the person to sign in).
+ */
+export function switchTo(userId: string, o: { maxIdleMs?: number; now?: number } = {}): "ok" | "stale" | "missing" {
   const list = readAccounts();
   const target = list.find((s) => s.user.id === userId);
-  if (!target) return false;
-  const current = read();
-  writeAccounts([...(current && !expired(current) ? [current] : []), ...list.filter((s) => s.user.id !== userId)]);
-  write(target);
-  return true;
+  if (!target) return "missing";
+  const rest = list.filter((s) => s.user.id !== userId);
+  if (o.maxIdleMs !== undefined && target.waitingSince && (o.now ?? Date.now()) - target.waitingSince > o.maxIdleMs) {
+    revoke(target);
+    writeAccounts(rest);
+    return "stale";
+  }
+  writeAccounts(stepAside(read(), rest));
+  const { waitingSince: _w, ...session } = target;
+  void _w;
+  write(session);
+  return "ok";
 }
 
-/** Step aside to sign in one more account; the current one waits in the list. */
+/** Make another signed-in account the current one, however long it has waited. */
+export function switchAccount(userId: string): boolean {
+  return switchTo(userId) === "ok";
+}
+
+/** Step aside to sign in one more account; the current one waits in the list (a partner's is signed out). */
 export function beginAddAccount() {
   const current = read();
-  if (current && !expired(current)) {
-    writeAccounts([current, ...readAccounts().filter((s) => s.user.id !== current.user.id)]);
-    sessionStorage.setItem(ADDING_KEY, current.user.id);
-  }
+  if (keepsWaiting(current)) sessionStorage.setItem(ADDING_KEY, current.user.id);
+  writeAccounts(stepAside(current, readAccounts()));
   write(null);
 }
 
@@ -325,21 +385,24 @@ export async function revalidate(): Promise<boolean> {
 }
 
 /**
- * Sign the current account out. Another account signed in on this browser,
- * if there is one, becomes current (returns its user); otherwise null.
+ * Sign the current account out, and only it. No other account becomes
+ * current on its own: on a shared computer the next person must choose (and
+ * sign in), not land in someone else's mail. Returns the accounts still
+ * signed in on this browser, for the sign-in page to offer.
  */
-export function logout(): User | null {
-  const token = getToken();
-  if (token) {
-    void fetch("/api/auth/session", {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    }).catch(() => {});
-  }
+export function logout(): User[] {
+  const current = read();
+  if (current) revoke(current);
   write(null);
-  const [next, ...rest] = readAccounts();
-  if (!next) return null;
-  writeAccounts(rest);
-  write(next);
-  return next.user;
+  return otherAccounts();
+}
+
+/** Sign every account on this browser out, the current one and the ones waiting. */
+export function logoutAll() {
+  const current = read();
+  if (current) revoke(current);
+  for (const s of readAccounts()) revoke(s);
+  write(null);
+  writeAccounts([]);
+  if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(ADDING_KEY);
 }

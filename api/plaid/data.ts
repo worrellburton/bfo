@@ -1,21 +1,40 @@
+/**
+ * Treasury's and Investments' reads from the banks, through Plaid.
+ *
+ * GET ?report=list                 → the connections
+ * GET ?report=treasury             → every bank account with its balance, the
+ *                                    change since the prior day's close, its
+ *                                    owner, when it was read (asOf) and when the
+ *                                    bank last updated it; the accounts that
+ *                                    stopped syncing (history kept); and each
+ *                                    connection's status
+ * GET ?report=account-ledger&account_id=… → that account's Books ledger
+ *                                    (every page), for its Treasury page
+ * GET ?report=bank-transactions    → the bank's last 180 days through Plaid
+ * GET ?report=investments          → positions, the value history and income
+ * GET ?report=holdings|balances|transactions → raw reads for one connection
+ *
+ * Who may call it: any signed-in staff role (viewers included), or the
+ * treasury report cron with Bearer CRON_SECRET. Partners get 403
+ * (PartnerRefused); email-only users 401.
+ * Env: PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV; SUPABASE_URL,
+ * SUPABASE_SERVICE_KEY; CRON_SECRET.
+ *
+ * Writes, all of them facts as read: today's balance per account
+ * (plaid_account_daily, the last reading of the day wins), the balance last
+ * seen (plaid_account_state, which a disconnect keeps as the last balance),
+ * and today's headline totals (treasury_daily), which are skipped while any
+ * connection is offline so a bank that didn't answer never reads as a drop.
+ */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
 import { cronAuth, currentUser, fail, handleError, sb } from "../../lib/auth.js";
-
-// A visit older than this counts as a new "login" for change-since purposes.
-const ROTATE_AFTER_MS = 30 * 60 * 1000;
+import { fetchAll } from "../../lib/db-pages.js";
+import { incomeAmount, incomeKind as kindOfIncome, priorClose } from "../../lib/plaid-history.js";
 
 async function getItems() {
   return (await sb<any[] | null>("plaid_items?select=*")) ?? [];
 }
-
-type AccountState = {
-  account_id: string;
-  balance: number | null;
-  seen_at: string;
-  prev_balance: number | null;
-  prev_seen_at: string | null;
-};
 
 type AccountPrefs = {
   account_id: string;
@@ -23,7 +42,38 @@ type AccountPrefs = {
   hidden: boolean;
   entity_id: string | null;
   entity_name: string | null;
+  account_name?: string | null;
+  institution_name?: string | null;
+  mask?: string | null;
+  subtype?: string | null;
+  archived_at?: string | null;
+  // After migration 20261107_treasury_keep_history.sql:
+  owner_kind?: string | null;
+  owner_names?: string[] | null;
+  tenancy?: string | null;
+  tax_status?: string | null;
+  beneficiary_entity_id?: string | null;
+  beneficiary_name?: string | null;
+  disconnected_at?: string | null;
+  disconnected_reason?: string | null;
+  last_balance?: number | string | null;
+  last_balance_at?: string | null;
+  account_type?: string | null;
+  books_through?: string | null;
+  successor_account_id?: string | null;
 };
+
+/** The owner fields every account carries to the pages (null before the migration). */
+function ownerFields(p: AccountPrefs | undefined) {
+  return {
+    owner_kind: p?.owner_kind ?? null,
+    owner_names: p?.owner_names ?? null,
+    tenancy: p?.tenancy ?? null,
+    tax_status: p?.tax_status ?? null,
+    beneficiary_entity_id: p?.beneficiary_entity_id ?? null,
+    beneficiary_name: p?.beneficiary_name ?? null,
+  };
+}
 
 /** A read whose failure just means "nothing known" — the report degrades rather than fails. */
 async function readOrEmpty<T>(path: string): Promise<T[]> {
@@ -41,21 +91,12 @@ async function getAccountActivity(): Promise<Map<string, string>> {
   return new Map(rows.filter((x) => x.last_activity).map((x) => [x.account_id, x.last_activity!]));
 }
 
-async function getAccountStates(): Promise<Map<string, AccountState>> {
-  const rows = await readOrEmpty<AccountState>("plaid_account_state?select=*");
-  return new Map(rows.map((row) => [row.account_id, row]));
-}
-
-async function saveAccountState(accountId: string, itemId: string, balance: number | null, prior: AccountState | undefined, rotate: boolean, now: Date) {
-  const row = {
-    account_id: accountId,
-    item_id: itemId,
-    balance,
-    seen_at: now.toISOString(),
-    prev_balance: rotate ? (prior?.balance ?? null) : (prior?.prev_balance ?? null),
-    prev_seen_at: rotate ? (prior?.seen_at ?? null) : (prior?.prev_seen_at ?? null),
-  };
-  await sb("plaid_account_state", { method: "POST", body: row, prefer: "resolution=merge-duplicates" }).catch((err) => console.error("plaid: couldn't save account state", err));
+/** The balance last seen, kept so a disconnect can record it. Its prev_* columns are no longer read. */
+async function saveAccountStates(rows: Array<{ account_id: string; item_id: string; balance: number | null }>, now: Date) {
+  if (!rows.length) return;
+  await sb("plaid_account_state", { method: "POST", body: rows.map((r) => ({ ...r, seen_at: now.toISOString() })), prefer: "resolution=merge-duplicates,return=minimal" }).catch((err) =>
+    console.error("plaid: couldn't save account state", err instanceof Error ? err.message.slice(0, 80) : "unknown"),
+  );
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -103,12 +144,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // change since the previous visit and whether the link is still live.
     if (report === "treasury") {
       const items = (await getItems()).filter((i: any) => (i.kind ?? "investments") === "bank");
-      const states = await getAccountStates();
       const prefs = await getAccountPrefs();
       const activity = await getAccountActivity();
       const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const weekAgo = new Date(now.getTime() - 10 * 86_400_000).toISOString().slice(0, 10);
+      // The prior close: each account's last recorded balance before today.
+      const closes = priorClose(
+        await readOrEmpty<{ account_id: string; day: string; balance: number | null }>(`plaid_account_daily?select=account_id,day,balance&day=gte.${weekAgo}&day=lt.${today}`),
+        today,
+      );
       const accounts: any[] = [];
       const connections: any[] = [];
+      const seen: Array<{ account_id: string; item_id: string; balance: number | null }> = [];
+      const daily: any[] = [];
 
       for (const item of items) {
         const base = {
@@ -120,20 +169,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
         try {
           const balRes = await client.accountsGet({ access_token: item.access_token });
-          connections.push({ ...base, status: "online" });
+          // When the bank itself last refreshed a balance, where it says so.
+          const bankTimes = balRes.data.accounts.map((a) => a.balances.last_updated_datetime).filter((t): t is string => !!t);
+          connections.push({ ...base, status: "online", balances_at: now.toISOString(), bank_updated_at: bankTimes.length ? bankTimes.sort()[0] : null });
 
           for (const a of balRes.data.accounts) {
-            // Show every account the connection exposes — a brokerage linked
-            // here (Vanguard) has type "investment" and was silently hidden.
-            const prior = states.get(a.account_id);
+            // Show every account the connection exposes: a brokerage linked
+            // here (Vanguard) has type "investment".
             const current = a.balances.current ?? null;
-
-            // Rotate the snapshot once a visit has gone cold, so "since last
-            // login" doesn't collapse to zero on a page refresh.
-            const stale = !prior || now.getTime() - new Date(prior.seen_at).getTime() > ROTATE_AFTER_MS;
-            const baseline = stale ? (prior?.balance ?? null) : (prior?.prev_balance ?? null);
-            const baselineAt = stale ? (prior?.seen_at ?? null) : (prior?.prev_seen_at ?? null);
-
+            const p = prefs.get(a.account_id);
+            const close = closes.get(a.account_id);
             accounts.push({
               ...base,
               account_id: a.account_id,
@@ -145,41 +190,116 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               balance_current: current,
               balance_available: a.balances.available,
               balance_limit: a.balances.limit ?? null,
+              balance_updated_at: a.balances.last_updated_datetime ?? null,
               currency: a.balances.iso_currency_code,
-              change: baseline == null || current == null ? null : current - Number(baseline),
-              change_since: baselineAt,
-              nickname: prefs.get(a.account_id)?.nickname ?? null,
-              hidden: prefs.get(a.account_id)?.hidden ?? false,
-              entity_id: prefs.get(a.account_id)?.entity_id ?? null,
-              entity_name: prefs.get(a.account_id)?.entity_name ?? null,
+              // Against the prior day's close, the same for everyone who looks.
+              change: close == null || current == null ? null : current - close.balance,
+              change_since: close?.day ?? null,
+              change_basis: "prior_close",
+              nickname: p?.nickname ?? null,
+              hidden: p?.hidden ?? false,
+              entity_id: p?.entity_id ?? null,
+              entity_name: p?.entity_name ?? null,
+              ...ownerFields(p),
               last_activity: activity.get(a.account_id) ?? null,
             });
-
-            await saveAccountState(a.account_id, item.item_id, current, prior, stale, now);
+            seen.push({ account_id: a.account_id, item_id: item.item_id, balance: current });
+            daily.push({
+              account_id: a.account_id,
+              day: today,
+              balance: current,
+              available: a.balances.available ?? null,
+              account_type: a.type ?? null,
+              item_id: item.item_id,
+              hidden: !!p?.hidden,
+              recorded_at: now.toISOString(),
+            });
           }
         } catch (err: any) {
           const code = err.response?.data?.error_code;
           connections.push({
             ...base,
             status: code === "ITEM_LOGIN_REQUIRED" ? "reconnect" : "offline",
-            message: err.response?.data?.error_message || err.message,
+            // Plaid's display_message is written for people; nothing raw reaches the page.
+            message: err.response?.data?.display_message ?? null,
           });
         }
       }
 
-      // Record today's headline totals (visible accounts only) so the emailed
-      // report can draw a trend line.
-      const shown = accounts.filter((a: any) => !a.hidden);
-      const totals = {
-        day: now.toISOString().slice(0, 10),
-        cash: shown.filter((a) => a.type === "depository").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
-        invested: shown.filter((a) => a.type === "investment").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
-        credit: shown.filter((a) => a.type === "credit").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
-        updated_at: now.toISOString(),
-      };
-      await sb("treasury_daily", { method: "POST", body: totals, prefer: "resolution=merge-duplicates" }).catch((err) => console.error("plaid: couldn't record daily totals", err));
+      await saveAccountStates(seen, now);
+      if (daily.length) {
+        await sb("plaid_account_daily", { method: "POST", body: daily, prefer: "resolution=merge-duplicates,return=minimal" }).catch((err) =>
+          console.error("plaid: couldn't record daily balances", { tableMissing: /PGRST205|42P01|does not exist/.test(String(err?.message ?? "")) }),
+        );
+      }
 
-      return res.json({ connections, accounts });
+      // Accounts that stopped syncing but whose Books history is kept: listed
+      // apart, with their last balance and its date, never in the totals.
+      const disconnected = [...prefs.values()]
+        .filter((p) => p.disconnected_at && !p.archived_at && !p.successor_account_id)
+        .map((p) => ({
+          account_id: p.account_id,
+          institution_name: p.institution_name ?? null,
+          name: p.account_name ?? null,
+          nickname: p.nickname ?? null,
+          mask: p.mask ?? null,
+          subtype: p.subtype ?? null,
+          type: p.account_type ?? null,
+          last_balance: p.last_balance == null ? null : Number(p.last_balance),
+          last_balance_at: p.last_balance_at ?? null,
+          disconnected_at: p.disconnected_at,
+          reason: p.disconnected_reason ?? null,
+          books_through: p.books_through ?? null,
+          hidden: !!p.hidden,
+          entity_id: p.entity_id ?? null,
+          entity_name: p.entity_name ?? null,
+          ...ownerFields(p),
+        }));
+
+      // Today's headline totals (shown accounts only), for the emailed
+      // report's trend line. Only a complete reading is recorded: a bank that
+      // didn't answer would otherwise read as a collapse that never happened.
+      const complete = connections.every((c) => c.status === "online");
+      if (complete) {
+        const shown = accounts.filter((a: any) => !a.hidden);
+        const totals = {
+          day: today,
+          cash: shown.filter((a) => a.type === "depository").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
+          invested: shown.filter((a) => a.type === "investment").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
+          credit: shown.filter((a) => a.type === "credit").reduce((s: number, a: any) => s + (a.balance_current ?? 0), 0),
+          updated_at: now.toISOString(),
+        };
+        await sb("treasury_daily", { method: "POST", body: totals, prefer: "resolution=merge-duplicates" }).catch((err) =>
+          console.error("plaid: couldn't record daily totals", err instanceof Error ? err.message.slice(0, 80) : "unknown"),
+        );
+      }
+
+      return res.json({ asOf: now.toISOString(), complete, connections, accounts, disconnected });
+    }
+
+    // One account's Books ledger, every page of it: the record, as Books
+    // keeps it (Plaid rows and CSV imports), for the account's Treasury page.
+    if (report === "account-ledger") {
+      const accountId = String(req.query.account_id ?? "").trim();
+      if (!accountId) return fail(res, 400, "missing_account_id");
+      const rows = await fetchAll<any>(
+        `book_transactions?account_id=eq.${encodeURIComponent(accountId)}&select=transaction_id,date,name,merchant_name,amount,pending,currency,book_category,txn_type,type_override,intercompany,payment_channel,item_id&order=date.desc,transaction_id.desc`,
+      );
+      return res.json({
+        transactions: rows.map((t) => ({
+          id: t.transaction_id,
+          date: t.date,
+          name: t.merchant_name || t.name,
+          description: t.name,
+          category: t.book_category ?? null,
+          amount: Number(t.amount),
+          pending: !!t.pending,
+          currency: t.currency ?? "USD",
+          transfer: (t.type_override ?? t.txn_type) === "transfer" || (t.type_override ?? "") === "intercompany" || !!t.intercompany,
+          source: t.item_id === "csv_import" ? "csv" : String(t.transaction_id ?? "").startsWith("mercury_") ? "mercury" : "bank",
+        })),
+        total: rows.length,
+      });
     }
 
     // Bank transaction history for the spreadsheet view.
@@ -361,6 +481,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const holdings: any[] = [];
       const errors: any[] = [];
       const txns: InvTx[] = [];
+      const hiddenAccounts = { count: 0, value: 0 };
       let incomeAvailable = false;
 
       for (const r of perItem) {
@@ -376,7 +497,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         for (const a of data.accounts) {
           const p = prefs.get(a.account_id);
-          if (p?.hidden) continue;
+          if (p?.hidden) {
+            // Left out, and said so on the page.
+            if (a.type === "investment") {
+              hiddenAccounts.count += 1;
+              hiddenAccounts.value += a.balances.current ?? 0;
+            }
+            continue;
+          }
           const own = data.holdings.filter((h) => h.account_id === a.account_id);
           // Brokerage accounts only (plus anything that actually holds positions).
           if (a.type !== "investment" && own.length === 0) continue;
@@ -395,6 +523,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             nickname: p?.nickname ?? null,
             entity_id: p?.entity_id ?? null,
             entity_name: p?.entity_name ?? null,
+            ...ownerFields(p),
             holdings_count: own.length,
             holdings_value: held,
           });
@@ -426,33 +555,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         for (const t of itemTx) if (visible.has(t.account_id)) txns.push(t);
       }
 
-      // Income: cash dividends, interest and capital-gain distributions. The
-      // matching "reinvestment" buy is the same money again, so it's skipped.
-      const incomeKind = (t: InvTx): "dividend" | "interest" | null => {
-        const k = `${t.type} ${t.subtype ?? ""}`.toLowerCase();
-        if (/reinvest/.test(k) || t.type === "buy" || t.type === "sell") return null;
-        if (/interest/.test(k)) return "interest";
-        if (/dividend|capital gain|distribution/.test(k)) return "dividend";
-        return null;
-      };
-      const byMonth = new Map<string, { dividends: number; interest: number }>();
+      // Income: dividends, interest and capital-gain distributions, by
+      // Plaid's exact subtype (lib/plaid-history.ts). A `distribution` (money
+      // leaving an IRA), contributions and withdrawals are flows, not income;
+      // reinvestments are the same money again. The sign is kept, so a
+      // reversal reduces income.
+      const byMonth = new Map<string, { dividends: number; interest: number; capitalGains: number }>();
       const bySecurity = new Map<string, { ticker: string | null; name: string; amount: number }>();
       let ttm = 0;
       let last90 = 0;
       let div90 = 0;
       let int90 = 0;
+      let cg90 = 0;
       for (const t of txns) {
-        const kind = incomeKind(t);
+        const kind = kindOfIncome(t.type, t.subtype);
         if (!kind) continue;
-        const amt = Math.abs(t.amount);
-        const m = byMonth.get(t.date.slice(0, 7)) ?? { dividends: 0, interest: 0 };
+        const amt = incomeAmount(t.amount);
+        const m = byMonth.get(t.date.slice(0, 7)) ?? { dividends: 0, interest: 0, capitalGains: 0 };
         if (kind === "interest") m.interest += amt;
+        else if (kind === "capital_gain") m.capitalGains += amt;
         else m.dividends += amt;
         byMonth.set(t.date.slice(0, 7), m);
         ttm += amt;
         if (t.date >= ninetyAgo) {
           last90 += amt;
           if (kind === "interest") int90 += amt;
+          else if (kind === "capital_gain") cg90 += amt;
           else div90 += amt;
         }
         const key = t.ticker || t.security_name || t.name;
@@ -460,6 +588,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         s.amount += amt;
         bySecurity.set(key, s);
       }
+      // The window the transactions actually cover: Plaid may hold far less than a year.
+      const coveredFrom = txns.reduce<string | null>((min, t) => (!min || t.date < min ? t.date : min), null);
 
       const recent = txns.filter((t) => t.date >= ninetyAgo);
       const sumType = (type: string) => recent.filter((t) => t.type === type).reduce((s, t) => s + Math.abs(t.amount), 0);
@@ -485,12 +615,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         errors,
         history: [...rebuiltBefore, ...recordedHistory],
         historyRebuilt: rebuiltBefore.length ? { from: rebuiltBefore[0].day, until: firstRecorded } : null,
+        hiddenAccounts,
         income: incomeAvailable
           ? {
               last90,
               ttm,
+              from: coveredFrom,
+              to: today,
               dividends90: div90,
               interest90: int90,
+              capitalGains90: cg90,
               byMonth: [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, v]) => ({ month, ...v })),
               bySecurity: [...bySecurity.values()].sort((a, b) => b.amount - a.amount).slice(0, 8),
             }

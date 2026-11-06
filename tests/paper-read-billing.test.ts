@@ -30,6 +30,7 @@ vi.mock("../lib/auth.js", async (importOriginal) => {
   return {
     ...actual,
     currentUser: async () => me,
+    sbFetch: async () => new Response("[]", { headers: { "content-range": "0-0/0" } }),
     sb: async (path: string, init: { method?: string; body?: any } = {}) => {
       const c = { method: init.method ?? "GET", path: decodeURIComponent(path), body: init.body };
       sbCalls.push(c);
@@ -47,8 +48,19 @@ vi.mock("../lib/storage.js", () => ({
   storageRead: async (path: string) => files[path] ?? null,
   storageSignedUrl: async (path: string) => `https://signed/${path}`,
 }));
-vi.mock("../lib/tree.js", () => ({ readCollection: async () => [] }));
-vi.mock("../lib/entity-access.js", () => ({ accessibleAssetIds: async () => ["louise"] }));
+vi.mock("../lib/tree.js", () => ({
+  readCollection: async () => [
+    { id: "north", data: { name: "Northwind Holdings, LLC" } },
+    { id: "alder", data: { name: "Alder Ridge Ventures, LLC" } },
+  ],
+}));
+vi.mock("../lib/entity-access.js", () => ({ accessibleAssetIds: async () => ["north"] }));
+const activity: { assetId: string; summary: string }[] = [];
+vi.mock("../lib/activity.js", () => ({
+  logActivity: async (assetId: string, _actor: unknown, entries: { summary: string }[]) => {
+    for (const e of entries) activity.push({ assetId, summary: e.summary });
+  },
+}));
 
 import { needsReading, readingFailed, readingKey, readPiece, ReadingUnavailable } from "../lib/paper-read";
 import handler from "../api/stable";
@@ -61,7 +73,17 @@ const ok = (over: Record<string, unknown> = {}) => ({
   stop_reason: "end_turn",
   content: [{ type: "text", text: JSON.stringify({ headline: "A bill", kind: "bill", urgency: "action", envelopeText: [], ...over }) }],
 });
-const row = (over: Record<string, unknown> = {}) => ({ id: "mi_123456", asset_id: "louise", envelope_path: ENV, scan_path: null, reading: null, reading_from: null, ...over });
+const row = (over: Record<string, unknown> = {}) => ({
+  id: "mi_123456",
+  asset_id: "north",
+  assigned: "hand",
+  from_name: "County Treasurer",
+  envelope_path: ENV,
+  scan_path: null,
+  reading: null,
+  reading_from: null,
+  ...over,
+});
 
 function call(method: string, body?: unknown, query: Record<string, string> = {}) {
   const out: { status: number; json?: any } = { status: 0 };
@@ -174,7 +196,7 @@ describe("marking a piece read", () => {
     me = { id: "p1", name: "Pat", role: "partner", status: "approved" };
     expect((await call("POST", { action: "read", id: "mi_123456" })).status).toBe(200);
     expect(rows.mi_123456.read_at ?? null).toBeNull();
-    me = { id: "u1", name: "Robert", role: "member", status: "approved" };
+    me = { id: "u1", name: "Alex Rivera", role: "member", status: "approved" };
     await call("POST", { action: "read", id: "mi_123456" });
     expect(rows.mi_123456.read_at).toBeTruthy();
   });
@@ -190,5 +212,78 @@ describe("filing paper mail", () => {
     const sync = await call("POST", { action: "sync" });
     expect(sync.status).toBe(403);
     expect(sync.json.message).toMatch(/owners, admins and members/);
+  });
+});
+
+describe("what a partner sees", () => {
+  it("only pieces staff filed or confirmed on the partner's entity", async () => {
+    me = { id: "p1", name: "Pat", role: "partner", status: "approved" };
+    rows.mi_123456 = row({ assigned: "auto" });
+    expect((await call("GET", undefined, { id: "mi_123456" })).status).toBe(403);
+    rows.mi_123456 = row({ assigned: "hand" });
+    const out = await call("GET", undefined, { id: "mi_123456" });
+    expect(out.status).toBe(200);
+    // The office's own filing record stays with staff.
+    expect(out.json.mail).toMatchObject({ filing: [], filedBy: null });
+    rows.mi_123456 = row({ assigned: "hand", asset_id: "alder" });
+    expect((await call("GET", undefined, { id: "mi_123456" })).status).toBe(403);
+  });
+
+  it("an entity's list leaves out automatic matches", async () => {
+    me = { id: "p1", name: "Pat", role: "partner", status: "approved" };
+    await call("GET", undefined, { assetId: "north" });
+    expect(sbCalls.some((c) => c.path.includes("asset_id=eq.north&assigned=eq.hand"))).toBe(true);
+  });
+});
+
+describe("filing, recorded", () => {
+  beforeEach(() => {
+    activity.length = 0;
+    me = { id: "11111111-1111-1111-1111-111111111111", name: "Alex Rivera", role: "member", status: "approved" };
+  });
+
+  it("writes who moved a piece, from where to where, on both entities and in the audit log", async () => {
+    rows.mi_123456 = row({ asset_id: "north" });
+    const out = await call("POST", { action: "assign", id: "mi_123456", assetId: "alder" });
+    expect(out.status).toBe(200);
+    const logged = sbCalls.find((c) => c.path === "audit_log" && c.method === "POST")?.body;
+    expect(logged).toMatchObject({
+      action: "paper_mail.file",
+      actor_name: "Alex Rivera",
+      target_type: "paper_mail",
+      target_id: "mi_123456",
+      detail: { from: "north", to: "alder" },
+      summary: "Filed Paper mail from County Treasurer under Alder Ridge Ventures, LLC, from Northwind Holdings, LLC",
+    });
+    expect(activity).toEqual([
+      { assetId: "alder", summary: "Filed paper mail from County Treasurer here" },
+      { assetId: "north", summary: "Moved paper mail from County Treasurer to Alder Ridge Ventures, LLC" },
+    ]);
+  });
+
+  it("records unfiling on the entity the piece left", async () => {
+    rows.mi_123456 = row({ asset_id: "north" });
+    await call("POST", { action: "assign", id: "mi_123456", assetId: null });
+    expect(sbCalls.find((c) => c.path === "audit_log" && c.method === "POST")?.body).toMatchObject({ action: "paper_mail.unfile", detail: { from: "north", to: null } });
+    expect(activity).toEqual([{ assetId: "north", summary: "Unfiled paper mail from County Treasurer" }]);
+  });
+
+  it("confirms an automatic match, so partners see it", async () => {
+    rows.mi_123456 = row({ assigned: "auto" });
+    const out = await call("POST", { action: "confirm", id: "mi_123456" });
+    expect(out.status).toBe(200);
+    expect(rows.mi_123456.assigned).toBe("hand");
+    expect(sbCalls.find((c) => c.path === "audit_log" && c.method === "POST")?.body).toMatchObject({ action: "paper_mail.confirm" });
+  });
+});
+
+describe("opening the original", () => {
+  it("signs a fresh five-minute link after checking access again", async () => {
+    me = { id: "p1", name: "Pat", role: "partner", status: "approved" };
+    rows.mi_123456 = row({ assigned: "auto" });
+    expect((await call("POST", { action: "link", id: "mi_123456", which: "envelope" })).status).toBe(403);
+    rows.mi_123456 = row({ assigned: "hand" });
+    expect(await call("POST", { action: "link", id: "mi_123456", which: "envelope" })).toMatchObject({ status: 200, json: { url: `https://signed/${ENV}` } });
+    expect((await call("POST", { action: "link", id: "mi_123456", which: "scan" })).status).toBe(404);
   });
 });

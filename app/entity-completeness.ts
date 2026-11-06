@@ -8,8 +8,8 @@
  * never scored.
  */
 
-import { agentTerm, documentRules, entityType, stateCode, stateName, TAX_CLASSES, type DocKey, type DocRule, type PaperworkInput } from "./entity-paperwork";
-import { foreignStates } from "./entity-addresses";
+import { agentTerm, documentRules, entityType, hostState, slotCurrent, stateCode, stateName, TAX_CLASSES, type DocRule, type PaperworkInput } from "./entity-paperwork";
+import { foreignDecided, foreignStates, type ForeignRegistration } from "./entity-addresses";
 
 export { entityType, TAX_CLASSES };
 
@@ -22,6 +22,8 @@ export type CompletenessItem = {
   done: boolean;
   /** A document slot (vs a key fact). */
   filing?: boolean;
+  /** A question someone must answer before anything is counted (does it do business in a state?). */
+  decide?: boolean;
   level?: DocRule["level"];
 };
 
@@ -59,8 +61,9 @@ export function entityCompleteness(a: CompletenessInput, today = new Date()): Co
       { key: "address", label: "Principal office", weight: 6, done: !!a.address?.trim() },
       { key: "registeredAgent", label: agentTerm(st), weight: 6, done: !!a.registeredAgent?.trim() },
       { key: "registeredAgentAddress", label: `${agentTerm(st)}'s address`, weight: 3, done: !!a.registeredAgentAddress?.trim() },
-      // The agent in each state it must register in: it can't register there without one.
-      ...foreignStates(a).map((code) => ({
+      // The agent in each state it must register in: it can't register there without one. A state
+      // nobody has decided yet (only its address is there) isn't counted until someone says it does business there.
+      ...foreignStates({ state: a.state, address: a.address, foreign: a.foreign }, { decided: true }).map((code) => ({
         key: `foreign:${code}`,
         label: `${agentTerm(code)} in ${stateName(code)}`,
         weight: 3,
@@ -70,12 +73,14 @@ export function entityCompleteness(a: CompletenessInput, today = new Date()): Co
     ];
   }
 
-  const rules = documentRules(a, today);
+  const undecided = undecidedHost(a);
+  const rules = documentRules(a, today).filter((r) => !(undecided && r.key === "foreignRegistration"));
   const docItem = (r: DocRule): CompletenessItem => ({
     key: r.key,
     label: r.title,
     weight: r.weight,
-    done: !!a[r.key as DocKey],
+    // A recurring filing counts only when the copy on file covers the latest period due.
+    done: slotCurrent(r, a),
     filing: true,
     level: r.level,
   });
@@ -86,6 +91,21 @@ export function entityCompleteness(a: CompletenessInput, today = new Date()): Co
   const items = type === "Trust" ? [...scoredDocs, ...facts] : [...facts, ...scoredDocs];
   const total = items.reduce((s, i) => s + i.weight, 0);
   const got = items.reduce((s, i) => s + (i.done ? i.weight : 0), 0);
-  const missing = items.filter((i) => !i.done).sort((x, y) => y.weight - x.weight);
+  // The question comes first: what's counted after it depends on the answer.
+  const ask: CompletenessItem[] = undecided ? [{ key: `decide:${undecided}`, label: `Answer: does it do business in ${stateName(undecided)}?`, weight: 0, done: false, decide: true }] : [];
+  const missing = [...ask, ...items.filter((i) => !i.done).sort((x, y) => y.weight - x.weight)];
   return { score: total ? Math.round((got / total) * 100) : 0, items, missing, recommended };
+}
+
+/**
+ * The state its principal office is in, when that isn't its home state and
+ * nobody has said whether it does business there; else null. Until it's
+ * answered, the foreign registration and the agent there aren't counted.
+ */
+export function undecidedHost(a: CompletenessInput & { foreign?: Record<string, ForeignRegistration> }): string | null {
+  if (entityType(a) === "Trust") return null;
+  const home = stateCode(a.state);
+  const host = hostState(a);
+  if (!home || !host || host === home) return null;
+  return foreignDecided(a.foreign?.[host]) ? null : host;
 }

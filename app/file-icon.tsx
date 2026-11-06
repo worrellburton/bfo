@@ -119,15 +119,15 @@ export function FileIcon({
 }
 
 /** A row's attachments as icons: up to `max` kinds, then "+n". */
-export function FileKindIcons({ kinds, count, className = "h-3.5 w-3.5", max = 2 }: { kinds: FileKind[]; count: number; className?: string; max?: number }) {
+export function FileKindIcons({ kinds, count, className = "size-[14px]", max = 2 }: { kinds: FileKind[]; count: number; className?: string; max?: number }) {
   const shown = kinds.slice(0, max);
   const more = count - shown.length;
   return (
-    <span className="inline-flex items-center gap-0.5" title={`${count} attachment${count === 1 ? "" : "s"}: ${kinds.map((k) => FILE_KIND_LABEL[k]).join(", ")}`}>
+    <span className="inline-flex items-center gap-[2px]" title={`${count} attachment${count === 1 ? "" : "s"}: ${kinds.map((k) => FILE_KIND_LABEL[k]).join(", ")}`}>
       {shown.map((k, i) => (
         <FileIcon key={k} kind={k} className={className} delay={i * 400} />
       ))}
-      {more > 0 && <span className="text-[10px] font-semibold tabular-nums opacity-70">+{more}</span>}
+      {more > 0 && <span className="text-caption font-medium text-ink-2 tabular-nums">+{more}</span>}
       <span className="sr-only">
         {count} attachment{count === 1 ? "" : "s"}
       </span>

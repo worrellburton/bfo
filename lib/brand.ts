@@ -1,14 +1,26 @@
+/**
+ * The BFO logo. OpenAI draws six lockups (a reference sheet): "BURTON FAMILY
+ * OFFICE" set small above a large "BFO", each in a different typeface. The one
+ * you pick goes on the site as live type in its paired font, so the logo and
+ * the typeface stay one thing. Any lockup can still go to Meshy for a 3D
+ * model. Everything lands in the public "brand" bucket; the state lives in
+ * brand_settings (key → json).
+ *
+ * HTTP surface: none; a library for api/brand.ts (and the signing game's assets).
+ * Who may call it: server code, after the caller's own role check.
+ * Env: OPENAI_API_KEY (drawing), MESHY_API_KEY (3D models), SUPABASE_URL and
+ * SUPABASE_SERVICE_KEY (settings and the bucket).
+ */
 import { sb } from "./auth.js";
 import { storageUpload } from "./storage.js";
 
 /**
- * The BFO logo. OpenAI draws six lockups (a reference sheet): "BURTON FAMILY
- * OFFICE" set small above a large "BFO", each in a different typeface. The one
- * you pick goes on the site as live type in its paired Google font, so the
- * logo and the typeface stay one thing. Any lockup can still go to Meshy for a
- * 3D model. Everything lands in the public "brand" bucket; the state lives in
- * brand_settings (key → json).
+ * What one call costs, roughly, in cents, so the studio can show it before
+ * anyone presses and the audit trail can carry it: one high-quality
+ * 1024×1024 picture, and one picture-to-3D model with texture. Estimates from
+ * the providers' price lists; check them when either changes its prices.
  */
+export const COST_CENTS = { draw: 20, model: 60 } as const;
 
 export const BRAND_BUCKET = "brand";
 

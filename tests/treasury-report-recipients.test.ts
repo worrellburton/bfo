@@ -118,3 +118,47 @@ describe("treasury report recipients", () => {
     expect(emails).toEqual([["sam@burtonfamilyoffice.com"]]);
   });
 });
+
+import { movementSince, reportRecipients } from "../api/cron/treasury-report";
+
+describe("who a report reaches", () => {
+  const staff = new Set(["owner@office.example", "member@office.example"]);
+  it("an owner's or admin's list may reach outside addresses, flagged", () => {
+    expect(reportRecipients({ email: "Owner@office.example", role: "owner" }, ["member@office.example", "friend@elsewhere.example", "bad", "owner@office.example"], staff)).toEqual({
+      send: ["owner@office.example", "member@office.example", "friend@elsewhere.example"],
+      outside: ["friend@elsewhere.example"],
+      dropped: [],
+    });
+  });
+  it("anyone else's list reaches staff only", () => {
+    expect(reportRecipients({ email: "member@office.example", role: "member" }, ["owner@office.example", "friend@elsewhere.example"], staff)).toEqual({
+      send: ["member@office.example", "owner@office.example"],
+      outside: [],
+      dropped: ["friend@elsewhere.example"],
+    });
+  });
+});
+
+describe("movement since the last report", () => {
+  const history = [
+    { day: "2026-10-28", cash: 100, invested: 900, credit: 0 },
+    { day: "2026-10-30", cash: 120, invested: 900, credit: 0 },
+    { day: "2026-11-06", cash: 150, invested: 1000, credit: 50 },
+  ];
+  it("compares today's cash and investments with the day of the person's last report", () => {
+    expect(movementSince(history, "2026-10-30T16:00:00Z")).toEqual({ movement: 130, sinceDay: "2026-10-30" });
+    expect(movementSince(history, "2026-10-29T16:00:00Z")).toEqual({ movement: 150, sinceDay: "2026-10-28" });
+  });
+  it("has nothing to compare on a first report", () => {
+    expect(movementSince(history, null)).toBeNull();
+  });
+});
+
+describe("sending to the list", () => {
+  it("is refused to a partner before anything is sent", async () => {
+    const { res, out } = fakeRes();
+    await cron({ method: "POST", headers: { authorization: "Bearer 22222222-2222-2222-2222-222222222222" }, body: { broadcast: true } } as any, res);
+    expect(out.status).toBe(403);
+    expect(emails).toEqual([]);
+  });
+});

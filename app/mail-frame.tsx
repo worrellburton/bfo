@@ -1,16 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import createDOMPurify, { type DOMPurify } from "dompurify";
-import { TextButton, useTone } from "./entity/ui";
 
 /**
  * An HTML email, rendered safely: sanitized with DOMPurify, then shown in a
  * sandboxed iframe that cannot run scripts, under a CSP that blocks every
- * network load except pictures through BFO's own image proxy (the server points every remote picture there,
- * lib/mail-image.ts; any it couldn't never loads from the sender). Shown by default; "Hide images" holds them back.
+ * network load except pictures through BFO's own image proxy (the server
+ * points every remote picture there, lib/mail-image.ts; any it couldn't never
+ * loads from the sender). Whether pictures load is the reader's choice
+ * (`images`): off by default for a sender the mailbox hasn't written to, so a
+ * tracking pixel can't tell a stranger when the family opened it.
  * Links open in a new tab.
  * The frame grows to its content's height, so the reader scrolls as one page,
- * and mail laid out wider than the frame is scaled down to fit its width.
+ * and mail laid out wider than the frame is scaled down to fit its width. It
+ * sits flush in the reader's column: no border, no card.
  */
+
+/** The app's theme as set on <html> (docs/DESIGN.md §2.1), followed as it changes. */
+export function useDarkTheme(): boolean {
+  const read = () => typeof document !== "undefined" && document.documentElement.dataset.theme === "dark";
+  const [dark, setDark] = useState(read);
+  useEffect(() => {
+    const obs = new MutationObserver(() => setDark(read()));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    setDark(read());
+    return () => obs.disconnect();
+  }, []);
+  return dark;
+}
 
 let purifier: DOMPurify | null = null;
 
@@ -68,11 +84,14 @@ function sanitizeMail(html: string, images: boolean): { html: string; remoteImag
  * blue links stay blue. Pictures are inverted a second time so they look as
  * sent. Mail designed dark comes out light; "Original colors" undoes it.
  */
-const DARK_CSS = `
-html{background:#0f0f14;color-scheme:dark;}
+const darkCss = (ground: string) => `
+html{background:${ground};color-scheme:dark;}
 body{background:#fff;color:#111;filter:invert(0.93) hue-rotate(180deg);}
 img,picture,video,svg,canvas,[style*="background-image"],[background]{filter:invert(1) hue-rotate(180deg);}
 `;
+
+/** The reader's surface (the `raised` token), so a mail shown dark meets the page without an edge. */
+const raisedGround = () => (typeof document !== "undefined" ? getComputedStyle(document.documentElement).getPropertyValue("--color-raised").trim() : "") || "Canvas";
 
 function frameDocument(body: string, images: boolean, dark: boolean): string {
   // Pictures only from BFO (its image proxy), named outright too: a sandboxed srcdoc frame's own origin is opaque.
@@ -82,26 +101,40 @@ function frameDocument(body: string, images: boolean, dark: boolean): string {
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 *{-webkit-text-size-adjust:100%;}
 html,body{margin:0;padding:0;background:#fff;color:#111;}
-body{padding:20px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-wrap:anywhere;}
+body{padding:4px 0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-wrap:anywhere;}
 img{max-width:100%;height:auto;}
 a{color:#4f46e5;}
 blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid #ddd;color:#555;}
 pre{white-space:pre-wrap;}
-${dark ? DARK_CSS : ""}</style></head><body>${body}</body></html>`;
+${dark ? darkCss(raisedGround()) : ""}</style></head><body>${body}</body></html>`;
 }
 
-/** The message body. Remote images show by default; "Hide images" holds them back for this message. */
-export function MailFrame({ html, title = "Message" }: { html: string; title?: string }) {
-  const t = useTone();
+/**
+ * The message body. `images`: load remote pictures (through the proxy).
+ * `original`: in dark theme, show the mail as its sender designed it instead
+ * of inverted. `onRemoteImages` hears whether the mail has any pictures to
+ * hold back, so the reader can offer "Show images" only when it matters.
+ */
+export function MailFrame({
+  html,
+  title = "Message",
+  images,
+  original = false,
+  onRemoteImages,
+}: {
+  html: string;
+  title?: string;
+  images: boolean;
+  original?: boolean;
+  onRemoteImages?: (has: boolean) => void;
+}) {
   const ref = useRef<HTMLIFrameElement>(null);
-  const [images, setImages] = useState(true);
-  /** Dark mode shows mail dark; this shows it as the sender designed it. */
-  const [original, setOriginal] = useState(false);
-  const dark = t.dark && !original;
+  const dark = useDarkTheme() && !original;
   const { srcDoc, remoteImages } = useMemo(() => {
     const clean = sanitizeMail(html, images);
     return { srcDoc: frameDocument(clean.html, images, dark), remoteImages: clean.remoteImages };
   }, [html, images, dark]);
+  useEffect(() => onRemoteImages?.(remoteImages), [remoteImages, onRemoteImages]);
 
   useEffect(() => {
     const frame = ref.current;
@@ -179,45 +212,15 @@ export function MailFrame({ html, title = "Message" }: { html: string; title?: s
     };
   }, [srcDoc]);
 
-  // On touch (tablet and up; phones get TextButton's own hit area), the image and color switches are a finger's height.
-  const touch = "sm:pointer-coarse:min-h-[40px]";
   return (
-    <div>
-      {(remoteImages || t.dark) && (
-        <div className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] ${t.muted}`}>
-          {remoteImages &&
-            (images ? (
-              <TextButton className={touch} onClick={() => setImages(false)}>
-                Hide images
-              </TextButton>
-            ) : (
-              <>
-                Images hidden
-                <span aria-hidden="true">·</span>
-                <TextButton className={touch} onClick={() => setImages(true)}>
-                  Show images
-                </TextButton>
-              </>
-            ))}
-          {remoteImages && t.dark && <span aria-hidden="true">·</span>}
-          {t.dark && (
-            <TextButton className={touch} onClick={() => setOriginal((o) => !o)}>
-              {original ? "Dark colors" : "Original colors"}
-            </TextButton>
-          )}
-        </div>
-      )}
-      <div className={`overflow-hidden rounded-xl border ${t.dark ? "border-white/[0.07]" : "border-gray-200"}`}>
-        <iframe
-          ref={ref}
-          title={title}
-          srcDoc={srcDoc}
-          sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
-          referrerPolicy="no-referrer"
-          className={`block h-[120px] w-full border-0 ${dark ? "bg-[#0f0f14]" : "bg-white"}`}
-        />
-      </div>
-    </div>
+    <iframe
+      ref={ref}
+      title={title}
+      srcDoc={srcDoc}
+      sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+      referrerPolicy="no-referrer"
+      className="block h-[120px] w-full border-0 bg-raised"
+    />
   );
 }
 

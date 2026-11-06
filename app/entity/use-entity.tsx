@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { stepsLeft } from "../entity-closing";
+import { closingSteps, stepsLeft } from "../entity-closing";
+import { RETENTION_DAYS } from "../../lib/entity-archive";
+import { confirm, format, toast } from "../ui";
+import { ownedBy } from "./derive";
 import { isFormationDone } from "../formation";
 import { raPatch } from "../../lib/palm-agent";
 import { peoplePatch } from "../../lib/registry";
@@ -22,10 +25,10 @@ import {
   type SignsFor,
 } from "../paperwork-generate";
 import { useNavigate, useParams } from "react-router";
-import { authFetch, getUser, isPartner } from "../auth";
+import { authFetch, getUser, isAdmin, isPartner } from "../auth";
 import { entityType, TAX_CLASSES } from "../entity-completeness";
 import { alertDialog, confirmDialog } from "../confirm-dialog";
-import { copyStoredFileLink, openStoredFile, storagePathOf, type StoredFileRef } from "../stored-file";
+import { copyStoredFileLink, openStoredFile, SIGNED_LINK_MINUTES, storagePathOf, type StoredFileRef } from "../stored-file";
 import { signApi } from "../sign/api";
 import {
   DOC_LABEL,
@@ -82,7 +85,16 @@ import {
   type FileKind,
   type Classified,
   tidyEin,
-  isLedgerLouiseName,
+  docKind,
+  changedFields,
+  fieldList,
+  KEY_FIELDS,
+  FIELD_LABEL,
+  normEntityName,
+  withoutEntityName,
+  type Member,
+  type Proposal,
+  type RemovedDoc,
 } from "./model";
 
 /**
@@ -96,13 +108,13 @@ type PalmSyncLine = { label: string; tone: "good" | "warn" | "bad" | "muted"; te
 /** A sync with Palm under way (`step` is what it's reading) or just finished (`at`). */
 type PalmSyncState = { running: boolean; step: string; lines: PalmSyncLine[]; cents: number; mode: PalmMode; at?: number };
 
+/** The answer to the key-change question: a correction of the record, or a real change (with its effective date), and why. */
+export type KeyChangeNote = { fields: string[]; kind: "correction" | "change"; reason: string; effective?: string | null };
+
 /** A People list filled from the state's record (lib/registry.ts peoplePatch): documents, with shares, replace it. */
 const fromStateRecord = (source?: string | null) => /^State record\b/.test(source ?? "");
 
 /** Owners, admins and members change the record; viewers and partners only read it. */
-/** Who signs for Ledger Louise, LLC, as the contract page has it. */
-const LEDGER_LOUISE_SIGNER = { name: "Robert W. Burton", title: "Manager" };
-
 const canChangeRecord = () => ["owner", "admin", "member"].includes(getUser()?.role ?? "");
 
 function cleanForeign(f: Asset["foreign"]): Asset["foreign"] | null {
@@ -389,18 +401,31 @@ export function useEntityPage() {
     editBaseRef.current = seed;
     setForm(seed);
     setSavedAt(null);
+    setSaveError("");
+    setKeyChange(null);
     setEditing(true);
     if ((tabParam ?? "overview") === "overview") setTimeout(() => document.getElementById("entity-edit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     else goToTab("overview", "entity-edit");
   }
 
-  async function handleSave() {
+  /**
+   * Save the edit form. Only fields the person changed override the record,
+   * so anything filled in the background meanwhile is kept. A blank status
+   * stays blank. A new principal office (or mailing address) records the old
+   * one and the date, which starts the Address change steps. A changed tax
+   * class joins the class's history with its effective date; `note` (from
+   * the key-change question) says whether a key fact was corrected or
+   * really changed, and why.
+   */
+  async function handleSave(note?: KeyChangeNote | null) {
     if (!form.name?.trim()) return;
     const base = editBaseRef.current;
     const live = assetRef.current ?? ({} as Partial<Asset>);
     const pick = <K extends keyof Asset>(k: K) => ((form[k] ?? "") !== (base[k] ?? "") ? form[k] : (live[k] ?? form[k]));
     const { db } = await import("../store");
     const { ref, update } = await import("../store");
+    const me = getUser();
+    const now = Date.now();
     // Changing the tax class by hand records that it came from a person; a
     // pending document conflict is settled when the hand value matches it.
     const classChanged = (form.llcType ?? "") !== (base.llcType ?? "");
@@ -409,25 +434,50 @@ export function useEntityPage() {
       ? {
           llcTypeSource: form.llcType ? BY_HAND : null,
           llcTypeConflict: conflict && conflict.value !== form.llcType ? conflict : null,
+          proposed: { ...(live.proposed ?? {}), llcType: null },
+          llcTypeHistory: [
+            ...(live.llcTypeHistory ?? []),
+            {
+              value: form.llcType || "",
+              from: base.llcType || null,
+              kind: note?.kind === "change" ? ("election" as const) : ("correction" as const),
+              effective: note?.kind === "change" ? (note.effective ?? null) : null,
+              reason: note?.reason ?? null,
+              by: me?.name ?? null,
+              at: now,
+            },
+          ],
         }
       : {};
     const agentChanged = (form.registeredAgent ?? "") !== (base.registeredAgent ?? "");
+    // A move: the old address and the day, so the Address change card lists who still has the old one.
+    const address = String(pick("address") ?? "").trim();
+    const mailing = sameAddressText(pick("mailingAddress"), pick("address")) ? "" : String(pick("mailingAddress") ?? "").trim();
+    const oldMail = (base.mailingAddress || base.address || "").trim();
+    const newMail = mailing || address;
+    const moved = !!oldMail && !!newMail && !sameAddressText(oldMail, newMail) && ((form.address ?? "") !== (base.address ?? "") || (form.mailingAddress ?? "") !== (base.mailingAddress ?? ""));
+    const move = moved ? { previousAddress: oldMail, addressChangedAt: today(), addressUpdates: null, addressUpdateRefs: null } : {};
     await update(ref(db, `assets/${id}`), {
       ...provenance,
+      ...move,
       ...(agentChanged ? { registeredAgentSource: null } : {}),
+      ...(note ? { changeNote: { fields: note.fields, kind: note.kind, reason: note.reason, effective: note.effective ?? null, by: me?.name ?? null, at: now } } : {}),
       name: String(pick("name") ?? "").trim(),
       type: form.type,
       state: pick("state") || "",
       ein: tidyEin(pick("ein")),
       registeredAgent: pick("registeredAgent") || "",
-      address: pick("address") || "",
-      mailingAddress: sameAddressText(pick("mailingAddress"), pick("address")) ? "" : (pick("mailingAddress") || "").trim(),
+      address,
+      mailingAddress: mailing,
       registeredAgentAddress: (pick("registeredAgentAddress") || "").trim(),
       foreign: cleanForeign(pick("foreign")),
       formationDate: pick("formationDate") || "",
-      status: pick("status") || "Active",
+      // Never a status nobody chose: blank stays blank.
+      status: pick("status") || "",
       notes: pick("notes") || "",
       llcType: pick("llcType") || "",
+      taxYearEnd: pick("taxYearEnd") || "",
+      accountingMethod: pick("accountingMethod") || "",
       trustees: pick("trustees") || "",
       grantors: pick("grantors") || "",
       beneficiaries: pick("beneficiaries") || "",
@@ -438,6 +488,12 @@ export function useEntityPage() {
     });
     setEditing(false);
     setSavedAt(Date.now());
+    if (moved) toast({ message: "Saved. The Address change card lists who still has the old address." });
+  }
+
+  /** What the form changed, field by field (label, before, after). */
+  function formChanges() {
+    return changedFields(editBaseRef.current as Record<string, unknown>, form as Record<string, unknown>);
   }
 
   /** Has the edit form moved from what it started with? */
@@ -448,9 +504,61 @@ export function useEntityPage() {
     return Object.keys({ ...base, ...f }).some((k) => !same(f[k], base[k]));
   }
 
-  /** Leave the edit form; asks first when that would throw away typing. */
+  /**
+   * The key facts this edit changes that were already on record (legal name,
+   * form, tax class, EIN): each can be a correction or a real change that
+   * needs a filing, so Save asks first.
+   */
+  function keyChanges(): { key: string; label: string; from: string; to: string }[] {
+    const base = editBaseRef.current as Record<string, unknown>;
+    return formChanges().filter((c) => (KEY_FIELDS as readonly string[]).includes(c.key) && String(base[c.key] ?? "").trim() !== "");
+  }
+
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  /** The key-change question, open while Save waits for its answer. */
+  const [keyChange, setKeyChange] = useState<{ key: string; label: string; from: string; to: string }[] | null>(null);
+
+  /** Save from the header, the form or the phone's bar: asks about key facts first, then saves. */
+  async function saveEdits(note?: KeyChangeNote | null) {
+    if (!form.name?.trim() || saving) return;
+    const keys = keyChanges();
+    if (keys.length && !note) {
+      setKeyChange(keys);
+      return;
+    }
+    setKeyChange(null);
+    setSaving(true);
+    setSaveError("");
+    try {
+      await handleSave(note);
+    } catch (err) {
+      console.error("save failed", err instanceof Error ? err.name : "error");
+      setSaveError(err instanceof Error && /owner or an admin/i.test(err.message) ? err.message : "Couldn't save. Check your connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Leave the edit form; asks first when that would throw away typing, naming what would be lost. */
   async function cancelEditing() {
-    if (formDirty() && !(await confirmDialog({ title: "Discard changes?", confirmLabel: "Discard", tone: "danger" }))) return;
+    if (formDirty()) {
+      const changes = formChanges();
+      const ok = await confirm({
+        title: "Discard changes?",
+        message: changes.length ? `Your edits to ${fieldList(changes.map((c) => c.label))} won’t be saved.` : "Your edits won’t be saved.",
+        details: changes
+          .filter((c) => c.key !== "notes" && c.key !== "foreign")
+          .slice(0, 5)
+          .map((c) => `${c.label[0].toUpperCase()}${c.label.slice(1)}: ${c.from || "blank"} → ${c.to || "blank"}`),
+        confirmLabel: "Discard changes",
+        cancelLabel: "Keep editing",
+        focus: "cancel",
+      });
+      if (!ok) return;
+    }
+    setKeyChange(null);
+    setSaveError("");
     setEditing(false);
   }
 
@@ -469,38 +577,94 @@ export function useEntityPage() {
     setDocUrl("");
   }
 
+  /**
+   * Take a document out of the library. It moves to Removed, where it's kept
+   * and can be restored; only an owner or admin can delete it for good, after
+   * RETENTION_DAYS (api/documents/delete.ts). A document on file for a
+   * required row, or a signed one, is an owner's or admin's call and asks
+   * for its name to be typed.
+   */
   async function handleDeleteDoc(docId: string) {
+    const current = assetRef.current;
     const doc = docs.find((d) => d.id === docId);
-    const filedAs = FILING_KINDS.filter((k) => asset?.[k]?.docId === docId);
-    if (
-      !(await confirmDialog({
-        title: `Delete “${doc?.name ?? "this document"}”?`,
-        message: filedAs.length ? `It is filed as ${filedAs.map((k) => filingTitle(k, asset)).join(", ")} — that slot will be emptied.` : "This can't be undone.",
-        tone: "danger",
-      }))
-    )
+    if (!current || !doc) return;
+    const filedAs = FILING_KINDS.filter((k) => current[k]?.docId === docId);
+    const titles = filedAs.map((k) => filingTitle(k, current));
+    const weighty = filedAs.length > 0 || /\bsigned\b|executed/i.test(doc.name);
+    if (weighty && !isAdmin()) {
+      await alertDialog("Ask an owner or admin", `${titles.length ? `It’s the ${titles.join(" and ")} on file` : "It’s a signed document"}, so only an owner or an admin can remove it.`);
       return;
-    if (doc?.storagePath) {
-      try {
-        const r = await deleteStoredFile(doc.storagePath);
-        if (r && (r.status === 401 || r.status === 403)) {
-          await alertDialog("You don't have permission to delete documents.");
-          return;
-        }
-      } catch {
-        // ignore
-      }
     }
-    const { db, authReady } = await import("../store");
-    await authReady;
-    const { ref, remove, update } = await import("../store");
-    if (filedAs.length) await update(ref(db, `assets/${id}`), Object.fromEntries(filedAs.map((k) => [k, null])));
-    await remove(ref(db, `assets/${id}/documents/${docId}`));
+    if (current.legalHold) {
+      await alertDialog("This entity is on legal hold", "Its documents can’t be removed while the hold is on.");
+      return;
+    }
+    const added = doc.createdAt ? format.date(new Date(doc.createdAt), "medium") : "";
+    const ok = await confirm({
+      title: "Remove this document?",
+      object: { name: doc.name, detail: [docKind(doc) === "LINK" || docKind(doc) === "FILE" ? null : docKind(doc), formatBytes(doc.size), added && `added ${added}`].filter(Boolean).join(" · ") },
+      message: `${titles.length ? `It’s the ${titles.join(" and ")} on file, so ${titles.length === 1 ? "that row" : "those rows"} will show as missing. ` : ""}It moves to Removed, where it’s kept and can be restored. An owner or admin can delete it for good after ${RETENTION_DAYS} days.`,
+      confirmLabel: "Remove document",
+      tone: weighty ? "danger" : "default",
+      typeToConfirm: weighty ? doc.name : undefined,
+      focus: "cancel",
+    });
+    if (!ok) return;
+    const me = getUser();
+    const { id: _id, ...rest } = doc;
+    const removed: RemovedDoc = { ...rest, removedAt: Date.now(), removedBy: me?.name ?? null, filedAs: titles.join(", ") || null };
+    await patchAsset({
+      ...Object.fromEntries(filedAs.map((k) => [k, null])),
+      [`documents/${docId}`]: null,
+      [`removedDocuments/${docId}`]: JSON.parse(JSON.stringify(removed)),
+    });
+    toast({ message: `Removed “${doc.name}”`, action: { label: "Undo", run: () => void restoreDoc(docId, filedAs) } });
+  }
+
+  /** Put a removed document back in the library (and back on its rows, when they're still empty). */
+  async function restoreDoc(docId: string, refile: FileKind[] = []) {
+    const current = assetRef.current;
+    const r = current?.removedDocuments?.[docId];
+    if (!current || !r) return;
+    const { removedAt: _a, removedBy: _b, reason: _c, filedAs: _d, ...doc } = r;
+    const slots = refile.filter((k) => !current[k]);
+    await patchAsset({
+      [`documents/${docId}`]: JSON.parse(JSON.stringify(doc)),
+      [`removedDocuments/${docId}`]: null,
+      ...Object.fromEntries(
+        slots.map((k) => [
+          k,
+          { url: doc.url, fileName: doc.name, size: doc.size ?? 0, contentType: doc.contentType || "application/pdf", uploadedAt: doc.createdAt || Date.now(), storagePath: "", docId } satisfies UploadedFile,
+        ]),
+      ),
+    });
+  }
+
+  /**
+   * Delete a removed document for good: owners and admins, after the hold,
+   * with a reason (the Removed list's dialog asks for it and the typed name;
+   * the server checks each). Returns why it couldn't, or null.
+   */
+  async function purgeDoc(docId: string, reason: string): Promise<string | null> {
+    const res = await authFetch("/api/documents/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetId: id, docId, reason }),
+    });
+    if (res.ok) return null;
+    const j = await res.json().catch(() => ({}));
+    return (j as { message?: string }).message || "It couldn’t be deleted. Try again.";
+  }
+
+  /** Put the entity's documents on legal hold, or lift it (owners and admins). */
+  async function setLegalHold(on: boolean, note = "") {
+    const me = getUser();
+    await patchAsset({ legalHold: on ? { at: Date.now(), by: me?.name ?? null, note: note || null } : null });
   }
 
   // Upload one document: signed URL → PUT with progress → its record in the tree.
   // Throws on failure; progress is reported as a 0–100 fraction of this file.
-  async function uploadDocFile(file: File, onProgress: (pct: number) => void) {
+  async function uploadDocFile(file: File, onProgress: (pct: number) => void, extra: Partial<AssetDoc> = {}) {
     const stored = await uploadToStorage(
       file,
       (pct) => {
@@ -520,6 +684,8 @@ export function useEntityPage() {
       size: file.size,
       contentType: file.type || "application/octet-stream",
       createdAt: Date.now(),
+      addedBy: getUser()?.name ?? null,
+      ...extra,
     };
     const pushed = await push(dbRef(db, `assets/${id}/documents`), record);
     return { id: pushed.key as string, ...record } as AssetDoc;
@@ -565,14 +731,54 @@ export function useEntityPage() {
     return { path: urlData.path as string, url: urlData.publicUrl as string };
   }
 
-  /** Remove a stored file (best effort). Returns the response, or null when the path isn't one of ours. */
-  async function deleteStoredFile(path: string): Promise<Response | null> {
-    if (!/^assets\//.test(path)) return null;
-    return authFetch("/api/documents/delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path }),
-    });
+
+  // ── Facts read by AI: proposals until a person accepts them (DESIGN.md §11.6) ──
+
+  /** Put a value read by AI from a document on the record as a proposal (never as fact), unless the field is filled or already proposed. */
+  function propose(patch: Record<string, unknown>, field: string, value: string | Member[] | null | undefined, doc: { name: string }, source?: string): boolean {
+    const current = assetRef.current;
+    if (!current || value == null || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && !value.length)) return false;
+    const have = (current as unknown as Record<string, unknown>)[field];
+    if (Array.isArray(have) ? have.length : typeof have === "string" ? have.trim() : have) return false;
+    if (current.proposed?.[field] || patch[`proposed/${field}`]) return false;
+    const proposal: Proposal = { value, source: source ?? `Read by AI from “${doc.name}”`, docName: doc.name, at: Date.now() };
+    patch[`proposed/${field}`] = JSON.parse(JSON.stringify(proposal));
+    return true;
+  }
+
+  /** The facts a filing states (EIN, dates, state), proposed where the record is blank. Returns what was proposed, in words. */
+  function proposeFromFiling(patch: Record<string, unknown>, kind: FileKind, facts: Classified, doc: { name: string }): string[] {
+    const out: string[] = [];
+    if ((kind === "einLetter" || kind === "w9") && propose(patch, "ein", facts.ein, doc)) out.push(`EIN ${facts.ein}`);
+    if (kind === "articles" && facts.date) {
+      if (propose(patch, "formationDate", facts.date, doc)) out.push(`formed ${fmtDate(facts.date)}`);
+      if (propose(patch, "articlesOfOrgDate", facts.date, doc) && !out.length) out.push(`articles filed ${fmtDate(facts.date)}`);
+    }
+    if ((kind === "trustAgreement" || kind === "trustCertificate") && propose(patch, "formationDate", facts.date, doc)) out.push(`trust dated ${fmtDate(facts.date ?? "")}`);
+    if ((kind === "trustAgreement" || kind === "articles") && propose(patch, "state", facts.state, doc)) out.push(kind === "trustAgreement" ? `governed by ${facts.state} law` : `${facts.state}`);
+    if (kind === "operatingAgreement" && propose(patch, "operatingAgreementDate", facts.date, doc)) out.push(`agreement dated ${fmtDate(facts.date ?? "")}`);
+    return out;
+  }
+
+  /** Accept what AI read: the value goes on the record (and who accepted it is in Activity). */
+  async function acceptProposal(field: string) {
+    const current = assetRef.current;
+    const p = current?.proposed?.[field];
+    if (!current || !p) return;
+    const extra: Record<string, unknown> =
+      field === "llcType"
+        ? { llcTypeSource: p.source, llcTypeConflict: null }
+        : field === "members"
+          ? { membersSource: p.docName ?? "governing documents" }
+          : field === "registeredAgent"
+            ? { registeredAgentSource: p.source }
+            : {};
+    await patchAsset({ [field]: p.value, ...extra, [`proposed/${field}`]: null });
+  }
+
+  /** Dismiss what AI read: nothing changes on the record. */
+  async function dismissProposal(field: string) {
+    await patchAsset({ [`proposed/${field}`]: null });
   }
 
   // ── Auto-filing ─────────────────────────────────────────────────────────
@@ -594,37 +800,8 @@ export function useEntityPage() {
         docId: doc.id,
       } satisfies UploadedFile,
     };
-    const filled: string[] = [];
-    // Only trust a document's facts when the reader agrees on what it is.
-    if (facts && CLASSIFIER_KIND[facts.kind] === kind) {
-      if (facts.ein && !current.ein?.trim() && (kind === "einLetter" || kind === "w9")) {
-        patch.ein = facts.ein;
-        filled.push(`EIN ${facts.ein}`);
-      }
-      if (facts.date && kind === "articles") {
-        if (!current.formationDate) {
-          patch.formationDate = facts.date;
-          filled.push(`formed ${fmtDate(facts.date)}`);
-        }
-        if (!current.articlesOfOrgDate) patch.articlesOfOrgDate = facts.date;
-      }
-      if (facts.date && (kind === "trustAgreement" || kind === "trustCertificate") && !current.formationDate) {
-        patch.formationDate = facts.date;
-        filled.push(`trust dated ${fmtDate(facts.date)}`);
-      }
-      if (facts.state && kind === "trustAgreement" && !current.state?.trim()) {
-        patch.state = facts.state;
-        filled.push(`governed by ${facts.state} law`);
-      }
-      if (facts.date && kind === "operatingAgreement" && !current.operatingAgreementDate) {
-        patch.operatingAgreementDate = facts.date;
-        filled.push(`agreement dated ${fmtDate(facts.date)}`);
-      }
-      if (facts.state && kind === "articles" && !current.state?.trim()) {
-        patch.state = facts.state;
-        filled.push(facts.state);
-      }
-    }
+    // Only take a document's facts when the reader agrees on what it is, and only as proposals.
+    const filled = facts && CLASSIFIER_KIND[facts.kind] === kind ? proposeFromFiling(patch, kind, facts, doc) : [];
     try {
       const { db, authReady } = await import("../store");
       await authReady;
@@ -654,10 +831,8 @@ export function useEntityPage() {
     const patch: Record<string, unknown> = {};
     let note = "";
     if (!current.llcType) {
-      patch.llcType = tc;
-      patch.llcTypeSource = source;
-      patch.llcTypeConflict = null;
-      note = `tax class ${tc}`;
+      if (!propose(patch, "llcType", tc, doc, source)) return;
+      note = `tax class ${tc}, to accept`;
     } else if (current.llcType === tc) {
       if (current.llcTypeSource === source) return;
       patch.llcTypeSource = source;
@@ -688,20 +863,14 @@ export function useEntityPage() {
     const patch: Record<string, unknown> = {};
     const added: string[] = [];
     const agent = facts.registeredAgent?.trim();
-    if (agent && !current.registeredAgent?.trim() && entityType(current) !== "Trust") {
-      patch.registeredAgent = agent;
-      added.push(`agent ${agent}`);
-    }
-    const addr = facts.principalAddress?.trim();
-    if (addr && !current.address?.trim()) {
-      patch.address = addr;
-      added.push("principal address");
-    }
+    if (agent && entityType(current) !== "Trust" && propose(patch, "registeredAgent", agent, doc)) added.push(`agent ${agent}`);
+    if (propose(patch, "address", facts.principalAddress?.trim(), doc)) added.push("principal address");
     const owners = (facts.members ?? []).filter((m) => m?.name?.trim());
     const ownerKinds = new Set(["operatingAgreement", "ownershipLedger", "articles", "annualReport"]);
-    if (owners.length && ownerKinds.has(CLASSIFIER_KIND[facts.kind] ?? "") && (!current.members?.length || current.membersSource === doc.name || fromStateRecord(current.membersSource))) {
-      patch.members = owners.map((m) => ({ name: m.name.trim(), percent: typeof m.percent === "number" ? m.percent : null, role: m.role ?? null }));
-      patch.membersSource = doc.name;
+    // Owners from a document replace a list filled from the state's record; they're proposed, not recorded.
+    if (owners.length && ownerKinds.has(CLASSIFIER_KIND[facts.kind] ?? "") && (!current.members?.length || fromStateRecord(current.membersSource)) && !current.proposed?.members) {
+      const list = owners.map((m) => ({ name: m.name.trim(), percent: typeof m.percent === "number" ? m.percent : null, role: m.role ?? null }));
+      patch["proposed/members"] = JSON.parse(JSON.stringify({ value: list, source: `Read by AI from “${doc.name}”`, docName: doc.name, at: Date.now() } satisfies Proposal));
       added.push(`${owners.length} owner${owners.length === 1 ? "" : "s"} / managers`);
     }
     if (CLASSIFIER_KIND[facts.kind] === "annualReport" && facts.filingYear && (current.annualReportYear ?? 0) < facts.filingYear) {
@@ -713,7 +882,7 @@ export function useEntityPage() {
     await authReady;
     const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), patch);
-    const line = `Read “${doc.name}” · added ${added.join(", ")}`;
+    const line = `Read “${doc.name}” · ${added.join(", ")}: accept on Overview`;
     setFilingNotes((n) => [...n, line]);
     setScan((sc) => (sc && !sc.finished ? { ...sc, notes: [...sc.notes, line] } : sc));
   }
@@ -744,21 +913,18 @@ export function useEntityPage() {
   async function fillTrustPeople(facts: Classified, doc: AssetDoc) {
     const current = assetRef.current;
     if (!current || entityType(current) !== "Trust") return;
-    const patch: Record<string, string> = {};
+    const patch: Record<string, unknown> = {};
     const added: string[] = [];
     for (const key of ["trustees", "grantors", "beneficiaries"] as const) {
       const v = facts[key]?.trim();
-      if (v && !current[key]?.trim()) {
-        patch[key] = v;
-        added.push(`${key} ${v}`);
-      }
+      if (propose(patch, key, v, doc)) added.push(`${key} ${v}`);
     }
     if (!added.length) return;
     const { db, authReady } = await import("../store");
     await authReady;
     const { ref, update } = await import("../store");
     await update(ref(db, `assets/${id}`), patch);
-    const note = `Read “${doc.name}” · added ${added.join("; ")}`;
+    const note = `Read “${doc.name}” · ${added.join("; ")}: accept on Overview`;
     setFilingNotes((n) => [...n, note]);
     setScan((sc) => (sc && !sc.finished ? { ...sc, notes: [...sc.notes, note] } : sc));
   }
@@ -805,7 +971,7 @@ export function useEntityPage() {
       return `${title} already on file — kept “${doc.name}” in Documents`;
     }
     const filled = await fileDocument(kind, doc, facts);
-    return `Filed “${doc.name}” as ${title}${filled.length ? ` · added ${filled.join(", ")}` : ""}`;
+    return `Filed “${doc.name}” as ${title}${filled.length ? ` · read ${filled.join(", ")}: accept on Overview` : ""}`;
   }
 
   // Documents already in the library whose names say what they are get filed
@@ -885,37 +1051,13 @@ export function useEntityPage() {
         await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now(), classReadAt: Date.now() });
         return;
       }
-      const filled: string[] = [];
-      if (facts.ein && !current.ein?.trim() && (kind === "einLetter" || kind === "w9")) {
-        patch.ein = facts.ein;
-        filled.push(`EIN ${facts.ein}`);
-      }
-      if (facts.date && kind === "articles") {
-        if (!current.articlesOfOrgDate) {
-          patch.articlesOfOrgDate = facts.date;
-          filled.push(`articles filed ${fmtDate(facts.date)}`);
-        }
-        if (!current.formationDate) patch.formationDate = facts.date;
-      }
-      if (facts.state && kind === "articles" && !current.state?.trim()) patch.state = facts.state;
-      if (facts.date && (kind === "trustAgreement" || kind === "trustCertificate") && !current.formationDate) {
-        patch.formationDate = facts.date;
-        filled.push(`trust dated ${fmtDate(facts.date)}`);
-      }
-      if (facts.state && kind === "trustAgreement" && !current.state?.trim()) {
-        patch.state = facts.state;
-        filled.push(`governed by ${facts.state} law`);
-      }
-      if (facts.date && kind === "operatingAgreement" && !current.operatingAgreementDate) {
-        patch.operatingAgreementDate = facts.date;
-        filled.push(`agreement dated ${fmtDate(facts.date)}`);
-      }
+      const filled = proposeFromFiling(patch, kind, facts, doc);
       const { db, authReady } = await import("../store");
       await authReady;
       const { ref, update } = await import("../store");
       if (Object.keys(patch).length) await update(ref(db, `assets/${id}`), patch);
       await update(ref(db, `assets/${id}/documents/${doc.id}`), { factsCheckedAt: Date.now(), classReadAt: Date.now() });
-      if (filled.length) setFilingNotes((n) => [...n, `Read “${doc.name}” · added ${filled.join(", ")}`]);
+      if (filled.length) setFilingNotes((n) => [...n, `Read “${doc.name}” · ${filled.join(", ")}: accept on Overview`]);
     } catch (err) {
       console.error("reading filed document failed", err);
     } finally {
@@ -1320,22 +1462,24 @@ export function useEntityPage() {
     const plan = palmSyncPlan();
     const businessId = current.palm?.[mode]?.businessId;
     if (plan.cents > 0) {
-      const ok = await confirmDialog({
+      const last = current.palm?.[mode]?.syncedAt;
+      const ok = await confirm({
         title: `Sync ${current.name} with Palm?`,
-        message: (
-          <>
-            Reading the state's records is billed by Palm: about <b>{dollars(plan.cents)}</b>. Everything else is free.
-          </>
-        ),
+        message: `Palm bills for reading the state’s records: at most ${dollars(plan.cents)}, less when a name search finds nothing. Everything else is free. ${last ? `Last synced ${format.date(new Date(last), "medium")}.` : "Never synced before."}`,
+        receipt: {
+          lines: plan.states.map((st) => ({
+            label: `${stateName(st.code) || st.code}${st.home ? "" : " (foreign)"} state record${st.cents < STATE_RECORD_CENTS ? "" : ", by name"}`,
+            cents: st.cents,
+          })),
+        },
         details: [
-          ...plan.states.map(
-            (st) =>
-              `${stateName(st.code) || st.code}${st.home ? "" : " (foreign)"} state record: ${dollars(st.cents)}${st.cents < STATE_RECORD_CENTS ? " (file number on record)" : " (name search, then the record)"}`,
-          ),
-          businessId ? "Palm's copy of the business, its agent, and its mail (saved to Documents): free" : "Its agent and mail: read once Palm is its agent",
+          businessId ? "Palm’s copy of the business, its agent and its mail: free. Its mail is saved to Documents." : "Its agent and mail are read once Palm is its agent.",
+          ...(businessId ? ["Palm’s display name for it is set to match ours."] : []),
+          `Billed to the office’s Palm account and logged against ${current.name}.`,
           "Nothing is filed with the state, and nothing on the record is overwritten: blanks are filled, differences are flagged.",
         ],
-        confirmLabel: `Sync · ${dollars(plan.cents)}`,
+        confirmLabel: `Sync for up to ${dollars(plan.cents)}`,
+        tone: "commit",
       });
       if (!ok || moved()) return;
     }
@@ -1620,9 +1764,11 @@ export function useEntityPage() {
       // The owners the governing documents list feed the paperwork checks,
       // unless a more specific document already supplied them.
       const owners = profile.members.filter((m) => m.name?.trim());
-      if (owners.length && (!current.members?.length || current.membersSource === "governing documents" || fromStateRecord(current.membersSource))) {
-        patch.members = owners.map((m) => ({ name: m.name, percent: m.percent ?? null, role: "member" }));
-        patch.membersSource = "governing documents";
+      if (owners.length && (!current.members?.length || fromStateRecord(current.membersSource)) && !current.proposed?.members) {
+        const source = profile.sources.length ? profile.sources.join(", ") : "the governing documents";
+        patch["proposed/members"] = JSON.parse(
+          JSON.stringify({ value: owners.map((m) => ({ name: m.name, percent: m.percent ?? null, role: "member" })), source: `Summary by AI from ${source}`, docName: source, at: Date.now() } satisfies Proposal),
+        );
       }
       await update(ref(db, `assets/${id}`), patch);
       if (profile.taxTreatment) {
@@ -1639,14 +1785,7 @@ export function useEntityPage() {
     }
   }
 
-  // Build the profile once, the first time an entity with documents is opened.
-  useEffect(() => {
-    if (!asset || asset.profile || profileTried.current || aiDown || !canChangeRecord()) return;
-    if (!documentsForReading(asset).length) return;
-    profileTried.current = true;
-    void buildProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asset, docs, aiDown]);
+  // The summary is read only when someone asks (About's Read button): documents go to Anthropic on a click, not on opening the page.
 
   /** Every readable document on the entity — library files plus slot-only uploads — labelled with its filing. */
   function documentsForReading(a: Asset) {
@@ -1824,15 +1963,29 @@ export function useEntityPage() {
     }
   }
 
-  /** Copy a link to the document that expires (a signed link), never the permanent storage URL. */
+  /**
+   * Copy a link to the document that expires (a signed link), never the
+   * permanent storage URL. Our own files go through the share form of the
+   * link endpoint, which records in Activity who copied a link to what.
+   */
   async function handleCopyDocUrl(doc: AssetDoc) {
     try {
-      await copyStoredFileLink(doc);
+      if (doc.storagePath) {
+        const link = authFetch(`/api/documents/url?${new URLSearchParams({ path: doc.storagePath, share: "1" })}`).then(async (r) => {
+          const j = (await r.json().catch(() => ({}))) as { url?: string; message?: string };
+          if (!r.ok || !j.url) throw new Error(j.message || "Couldn’t make a link.");
+          return j.url;
+        });
+        if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+          await navigator.clipboard.write([new ClipboardItem({ "text/plain": link.then((u) => new Blob([u], { type: "text/plain" })) })]);
+        } else await navigator.clipboard.writeText(await link);
+      } else await copyStoredFileLink(doc);
     } catch (err) {
       await alertDialog("Couldn't copy a link", err instanceof Error ? err.message : undefined);
       return;
     }
     setCopiedDocId(doc.id);
+    toast({ message: doc.storagePath ? `Copied a ${SIGNED_LINK_MINUTES}-minute link to “${doc.name}”` : "Copied the link" });
     setTimeout(() => setCopiedDocId((v) => (v === doc.id ? null : v)), 1500);
   }
 
@@ -1855,7 +2008,8 @@ export function useEntityPage() {
       if (known) {
         parties = known.signers
           .slice(0, 2)
-          .map((sg) => (sg.by ? { role: `${sg.by.title}, ${sg.name}`, name: sg.by.name, email: isLedgerLouiseName(sg.name) ? (getUser()?.email ?? "") : "" } : { role: sg.capacity, name: sg.name }));
+          // Each signer's own address is added on the request's page before it's sent; never the sender's.
+          .map((sg) => (sg.by ? { role: `${sg.by.title}, ${sg.name}`, name: sg.by.name, email: "" } : { role: sg.capacity, name: sg.name, email: "" }));
       } else {
         const members = (asset?.members ?? []).filter((m) => m.name?.trim()).slice(0, 2);
         parties = members.length ? members.map((m) => ({ role: m.role?.trim() || "Member", name: m.name.trim() })) : [{ role: "Party A" }, { role: "Party B" }];
@@ -1872,38 +2026,47 @@ export function useEntityPage() {
     }
   }
 
-  async function handleRenameDoc(doc: AssetDoc) {
-    setRenamingDocId(doc.id);
+  /** The rename dialog: the document, and a name suggested by AI when asked. */
+  const [renaming, setRenaming] = useState<{ doc: AssetDoc; suggestion: string | null; suggesting: boolean; error: string } | null>(null);
+
+  /** Open the rename dialog for a document (its field starts with the current name). */
+  function handleRenameDoc(doc: AssetDoc) {
+    setRenaming({ doc, suggestion: null, suggesting: false, error: "" });
+  }
+
+  /** Ask AI for a clearer name; it's offered in the dialog, never applied by itself. */
+  async function suggestDocName() {
+    const r = renaming;
+    if (!r) return;
+    setRenaming({ ...r, suggesting: true, error: "" });
+    setRenamingDocId(r.doc.id);
     try {
       const res = await authFetch("/api/rename-doc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentName: doc.name,
-          contentType: doc.contentType || "",
-          url: doc.url,
-          context: `Entity: ${asset?.name || ""} (${asset?.type || ""})`,
-        }),
+        body: JSON.stringify({ currentName: r.doc.name, contentType: r.doc.contentType || "", url: r.doc.url, context: `Entity: ${asset?.name || ""} (${asset?.type || ""})` }),
       });
-      const data = await res.json();
-      if (!res.ok || !data?.name) {
-        await alertDialog("Rename failed", String(data?.error || res.statusText));
-        return;
-      }
-      const suggested: string = String(data.name).trim();
-      if (!suggested || suggested === doc.name) return;
-      const confirmed = prompt(`Claude suggests a new name for this document. Edit if you want, then press OK.`, suggested);
-      if (!confirmed || !confirmed.trim() || confirmed.trim() === doc.name) return;
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, update } = await import("../store");
-      await update(ref(db, `assets/${id}/documents/${doc.id}`), { name: confirmed.trim() });
-    } catch (err) {
-      console.error("rename failed:", err);
-      await alertDialog("Rename failed", err instanceof Error ? err.message : "Unknown error");
+      const data = (await res.json().catch(() => ({}))) as { name?: string };
+      const name = String(data?.name ?? "").trim();
+      setRenaming((x) => (x && x.doc.id === r.doc.id ? { ...x, suggesting: false, suggestion: res.ok && name ? name : null, error: res.ok && name ? "" : "Couldn’t suggest a name. Type one instead." } : x));
+    } catch {
+      setRenaming((x) => (x && x.doc.id === r.doc.id ? { ...x, suggesting: false, error: "Couldn’t suggest a name. Type one instead." } : x));
     } finally {
       setRenamingDocId(null);
     }
+  }
+
+  /** Save the name typed in the dialog. */
+  async function saveDocName(name: string) {
+    const r = renaming;
+    const next = name.trim();
+    if (!r) return;
+    if (!next || next === r.doc.name) {
+      setRenaming(null);
+      return;
+    }
+    await patchAsset({ [`documents/${r.doc.id}/name`]: next });
+    setRenaming(null);
   }
 
   function formatBytes(bytes?: number) {
@@ -1920,11 +2083,14 @@ export function useEntityPage() {
   async function fileGenerated(kind: FileKind, blob: Blob, name: string, replace = false): Promise<string | null> {
     setSlot(kind, { error: null, uploading: true, progress: 0 });
     try {
-      const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), (pct) => setSlot(kind, { progress: pct }));
-      if (replace)
+      const doc = await uploadDocFile(new File([blob], name, { type: "application/pdf" }), (pct) => setSlot(kind, { progress: pct }), { draft: true });
+      if (replace) {
+        const prior = assetRef.current?.[kind]?.docId;
         await patchAsset({
-          [kind]: { url: doc.url, fileName: doc.name, size: doc.size ?? 0, contentType: "application/pdf", uploadedAt: Date.now(), storagePath: "", docId: doc.id } satisfies UploadedFile,
+          [kind]: { url: doc.url, fileName: doc.name, size: doc.size ?? 0, contentType: "application/pdf", uploadedAt: Date.now(), storagePath: "", docId: doc.id, uploadedBy: getUser()?.name ?? null } satisfies UploadedFile,
+          ...(prior && prior !== doc.id ? { [`documents/${prior}/replacedAt`]: Date.now() } : {}),
         });
+      }
       else await fileDocument(kind, doc);
       return doc.id;
     } catch (err) {
@@ -1936,6 +2102,18 @@ export function useEntityPage() {
   }
 
   const lookupAsset = (oid: string) => allAssets[oid] as Rec | undefined;
+
+  /**
+   * Who signs for one of the family's own companies: its manager, as its
+   * owners list (People) names one. Null when it isn't one of the family's
+   * entities or no manager is on record (the request's page then asks).
+   */
+  function familySigner(name: string): { name: string; title: string } | null {
+    const want = normEntityName(name);
+    const rec = Object.values(allAssets).find((a) => normEntityName(a.name) === want) as (Rec & { members?: Member[] }) | undefined;
+    const manager = (rec?.members ?? []).find((m) => /manager/i.test(m.role ?? "") && m.name?.trim());
+    return manager ? { name: manager.name.trim(), title: "Manager" } : null;
+  }
 
   /** One of the family's entities, by name: its mailing (else principal) address, for an owner that's a company here. */
   const assetAddressByName = (name: string): string | null => {
@@ -1995,7 +2173,10 @@ export function useEntityPage() {
       const doc = operatingAgreement(input);
       // The family's own company signs through its manager: his name and title go on its block.
       const signsFor: SignsFor = {};
-      for (const sg of doc.signers) if (isLedgerLouiseName(sg.name)) signsFor[sg.name.trim().toLowerCase()] = LEDGER_LOUISE_SIGNER;
+      for (const sg of doc.signers) {
+        const by = familySigner(sg.name);
+        if (by) signsFor[sg.name.trim().toLowerCase()] = by;
+      }
       const { blob, boxes } = await operatingAgreementPdfWithBoxes(doc, current.name, signsFor);
       const docId = await fileGenerated("operatingAgreement", blob, `Operating Agreement - ${current.name}.pdf`, replace);
       const patch: Record<string, unknown> = {};
@@ -2016,14 +2197,30 @@ export function useEntityPage() {
 
   const today = () => new Date().toISOString().slice(0, 10);
 
+  /** The family's entities this one owns on record (a step each when it's closed, and named when it's archived). */
+  function ownedNow() {
+    return id ? ownedBy(id, assetRef.current ?? {}, allAssets as never) : [];
+  }
+
   async function startClosing() {
     const current = assetRef.current;
     if (!current || current.closing) return;
-    const ok = await confirmDialog({
-      title: `Start closing ${current.name}?`,
-      message: "BFO lists every step to close it down: the owners' consent, winding up, the state filing, the final return, the EIN, the agent and the mail. Nothing is filed until you do each step.",
-      details: ["You can stop at any point and the entity stays as it is.", "Palm can't file a dissolution; the state filing is done on the state's site, linked from each step."],
-      confirmLabel: "Start closing",
+    const owned = ownedNow();
+    const steps = closingSteps({ ...current, owned, ownerName: current.ownerId ? assetNames[current.ownerId] : null });
+    const count = steps.filter((st) => !st.key.startsWith("transfer:")).length;
+    const rec = current.stateRecord ? effectiveRecord(current.stateRecord, current.stateConfirmed) : null;
+    const behind = !!rec && recordLapsed(rec);
+    const where = stateName(stateCode(current.state) ?? "") || current.state || "the state";
+    const ok = await confirm({
+      title: `Start dissolving ${current.name}?`,
+      message: `BFO lists each step, in order, with what it drafts and where it’s filed: ${count} steps from the owners’ consent to the last mail. Nothing is filed until you do it.`,
+      details: [
+        ...(owned.length ? [`It owns ${owned.length === 1 ? "1 entity" : `${owned.length} entities`}: each interest is transferred first, a step each (${owned.map((o) => o.name).join("; ")}).`] : []),
+        ...(behind ? [`${where}’s record shows it behind on a filing or fee. ${where} won’t accept the dissolution until it’s current.`] : []),
+        "Until the owners sign the consent or anything is filed, you can stop and nothing changes. A signed consent or a state filing has legal effect that stopping here doesn’t undo.",
+        "The state filing is made on the state’s own site; each step links to it.",
+      ],
+      confirmLabel: "Start dissolving",
     });
     if (!ok) return;
     await patchAsset({ closing: { startedAt: today(), steps: {} } });
@@ -2159,9 +2356,32 @@ export function useEntityPage() {
     await openStoredFile(doc);
   }
 
-  /** Mark where the address change has been reported (or undo it). */
-  async function markAddressStep(step: "state" | "irs" | "banks", done: boolean) {
-    await patchAsset({ [`addressUpdates/${step}`]: done ? new Date().toISOString().slice(0, 10) : null });
+  /**
+   * Mark where the address change has been reported (or undo it), with the
+   * day it was sent and a certified-mail tracking or confirmation number.
+   */
+  async function markAddressStep(step: "state" | "irs" | "banks", done: boolean, proof?: { on: string; ref?: string | null }) {
+    const on = proof?.on || today();
+    await patchAsset({
+      [`addressUpdates/${step}`]: done ? on : null,
+      [`addressUpdateRefs/${step}`]: done ? { on, ref: proof?.ref?.trim() || null, by: getUser()?.name ?? null, at: Date.now() } : null,
+    });
+  }
+
+  /**
+   * Answer whether it does business in a state its address is in: owners and
+   * admins, with a reason, recorded in Activity. "Yes" means it must register
+   * there; "no" means only its mail goes there.
+   */
+  async function decideForeign(code: string, doesBusiness: boolean, reason: string) {
+    if (!isAdmin()) return;
+    await patchAsset({
+      [`foreign/${code}/confirmed`]: doesBusiness ? true : null,
+      [`foreign/${code}/notNeeded`]: doesBusiness ? null : true,
+      [`foreign/${code}/decisionReason`]: reason.trim() || null,
+      [`foreign/${code}/decidedBy`]: getUser()?.name ?? null,
+      [`foreign/${code}/decidedAt`]: Date.now(),
+    });
   }
 
   /**
@@ -2234,165 +2454,170 @@ export function useEntityPage() {
     return { saved, failed };
   }
 
+  /**
+   * Upload a file straight onto a row: it goes into the library (so it's
+   * never a copy only the row holds) and onto the row. What the row held
+   * before stays in the library as an earlier version.
+   */
   async function handleUploadFile(kind: FileKind, file: File) {
     if (!file) return;
     const maxBytes = 25 * 1024 * 1024;
     if (file.size > maxBytes) {
-      setSlot(kind, { error: "File too large. Max 25 MB." });
+      setSlot(kind, { error: "That file is over 25 MB. Choose a smaller one." });
       return;
     }
     setSlot(kind, { error: null, uploading: true, progress: 0 });
     try {
-      const { db, ref: dbRef, update } = await import("../store");
-
-      // The slot's own earlier file (not one filed from Documents) goes, but
-      // only once the new one is stored and recorded: a failed upload changes nothing.
-      const prior = asset?.[kind];
-      const priorPath = prior?.storagePath && !prior.docId ? prior.storagePath : null;
-
-      const stored = await uploadToStorage(
-        file,
-        (pct) => {
-          if (pct > 0) setSlot(kind, { error: null });
-          setSlot(kind, { progress: pct });
-        },
-        () => setSlot(kind, { error: "Upload is stuck. Check your connection and try again." }),
-      );
-
-      const meta: UploadedFile = {
-        url: stored.url,
-        fileName: file.name,
-        size: file.size,
-        contentType: file.type || "application/pdf",
-        uploadedAt: Date.now(),
-        storagePath: stored.path,
+      const prior = assetRef.current?.[kind];
+      const doc = await uploadDocFile(file, (pct) => setSlot(kind, { error: null, progress: pct }));
+      const patch: Record<string, unknown> = {
+        [kind]: { url: doc.url, fileName: doc.name, size: doc.size ?? 0, contentType: doc.contentType || "application/pdf", uploadedAt: Date.now(), storagePath: "", docId: doc.id, uploadedBy: getUser()?.name ?? null } satisfies UploadedFile,
       };
-      await update(dbRef(db, `assets/${id}`), { [kind]: meta });
-      if (priorPath && priorPath !== stored.path) deleteStoredFile(priorPath).catch(() => {});
+      if (prior?.docId) patch[`documents/${prior.docId}/replacedAt`] = Date.now();
+      else if (prior?.storagePath) {
+        // An older upload only the row held: it joins the library as the earlier version, never deleted.
+        const keep: Omit<AssetDoc, "id"> = { name: prior.fileName.replace(/\.[^.]+$/, ""), url: prior.url, storagePath: prior.storagePath, storageProvider: "supabase", size: prior.size, contentType: prior.contentType, createdAt: prior.uploadedAt || Date.now(), replacedAt: Date.now(), autoFileSkip: true };
+        patch[`documents/kept-${kind}-${prior.uploadedAt || Date.now()}`] = JSON.parse(JSON.stringify(keep));
+      }
+      await patchAsset(patch);
     } catch (err) {
-      console.error(`${kind} upload failed:`, err);
-      setSlot(kind, { error: err instanceof Error ? err.message : "Upload failed" });
+      console.error(`${kind} upload failed`);
+      setSlot(kind, { error: err instanceof Error && /stuck|network/i.test(err.message) ? err.message : "The upload didn’t finish. Check your connection and try again." });
     } finally {
       setSlot(kind, { uploading: false, progress: 0 });
     }
   }
 
+  /**
+   * Take a file off its row. One from the library stays there; an older
+   * upload only the row held moves to the library's Removed list (kept).
+   */
   async function handleDeleteFile(kind: FileKind) {
-    const file = asset?.[kind];
-    if (!file) return;
-    const label = filingTitle(kind, asset);
-    // Filed from Documents: just unfile it — the document stays in the library.
+    const current = assetRef.current;
+    const file = current?.[kind];
+    if (!current || !file) return;
+    const label = filingTitle(kind, current);
+    if (
+      !(await confirm({
+        title: `Take this file off ${label}?`,
+        object: { name: file.fileName },
+        message: file.docId
+          ? `It stays in the Library. ${label} will show as missing until you add another, and Scan library won’t put this one back.`
+          : `It moves to the Library’s Removed list, where it’s kept and can be restored. ${label} will show as missing until you add another.`,
+        confirmLabel: "Take it off",
+      }))
+    )
+      return;
     if (file.docId) {
-      if (!(await confirmDialog({ title: `Unfile “${file.fileName}”?`, message: `It comes out of ${label} and stays in Documents.`, confirmLabel: "Unfile" }))) return;
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref: dbRef, update } = await import("../store");
-      await update(dbRef(db, `assets/${id}`), { [kind]: null });
-      await update(dbRef(db, `assets/${id}/documents/${file.docId}`), { autoFileSkip: true });
+      await patchAsset({ [kind]: null, [`documents/${file.docId}/autoFileSkip`]: true });
       return;
     }
-    if (!(await confirmDialog({ title: `Remove the uploaded ${label}?`, message: "The file is deleted.", tone: "danger", confirmLabel: "Remove" }))) return;
-    try {
-      const { db, ref: dbRef, update } = await import("../store");
-      try {
-        if (file.storagePath) await deleteStoredFile(file.storagePath);
-      } catch {
-        // ignore
-      }
-      await update(dbRef(db, `assets/${id}`), { [kind]: null });
-    } catch (err) {
-      console.error(`${kind} delete failed:`, err);
-      setSlot(kind, { error: err instanceof Error ? err.message : "Delete failed" });
-    }
+    const removedId = `kept-${kind}-${file.uploadedAt || Date.now()}`;
+    const removed: RemovedDoc = {
+      name: file.fileName.replace(/\.[^.]+$/, ""),
+      url: file.url,
+      storagePath: file.storagePath,
+      storageProvider: "supabase",
+      size: file.size,
+      contentType: file.contentType,
+      createdAt: file.uploadedAt || Date.now(),
+      autoFileSkip: true,
+      removedAt: Date.now(),
+      removedBy: getUser()?.name ?? null,
+      filedAs: label,
+    };
+    await patchAsset({ [kind]: null, [`removedDocuments/${removedId}`]: JSON.parse(JSON.stringify(removed)) });
   }
 
   const [deleting, setDeleting] = useState(false);
 
+  /** What the entity has on record, for the archive and remove questions. */
+  function footprint() {
+    const current = assetRef.current;
+    const filings = current ? FILING_KINDS.filter((k) => current[k]).length : 0;
+    const palmAgent = !!current && (current.palm?.live?.ra?.status === "active" || /^Palm, active/.test(current.registeredAgentSource ?? ""));
+    const owned = ownedNow();
+    const empty = !!current && !current.ein?.trim() && !docs.length && !Object.keys(current.removedDocuments ?? {}).length && !filings && !contracts.length && !current.members?.length && !owned.length && !current.palm?.live && !current.palm?.test && !current.stateRecord && !current.closing && !current.fileNumber && !current.formationDate;
+    return { filings, palmAgent, owned, empty };
+  }
+
+  async function archiveCall(action: "archive" | "restore" | "remove", reason = ""): Promise<string | null> {
+    const r = await authFetch("/api/entity-archive", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assetId: id, action, reason }) });
+    if (r.ok) return null;
+    const j = await r.json().catch(() => ({}));
+    return (j as { message?: string }).message || "That didn’t go through. Try again.";
+  }
+
   /**
-   * Delete the entity everywhere it lives: its record (filings, contracts,
-   * document list), its uploaded files, its place on the Estate Map, and any
-   * entities it owned (they move up to its own owner rather than vanish).
+   * Archive the entity: hidden from the lists and read-only, with everything
+   * kept. It doesn't dissolve anything: it stays formed with the state. An
+   * admin is offered Dissolve instead when it isn't being closed already.
+   */
+  async function archiveEntity() {
+    const current = assetRef.current;
+    if (!current || current.archived) return;
+    const f = footprint();
+    const where = stateName(stateCode(current.state) ?? "") || current.state || "its state";
+    const result = await confirm({
+      title: `Archive ${current.name}?`,
+      message: `It leaves the entity lists and becomes read-only. Everything is kept: its documents, filings, contracts, owners and activity. You can restore it at any time.`,
+      details: [
+        entityType(current) === "Trust" ? "This doesn’t end the trust; it only files the record away." : `This doesn’t dissolve it: it stays formed with ${where}, and its filings and fees keep coming due. To end it, dissolve it instead.`,
+        ...(f.owned.length ? [`It owns ${f.owned.length === 1 ? "1 entity" : `${f.owned.length} entities`}; their records don’t change.`] : []),
+        ...(f.palmAgent ? ["Palm stays its registered agent and keeps billing; its mail still arrives here."] : []),
+      ],
+      confirmLabel: "Archive",
+      alternative: isAdmin() && !current.closing && entityType(current) !== "Trust" ? { label: "Dissolve instead", value: "dissolve" } : undefined,
+      focus: "cancel",
+    });
+    if (!result) return;
+    if (typeof result === "object" && result.alternative === "dissolve") {
+      await startClosing();
+      return;
+    }
+    setDeleting(true);
+    const why = await archiveCall("archive");
+    setDeleting(false);
+    if (why) {
+      await alertDialog("Couldn’t archive it", why);
+      return;
+    }
+    toast({ message: `Archived ${current.name}`, action: { label: "Undo", run: () => void archiveCall("restore") } });
+  }
+
+  async function restoreEntity() {
+    const why = await archiveCall("restore");
+    if (why) await alertDialog("Couldn’t restore it", why);
+  }
+
+  /**
+   * Remove a record made by mistake: only when nothing at all is on record
+   * for it (the server checks again). Anything with standing is archived.
    */
   async function handleDeleteAsset() {
     const current = assetRef.current;
     if (!current || deleting) return;
-    const { db, authReady } = await import("../store");
-    await authReady;
-    const { ref, get, update, remove, set } = await import("../store");
-
-    const all = ((await get(ref(db, "assets"))).val() ?? {}) as Record<string, { name?: string; ownerId?: string }>;
-    const children = Object.entries(all).filter(([cid, a]) => cid !== id && a?.ownerId === id);
-    const parentName = current.ownerId ? all[current.ownerId]?.name : undefined;
-    // Library files, plus files uploaded straight into a filing row (those
-    // filed from Documents are the library's own).
-    const files = [
-      ...new Set(
-        [
-          ...docs.map((d) => d.storagePath),
-          ...FILING_KINDS.map((k) => current[k])
-            .filter((f) => f && !f.docId)
-            .map((f) => f!.storagePath),
-        ].filter((p): p is string => !!p),
-      ),
-    ];
-
-    const details = [
-      `Its key facts, filings${contracts.length ? `, ${contracts.length} contract${contracts.length === 1 ? "" : "s"}` : ""} and notes are removed.`,
-      files.length ? `${files.length} uploaded document${files.length === 1 ? " is" : "s are"} deleted from storage.` : "",
-      children.length ? `${children.map(([, a]) => a.name).join(", ")} ${children.length === 1 ? "moves" : "move"} up to ${parentName ?? "the top level"}.` : "",
-      "It is removed from the Estate Map.",
-    ].filter(Boolean);
-    const ok = await confirmDialog({
-      title: `Delete ${current.name}?`,
-      message: "This can't be undone.",
-      details,
+    if (!footprint().empty) {
+      await archiveEntity();
+      return;
+    }
+    const ok = await confirm({
+      title: `Remove ${current.name} from BFO?`,
+      message: "Nothing is on record for it, so it looks recorded by mistake. This removes BFO’s record only; it doesn’t dissolve anything with a state.",
+      confirmLabel: "Remove from BFO",
       tone: "danger",
-      confirmLabel: "Delete entity",
-      requireText: files.length || children.length ? current.name : undefined,
+      irreversible: true,
+      typeToConfirm: current.name,
     });
     if (!ok) return;
-
     setDeleting(true);
-    try {
-      // Children first, so nothing is left pointing at a missing owner.
-      for (const [cid] of children) {
-        await update(ref(db, `assets/${cid}`), { ownerId: current.ownerId || "" });
-      }
-
-      // The Estate Map keeps its own tree by name; lift this node's children
-      // to its parent and drop the node.
-      const mapSnap = await get(ref(db, "estate-map/entities"));
-      const raw = mapSnap.val();
-      if (raw) {
-        const nodes: Array<{ id: string; name: string; parentId: string | null }> = (Array.isArray(raw) ? raw : Object.values(raw)).filter(Boolean);
-        const node = nodes.find((n) => n.name?.trim().toLowerCase() === current.name.trim().toLowerCase());
-        if (node) {
-          const next = nodes.filter((n) => n.id !== node.id).map((n) => (n.parentId === node.id ? { ...n, parentId: node.parentId ?? null } : n));
-          await set(ref(db, "estate-map/entities"), next);
-        }
-      }
-
-      // Uploaded files — best effort; the record goes either way.
-      for (const path of files) {
-        try {
-          await deleteStoredFile(path);
-        } catch (err) {
-          console.warn("couldn't delete stored file", path, err);
-        }
-      }
-
-      await remove(ref(db, `assets/${id}`));
-      navigate("/assets");
-    } catch (err) {
-      console.error("delete entity failed", err);
+    const why = await archiveCall("remove");
+    if (why) {
       setDeleting(false);
-      await alertDialog(
-        "Couldn't delete this entity",
-        err instanceof Error && /permission/i.test(err.message)
-          ? "The database refused the change. Sign out and back in, then try again."
-          : "Something went wrong while deleting. Nothing was removed from the entity itself — try again.",
-      );
+      await alertDialog("Couldn’t remove it", why);
+      return;
     }
+    navigate("/assets");
   }
 
   async function updateCorpField(field: string, value: unknown) {
@@ -2789,6 +3014,30 @@ export function useEntityPage() {
     shareholders,
     copyValue,
     handleCopyEin,
+    // Editing: one save path for the header, the form and the phone's bar.
+    saving,
+    saveError,
+    saveEdits,
+    keyChange,
+    setKeyChange,
+    formChanges,
+    // AI-read facts, proposed until accepted.
+    acceptProposal,
+    dismissProposal,
+    // Archive instead of delete.
+    archiveEntity,
+    restoreEntity,
+    footprint,
+    ownedNow,
+    // Documents kept, not deleted.
+    restoreDoc,
+    purgeDoc,
+    setLegalHold,
+    renaming,
+    setRenaming,
+    suggestDocName,
+    saveDocName,
+    decideForeign,
   };
 }
 

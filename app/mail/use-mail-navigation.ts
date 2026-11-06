@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { Location, NavigateFunction, SetURLSearchParams } from "react-router";
 import { getMessage, type MailFilter, type MailFolder, type MailMessage } from "../mail-client";
+import { filterFor, type Narrow } from "./constants";
 import { phoneScreen, supportsViewTransitions, transition } from "../view-transition";
 import { tap } from "./helpers";
 import type { ListState } from "./list-state";
@@ -9,6 +10,7 @@ import type { ListState } from "./list-state";
 export function useMailNavigation({
   folder,
   filter,
+  attachments,
   q,
   box,
   openId,
@@ -20,6 +22,7 @@ export function useMailNavigation({
 }: {
   folder: MailFolder;
   filter: MailFilter;
+  attachments: boolean;
   q: string;
   box: string;
   openId: string | null;
@@ -34,6 +37,7 @@ export function useMailNavigation({
     const next: Record<string, string> = {};
     if (folder !== "active") next.f = folder;
     if (filter !== "all") next.v = filter;
+    if (attachments) next.att = "1";
     if (q) next.q = q;
     if (box) next.a = box;
     return { ...next, ...extra };
@@ -110,58 +114,47 @@ export function useMailNavigation({
     });
   }
 
-  /** The phone menu: folder and filter in one step (Starred is a place there). Ends a search. */
-  function choosePlace(nextFolder: MailFolder, nextFilter: MailFilter) {
-    if (nextFolder === folder && nextFilter === filter && !openId && !q) return;
+  /** The place's query string: a folder, its narrowing, the search (kept only when asked) and the mailbox. */
+  function place(nextFolder: MailFolder, narrow: Narrow, keepSearch: boolean): Record<string, string> {
     const p: Record<string, string> = {};
     if (nextFolder !== "active") p.f = nextFolder;
-    if (nextFilter !== "all") p.v = nextFilter;
+    const v = filterFor(narrow);
+    if (v !== "all") p.v = v;
+    if (narrow.attachments) p.att = "1";
+    if (keepSearch && q) p.q = q;
     if (box) p.a = box;
-    setParams(p);
+    return p;
   }
+  const current: Narrow = { unread: filter === "unread" || filter === "unread-starred", starred: filter === "starred" || filter === "unread-starred", attachments };
 
-  /** Picking a folder ends a search; changing the filter narrows it. */
+  /** Picking a folder ends a search and keeps the narrowing. */
   function chooseFolder(next: MailFolder) {
     if (next === folder && !openId && !q) return;
-    const p: Record<string, string> = {};
-    if (next !== "active") p.f = next;
-    if (filter !== "all") p.v = filter;
-    if (box) p.a = box;
-    setParams(p);
+    setParams(place(next, current, false));
   }
 
-  function chooseFilter(next: MailFilter) {
-    if (next === filter && !openId) return;
-    const p: Record<string, string> = {};
-    if (folder !== "active") p.f = folder;
-    if (next !== "all") p.v = next;
-    if (q) p.q = q;
-    if (box) p.a = box;
-    setParams(p);
+  /** Narrowing applies at once, and narrows a search too. */
+  function chooseNarrow(next: Narrow) {
+    setParams(place(folder, next, true));
   }
 
   /** Set the search text (the URL carries it, so Back and reload keep it). */
   function search(term: string) {
     const clean = term.trim();
     if (clean === q) return;
-    const p: Record<string, string> = {};
-    if (folder !== "active") p.f = folder;
-    if (filter !== "all") p.v = filter;
+    const p = place(folder, current, false);
     if (clean) p.q = clean;
-    if (box) p.a = box;
     setParams(p, { replace: true });
   }
 
   /** Show one mailbox (an address of mine), or all of them. */
   function chooseBox(next: string) {
     if (next === box) return;
-    const p: Record<string, string> = {};
-    if (folder !== "active") p.f = folder;
-    if (filter !== "all") p.v = filter;
-    if (q) p.q = q;
+    const p = place(folder, current, true);
     if (next) p.a = next;
+    else delete p.a;
     setParams(p);
   }
 
-  return { prefetch, returnedId, select, closeMessage, choosePlace, chooseFolder, chooseFilter, search, chooseBox, openIdRef, navStateRef, queryRef, mountedRef };
+  return { prefetch, returnedId, select, closeMessage, chooseFolder, chooseNarrow, search, chooseBox, openIdRef, navStateRef, queryRef, mountedRef };
 }

@@ -1,6 +1,18 @@
+/**
+ * Start Plaid Link: a short-lived link token for connecting a bank, or, with
+ * item_id, for update mode on an existing connection (sign in again, or
+ * choose which accounts it shares).
+ *
+ * POST { kind: "bank" | "investments", item_id?, add_investments? } → { link_token }
+ *
+ * Who may call it: owners and admins (isAdmin), the people who may connect,
+ * reconnect or re-scope a bank. Partners get 403 (PartnerRefused).
+ * Env: PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV, PLAID_REDIRECT_URI (optional);
+ * SUPABASE_URL, SUPABASE_SERVICE_KEY.
+ */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { canWrite, currentUser, fail, handleError, sb, type AppUser } from "../../lib/auth.js";
+import { currentUser, fail, handleError, isAdmin, sb, type AppUser } from "../../lib/auth.js";
 import { Products, CountryCode } from "plaid";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -18,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return handleError(res, err);
   }
   if (!user) return res.status(401).json({ error: "unauthorized" });
-  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
+  if (!isAdmin(user)) return fail(res, 403, "forbidden", "Only an owner or admin can connect or change a bank connection.");
 
   // Brokerage connections ask for investments; Treasury asks for transactions
   // so bank balances and history come back.
@@ -69,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.json({ link_token: response.data.link_token });
   } catch (err: any) {
-    console.error("Plaid link token error:", err.response?.data || err.message);
+    console.error("Plaid link token error:", err.response?.data?.error_code ?? "unknown");
     const code = err.response?.data?.error_code;
     if (code === "INVALID_PRODUCT" && addInvestments) {
       return fail(res, 500, "INVALID_PRODUCT", "Plaid hasn't enabled Investments for BFO's account yet. In the Plaid dashboard, Overview → Request products → Investments; then try again.");

@@ -4,6 +4,9 @@ import { scopeFilter } from "./prefs.js";
 /**
  * Query-string → PostgREST filter for the transactions ledger. Pure, so the
  * exact filter text the page and its summary share can be asserted in tests.
+ *
+ * HTTP surface: none; read by lib/books/reports.ts (?report=transactions).
+ * Who may call it: server code. Env: none.
  */
 
 /** Comma-separated entity ids, or null meaning "all". */
@@ -55,6 +58,32 @@ export function orderClause(sort: unknown): string {
   return sortCol ? `&order=${sortCol}.${sortDir}.nullslast,transaction_id.asc` : "&order=date.desc,transaction_id.asc";
 }
 
+/**
+ * A period as the ledger's `year` parameter carries it: "2026" (a year),
+ * "2026-11" (a month), "2026-Q3" (a quarter) or "2026-01-01..2026-11-06" (a
+ * range). Null for anything else (all time).
+ */
+export function periodSpan(raw: unknown): { from: string; to: string } | null {
+  const s = String(raw ?? "").trim();
+  let m = /^(\d{4})$/.exec(s);
+  if (m) return { from: `${m[1]}-01-01`, to: `${m[1]}-12-31` };
+  m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(s);
+  if (m) {
+    const last = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
+    return { from: `${m[1]}-${m[2]}-01`, to: `${m[1]}-${m[2]}-${String(last).padStart(2, "0")}` };
+  }
+  m = /^(\d{4})-Q([1-4])$/.exec(s);
+  if (m) {
+    const q = Number(m[2]);
+    const startMonth = (q - 1) * 3 + 1;
+    const end = new Date(Date.UTC(Number(m[1]), startMonth + 2, 0)).getUTCDate();
+    return { from: `${m[1]}-${String(startMonth).padStart(2, "0")}-01`, to: `${m[1]}-${String(startMonth + 2).padStart(2, "0")}-${end}` };
+  }
+  m = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(s);
+  if (m && m[1] <= m[2]) return { from: m[1], to: m[2] };
+  return null;
+}
+
 type TxnQuery = { entity?: string; type?: string; q?: string; year?: string };
 
 /**
@@ -65,9 +94,8 @@ type TxnQuery = { entity?: string; type?: string; q?: string; year?: string };
 export function transactionsFilter(prefs: Map<string, Pref>, { entity, type, q, year }: TxnQuery): string {
   const selection = entity === "unmapped" ? ("unmapped" as const) : parseEntities(entity);
   let filter = scopeFilter(prefs, selection);
-  if (year && /^\d{4}$/.test(year)) {
-    filter += `&date=gte.${year}-01-01&date=lte.${year}-12-31`;
-  }
+  const span = periodSpan(year);
+  if (span) filter += `&date=gte.${span.from}&date=lte.${span.to}`;
   // Override-aware type filters, kept server-side for correct counts.
   if (type === "transfers") {
     filter += `&or=(type_override.eq.transfer,and(type_override.is.null,txn_type.eq.transfer,intercompany.is.false))`;

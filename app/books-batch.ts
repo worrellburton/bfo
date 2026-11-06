@@ -1,5 +1,6 @@
 // Batch edits and multi-page reads for the Books pages. Pure apart from the
 // fetcher each function is handed, so the chunking and paging can be tested.
+// A batch hands back what an Undo needs (each row's values before).
 
 /** The most ids one batch_update accepts (lib/books/writes.ts batchUpdate). */
 export const BATCH_MAX = 500;
@@ -29,8 +30,13 @@ type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
  * Apply one patch to every id, BATCH_MAX at a time, in order. Stops at the
  * first refusal; `done` says how many rows were saved before it.
  */
-export async function postBatchEdit(fetcher: Fetcher, ids: string[], patch: Record<string, string>): Promise<{ ok: true } | { ok: false; done: number; message: string }> {
+export async function postBatchEdit(
+  fetcher: Fetcher,
+  ids: string[],
+  patch: Record<string, string>,
+): Promise<{ ok: true; undo: Array<{ transaction_id: string; values: Record<string, unknown> }> } | { ok: false; done: number; message: string; undo: Array<{ transaction_id: string; values: Record<string, unknown> }> }> {
   let done = 0;
+  const undo: Array<{ transaction_id: string; values: Record<string, unknown> }> = [];
   for (const part of chunkIds(ids)) {
     let res: Response;
     try {
@@ -39,16 +45,17 @@ export async function postBatchEdit(fetcher: Fetcher, ids: string[], patch: Reco
         body: JSON.stringify({ action: "batch_update", transaction_ids: part, ...patch }),
       });
     } catch {
-      return { ok: false, done, message: batchErrorMessage(0) };
+      return { ok: false, done, message: batchErrorMessage(0), undo };
     }
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      const base = batchErrorMessage(res.status, d?.error);
-      return { ok: false, done, message: done ? `${base} ${done} of ${ids.length} were saved.` : base };
+      const base = d?.message && (d?.error === "period_closed" || d?.error === "needs_migration") ? String(d.message) : batchErrorMessage(res.status, d?.error);
+      return { ok: false, done, message: done ? `${base} ${done} of ${ids.length} were saved.` : base, undo };
     }
+    if (Array.isArray(d?.undo)) undo.push(...d.undo);
     done += part.length;
   }
-  return { ok: true };
+  return { ok: true, undo };
 }
 
 /**

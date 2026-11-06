@@ -88,7 +88,7 @@ describe("an entity formed through BFO, still with the state", () => {
   it("asks about Arizona instead of assuming, and drops it once told it's only mail", () => {
     const az = entityAddresses(forming).agents[1];
     expect(az.ask).toBe(true);
-    expect(az.checks[0].text).toMatch(/^Its address is in Arizona\. If it does business there/);
+    expect(az.checks[0].text).toMatch(/^Does it do business in Arizona\? Its address is in Arizona\. If it does business there/);
     const mailOnly = entityAddresses({ ...forming, foreign: { AZ: { notNeeded: true } } });
     expect(mailOnly.agents.map((g) => g.state)).toEqual(["DE"]);
     expect(mailOnly.notNeeded).toEqual(["AZ"]);

@@ -1,12 +1,18 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
-import { Link, useNavigate } from "react-router";
-import { useTheme } from "../theme";
-import { entityCompleteness, entityType, type CompletenessInput } from "../entity-completeness";
-import type { EntityType } from "../entity-paperwork";
+/**
+ * The ownership map, shown as Entities › Map: each entity under the entity
+ * that owns it, with its records score, laid out as a tidy org chart from
+ * the ownership on record (layoutEstate). Changing an owner from the map
+ * asks the page, which confirms with an effective date; nothing is written
+ * here. The old /estate-map address sends people to Entities › Map. Pure
+ * pieces (mapEntities, layoutEstate) are tested in tests/estate-map.test.ts.
+ */
 
-export function meta() {
-  return [{ title: "BFO - Estate Map" }];
-}
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link, Navigate, useNavigate } from "react-router";
+import { entityTag } from "../books-shared";
+import { entityType, type EntityType, type PaperworkInput } from "../entity-paperwork";
+import { Button, Card, cx, format, Icon, IconButton, Popover, Segmented, Skeleton, usePhone, useTouch } from "../ui";
+import { isDissolved, isTrusteeLine, recordsOf, share, type EntityRec } from "./assets-model";
 
 type Entity = {
   id: string;
@@ -16,87 +22,18 @@ type Entity = {
   // itself out, but x still orders siblings left to right.
   x: number;
   y: number;
-  color?: string;
   /** Owners outside the family's entities (a person, an outside company), with their share. */
   partners?: { name: string; percent: number | null }[];
   /** This entity's own share in its parent's hands, when it isn't 100%. */
   share?: number | null;
-  /** A person (or outside company) who owns part of an entity (`of`): shown above it with Owners on. */
+  /** A person (or outside company) who owns part of an entity (`of`): shown above it with owners on. */
   person?: { percent: number | null; of: string };
   /** Its legal form as the record has it (entityType), so the card never guesses from the name. */
   type?: EntityType;
 };
 
-/** The `assets` record an estate-map entity matches by (lowercased) name. */
-type AssetRec = { id: string; data: CompletenessInput };
-type Compliance = { score: number; missing: string[] };
-
-// Compliance ring colours — the entity page's scale: emerald ≥ 90, indigo ≥ 60, amber below.
-function complianceColor(score: number, isDark: boolean): string {
-  if (score >= 90) return isDark ? "#34d399" : "#059669";
-  if (score >= 60) return isDark ? "#818cf8" : "#4f46e5";
-  return isDark ? "#fbbf24" : "#d97706";
-}
-
-function complianceTitle(c: Compliance): string {
-  return c.missing.length ? `Compliance ${c.score} — missing: ${c.missing.join(", ")}` : `Compliance ${c.score} — every requirement on file`;
-}
-
-/**
- * A compliance score as a small ring with the number inside. Without a
- * matching entity record it is a dashed, muted ring with a dash, so every
- * card keeps the same right-hand column.
- */
-function ComplianceRing({ c, size, isDark }: { c: Compliance | null; size: number; isDark: boolean }) {
-  const stroke = size >= 30 ? 2.5 : 2;
-  const r = (size - stroke) / 2;
-  const len = 2 * Math.PI * r;
-  const track = isDark ? "rgba(255,255,255,0.1)" : "#e5e7eb";
-  const font = size >= 30 ? 10.5 : size >= 26 ? 9.5 : 8.5;
-  if (!c) {
-    return (
-      <span className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }} title="No entity record with this name, so no compliance score">
-        <svg width={size} height={size} className="absolute inset-0" aria-hidden>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={1.25} strokeDasharray="2 2.5" />
-        </svg>
-        <span className={isDark ? "text-gray-600" : "text-gray-400"} style={{ fontSize: font }} aria-label="No compliance score">
-          —
-        </span>
-      </span>
-    );
-  }
-  const color = complianceColor(c.score, isDark);
-  return (
-    <span className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }} title={complianceTitle(c)}>
-      <svg width={size} height={size} className="absolute inset-0 -rotate-90" aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
-        {c.score > 0 && (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={len}
-            strokeDashoffset={len * (1 - Math.min(100, c.score) / 100)}
-          />
-        )}
-      </svg>
-      <span
-        className="relative font-semibold tabular-nums leading-none tracking-[-0.02em]"
-        style={{ fontSize: font, color: c.score >= 90 || c.score < 60 ? color : undefined }}
-        aria-label={`Compliance ${c.score}`}
-      >
-        {c.score}
-      </span>
-    </span>
-  );
-}
-
 /** What the map reads from an entity's record. */
-type MapAsset = CompletenessInput & { name?: string; ownerId?: string; status?: string; members?: { name: string; percent: number | null; role: string | null }[] };
+type MapAsset = PaperworkInput & { name?: string; ownerId?: string; status?: string; members?: { name: string; percent: number | null; role: string | null }[] };
 
 const norm = (s: string) => s.trim().toLowerCase();
 
@@ -104,21 +41,25 @@ const norm = (s: string) => s.trim().toLowerCase();
  * The map's nodes, from the entities' own records: each under the entity
  * that owns it (ownerId), ordered among its siblings as the old hand-drawn
  * map had them. Owners on its member list that aren't one of the entities
- * (a person, an outside company) show on its card as partners. Dissolved
- * entities are left off.
+ * (a person, an outside company) show on its card as its other owners; a
+ * line naming the owning trust's trustees is the trust itself. Dissolved
+ * entities are left off (the map says how many).
  */
 export function mapEntities(assets: Record<string, MapAsset>, order: Record<string, number> = {}, opts: { people?: boolean } = {}): Entity[] {
   // `people` is the Owners switch (the storage key keeps its old name).
-  const live = Object.entries(assets).filter(([, a]) => a && typeof a.name === "string" && a.name.trim() && a.status !== "Dissolved");
+  const live = Object.entries(assets).filter(([, a]) => a && typeof a.name === "string" && a.name.trim() && !isDissolved(a));
   const ids = new Set(live.map(([id]) => id));
   const names = new Set(live.map(([, a]) => norm(a.name!)));
   return live
     .map(([id, a]) => {
       const owner = a.ownerId && ids.has(a.ownerId) && a.ownerId !== id ? a.ownerId : null;
       const ownerName = owner ? norm(assets[owner].name!) : "";
+      const ownerRec = owner ? ({ ...assets[owner], id: owner, name: assets[owner].name! } as EntityRec) : undefined;
+      // A member line that is the owning trust's trustees holding title is the trust, not an outside owner.
+      const isOwner = (m: { name: string; percent: number | null; role: string | null }) => norm(m.name) === ownerName || isTrusteeLine(m, ownerRec);
       const members = (a.members ?? []).filter((m) => (m?.name && !/manager|director|officer/i.test(m.role ?? "")) || (m?.name && m.percent != null));
-      const partners = members.filter((m) => !names.has(norm(m.name)) && norm(m.name) !== ownerName).map((m) => ({ name: m.name, percent: m.percent ?? null }));
-      const mine = members.find((m) => norm(m.name) === ownerName);
+      const partners = members.filter((m) => !names.has(norm(m.name)) && !isOwner(m)).map((m) => ({ name: m.name, percent: m.percent ?? null }));
+      const mine = members.find(isOwner);
       return {
         id,
         name: a.name!.trim(),
@@ -141,10 +82,10 @@ export function mapEntities(assets: Record<string, MapAsset>, order: Record<stri
 export const isPerson = (id: string) => id.startsWith("person:");
 
 // ── Geometry (scene px — the whole scene is scaled to fit the canvas) ─────
-const CARD_W = 264; // room for the name and the compliance ring
+const CARD_W = 272; // room for a two-line name and the records score
 const ROOT_W = 344; // the trust gets room for its full name
-const CARD_H = 60;
-const LEAF_H = 46;
+const CARD_H = 72;
+const LEAF_H = 64;
 const INDENT = 26; // stacked children sit this far right of their parent
 const RAIL = 14; // x of the stack rail, from the parent's left edge
 const STACK_TOP = 14;
@@ -155,7 +96,7 @@ const TREE_GAP = 72;
 const R = 9; // elbow corner radius
 // An owner's card (a person, an outside company) sits above the entity it owns a share of.
 const OWNER_W = 176;
-const OWNER_H = 40;
+const OWNER_H = 48;
 const OWNER_GAP = 16; // the line from the owner down into the entity
 const OWNER_STACK = 6; // between two owners of one entity
 const TRAY_GAP = 56;
@@ -163,28 +104,6 @@ const TRAY_HEAD = 36;
 const TRAY_PAD = 16;
 const TRAY_ROW_GAP = 12;
 
-const ZOOM_MIN = 0.3;
-const ZOOM_MAX = 2.5;
-const ZOOM_STEP = 1.2;
-
-// ── Branch colours: each holding company's subtree gets its own ──────────
-type Tone = { dark: string; light: string };
-const TONES: Tone[] = [
-  { dark: "#38bdf8", light: "#0284c7" }, // sky
-  { dark: "#34d399", light: "#059669" }, // emerald
-  { dark: "#fbbf24", light: "#d97706" }, // amber
-  { dark: "#f472b6", light: "#db2777" }, // pink
-  { dark: "#a78bfa", light: "#7c3aed" }, // violet
-  { dark: "#22d3ee", light: "#0891b2" }, // cyan
-  { dark: "#fb923c", light: "#ea580c" }, // orange
-];
-const TRUNK: Tone = { dark: "#818cf8", light: "#4f46e5" };
-const NEUTRAL: Tone = { dark: "#94a3b8", light: "#64748b" };
-
-function toneColor(tone: number, isDark: boolean): string {
-  const t = tone === -1 ? TRUNK : tone < -1 ? NEUTRAL : TONES[tone % TONES.length];
-  return isDark ? t.dark : t.light;
-}
 
 // ── Layout ───────────────────────────────────────────────────────────────
 type Kind = "root" | "node" | "leaf" | "orphan" | "owner";
@@ -232,7 +151,9 @@ function elbow(px: number, py: number, busY: number, cx: number, cy: number): st
  * children are all leaves stacks them at any level. Roots with nothing
  * beneath them go to the "Unlinked" tray.
  */
-export function layoutEstate(all: Entity[], compact = false): Layout {
+export function layoutEstate(all: Entity[], compact: boolean | number = false, rootW = ROOT_W): Layout {
+  // How many levels spread their children in a row: 2 normally, none on a phone-narrow canvas.
+  const spread = compact === true ? 0 : compact === false ? 2 : compact;
   // Owners (people, outside companies) aren't part of the tree: each is drawn above the entity it
   // owns a share of, in a band the entity's row or stack leaves for it.
   const ownersOf = new Map<string, Entity[]>();
@@ -272,7 +193,7 @@ export function layoutEstate(all: Entity[], compact = false): Layout {
     let m: Sub;
     if (!ch.length) {
       m = { w: own, h: cardH, stack: false, own, cardH, rowBand: 0 };
-    } else if (compact || depth >= 2 || ch.every((c) => !kids(c.id).length)) {
+    } else if (depth >= spread || ch.every((c) => !kids(c.id).length)) {
       const childOwn = Math.max(224, own - INDENT);
       let cursor = cardH + STACK_TOP;
       let w = own;
@@ -302,22 +223,24 @@ export function layoutEstate(all: Entity[], compact = false): Layout {
   // cycle are never reached from a root, and land in the tray too.
   const roots = entities.filter((e) => !e.parentId || e.parentId === e.id || !byId.has(e.parentId));
   const trees = roots.filter((r) => kids(r.id).length);
-  for (const t of trees) measure(t.id, ROOT_W, CARD_H, 0);
+  for (const t of trees) measure(t.id, rootW, CARD_H, 0);
   trees.sort((a, b) => (descMemo.get(b.id) ?? 0) - (descMemo.get(a.id) ?? 0));
   const orphans = entities.filter((e) => !reached.has(e.id));
 
   const forestW = trees.length ? trees.reduce((s, t) => s + subs.get(t.id)!.w, 0) + TREE_GAP * (trees.length - 1) : 0;
   const forestH = trees.length ? Math.max(...trees.map((t) => subs.get(t.id)!.h + band(t.id))) : 0;
 
-  // Tray geometry first, so the scene width (and the forest's centring) is known.
+  // Tray geometry first, so the scene width (and the forest's centring) is known. In the
+  // single outline its cards are as wide as the outline's top card.
+  const OW = spread === 0 ? Math.max(CARD_W, rootW - TRAY_PAD * 2) : CARD_W;
   let tray: Layout["tray"] = null;
   let cols = 1;
   let innerW = 0;
   if (orphans.length) {
-    const avail = compact ? Math.max(forestW, CARD_W + TRAY_PAD * 2) : Math.max(forestW, CARD_W * 3 + COL_GAP * 2 + TRAY_PAD * 2);
-    cols = Math.max(1, Math.min(orphans.length, Math.floor((avail - 2 * TRAY_PAD + COL_GAP) / (CARD_W + COL_GAP))));
+    const avail = spread === 0 ? Math.max(forestW, OW + TRAY_PAD * 2) : Math.max(forestW, CARD_W * 3 + COL_GAP * 2 + TRAY_PAD * 2);
+    cols = Math.max(1, Math.min(orphans.length, Math.floor((avail - 2 * TRAY_PAD + COL_GAP) / (OW + COL_GAP))));
     const rows = Math.ceil(orphans.length / cols);
-    innerW = cols * CARD_W + (cols - 1) * COL_GAP;
+    innerW = cols * OW + (cols - 1) * COL_GAP;
     tray = {
       x: 0,
       y: trees.length ? forestH + TRAY_GAP : 0,
@@ -446,12 +369,12 @@ export function layoutEstate(all: Entity[], compact = false): Layout {
       const row = Math.floor(i / cols);
       const col = i % cols;
       const inRow = row === rows - 1 ? orphans.length - row * cols : cols;
-      const offset = (innerW - (inRow * CARD_W + (inRow - 1) * COL_GAP)) / 2;
+      const offset = (innerW - (inRow * OW + (inRow - 1) * COL_GAP)) / 2;
       boxes.push({
         id: o.id,
-        x: tray!.x + TRAY_PAD + offset + col * (CARD_W + COL_GAP),
+        x: tray!.x + TRAY_PAD + offset + col * (OW + COL_GAP),
         y: tray!.y + TRAY_HEAD + row * (CARD_H + TRAY_ROW_GAP),
-        w: CARD_W,
+        w: OW,
         h: CARD_H,
         kind: "orphan",
         tone: -2,
@@ -475,112 +398,82 @@ export function layoutEstate(all: Entity[], compact = false): Layout {
   };
 }
 
-/** The card's label for each recorded legal form. */
-const TYPE_LABEL: Record<EntityType, { label: string; abbr: string }> = {
-  LLC: { label: "LLC", abbr: "LLC" },
-  "C-Corp": { label: "Corporation", abbr: "INC" },
-  LP: { label: "Partnership", abbr: "LP" },
-  Trust: { label: "Trust", abbr: "TR" },
-};
+/** How a card names each recorded legal form. */
+const TYPE_WORD: Record<EntityType, string> = { LLC: "LLC", "C-Corp": "Corporation", LP: "LP", Trust: "Trust" };
+/** What an owner of each form is called. */
+const OWNER_WORD: Record<EntityType, string> = { LLC: "Member", "C-Corp": "Shareholder", LP: "Partner", Trust: "Beneficiary" };
 
-/**
- * Pulls the legal form and ownership share out of a display name. The
- * record's type, when known, decides the form; the name then only loses its suffix.
- */
-function describe(name: string, type?: EntityType) {
-  const pct = name.match(/\((\d{1,3}(?:\.\d+)?%)\)\s*$/)?.[1] ?? null;
-  let display = name.replace(/\s*\(\d{1,3}(?:\.\d+)?%\)\s*$/, "").trim();
-  let label = "Entity";
-  let abbr = "ENT";
-  if (/\btrust\b/i.test(display)) {
-    label = "Trust";
-    abbr = "TR";
-  } else if (/\b(ltd\.?\s+partnership|l\.?p\.?)$/i.test(display)) {
-    label = "Partnership";
-    abbr = "LP";
-    display = display.replace(/,?\s*(ltd\.?\s+partnership|l\.?p\.?)$/i, "");
-  } else if (/\b(inc\.?|corp\.?|corporation)$/i.test(display)) {
-    label = "Corporation";
-    abbr = "INC";
-    display = display.replace(/,?\s*(inc\.?|corp\.?|corporation)$/i, "");
-  } else if (/\bl\.?l\.?c\.?$/i.test(display)) {
-    label = "LLC";
-    abbr = "LLC";
-    display = display.replace(/,?\s*l\.?l\.?c\.?$/i, "");
-  }
-  if (type) {
-    display = display.replace(/,?\s*(ltd\.?\s+partnership|l\.?p\.?|inc\.?|corp\.?|corporation|l\.?l\.?c\.?)$/i, "");
-    ({ label, abbr } = TYPE_LABEL[type]);
-  }
-  return { display: display || name, label, abbr, pct };
-}
-
-/** A person's card: their initials, "Person" (or "Owner" for an outside company). */
-function personInfo(name: string): ReturnType<typeof describe> {
-  const company = /\b(llc|inc|corp|trust|lp|ltd|company|partners)\b/i.test(name);
-  const abbr = company
-    ? "CO"
-    : name
-        .split(/\s+/)
-        .filter((w) => /^[A-Za-z]/.test(w))
-        .slice(0, 2)
-        .map((w) => w[0]!.toUpperCase())
-        .join("");
-  return { display: name, label: company ? "Owner" : "Person", abbr: abbr || "?", pct: null };
+/** The display name without its designator, and never with a share someone typed into it. */
+function shortName(name: string): string {
+  return name.replace(/\s*\(\d{1,3}(?:\.\d+)?%\)\s*$/, "").trim() || name;
 }
 
 type DragState = { id: string; x: number; y: number; target: string | null };
 
-/**
- * The /estate-map route. React Router wraps a route's default export and
- * hands it route props only, so the Entities page embeds the named
- * `EstateMapView` below to pass its own.
- */
+/** The old /estate-map address: the ownership map lives on Entities now. */
 export default function EstateMapRoute() {
-  return <EstateMapView />;
+  return <Navigate to="/assets?view=map" replace />;
 }
 
+export function meta() {
+  return [{ title: "Entities · BFO" }];
+}
+
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 1.2;
+/** The text stays at 12px or more when the map opens: it doesn't fit itself below this. */
+const FIT_FLOOR = 0.9;
+/** The outline's top card: wide enough that names don't wrap. */
+const OUTLINE_W = 480;
+
+/**
+ * The ownership map: each entity under the entity that owns it, with its
+ * records score. Changing an owner (a drag onto another entity, or "Remove
+ * owner") never writes here: it asks the page (`onChangeOwner`), which
+ * confirms with an effective date. Without it the map is read-only. On a
+ * phone the map is an indented outline in the page, not a canvas.
+ */
 export function EstateMapView({
   embedded = false,
   highlight = null,
   onAddEntity,
+  onChangeOwner,
 }: {
   embedded?: boolean;
-  /** "+ Entity": open the new-entity form (the Entities page passes its own). */
-  onAddEntity?: () => void;
-  /** Lowercased entity names to light (the Entities page's state filter); the rest dim. */
+  /** Entity ids to light (the page's filters); the rest are muted. */
   highlight?: Set<string> | null;
+  /** "+ Entity": open the new-entity form. */
+  onAddEntity?: () => void;
+  /** Change an owner on record, after the page has confirmed it ("" removes the owner). */
+  onChangeOwner?: (id: string, ownerId: string) => void;
 } = {}) {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
   const navigate = useNavigate();
+  const phone = usePhone();
+  const touch = useTouch();
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canChange = !!onChangeOwner;
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [assetByName, setAssetByName] = useState<Record<string, AssetRec>>({});
   const [assets, setAssets] = useState<Record<string, MapAsset> | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   /** Sibling order as it was hand-arranged on the old map (by name); new entities go last. */
   const [order, setOrder] = useState<Record<string, number>>({});
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [panning, setPanning] = useState(false);
-
   const [canvasH, setCanvasH] = useState<number | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [smooth, setSmooth] = useState(false);
   const autoFit = useRef(true);
 
-  // The map is the entities themselves: each entity sits under the one that
-  // owns it (its "Owned by"), so a new entity, or a new owner, shows here at once.
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    async function setup() {
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, onValue, get } = await import("../store");
+    let alive = true;
+    void (async () => {
+      const { db, ref, onValue, get } = await import("../store");
+      if (!alive) return;
       // The old hand-drawn map, for the left-to-right order people arranged.
       get(ref(db, "estate-map/entities"))
         .then((snap) => {
@@ -590,18 +483,14 @@ export function EstateMapView({
         })
         .catch(() => {});
       unsubscribe = onValue(ref(db, "assets"), (snapshot) => {
-        const data = (snapshot.val() ?? {}) as Record<string, MapAsset>;
-        const map: Record<string, AssetRec> = {};
-        for (const [id, value] of Object.entries(data)) {
-          const name = value?.name;
-          if (typeof name === "string" && name) map[name.toLowerCase()] = { id, data: value as CompletenessInput };
-        }
-        setAssetByName(map);
-        setAssets(data);
+        setAssets((snapshot.val() ?? {}) as Record<string, MapAsset>);
+        setUpdatedAt(new Date());
       });
-    }
-    setup().catch((err) => console.error("Estate map load error:", err));
-    return () => unsubscribe?.();
+    })();
+    return () => {
+      alive = false;
+      unsubscribe?.();
+    };
   }, []);
 
   const [people, setPeople] = useState(() => {
@@ -611,52 +500,56 @@ export function EstateMapView({
       return false;
     }
   });
-  function togglePeople() {
-    setPeople((on) => {
-      try {
-        localStorage.setItem("bfo-map-people", on ? "0" : "1");
-      } catch {
-        // The map still works; it just won't remember.
-      }
-      return !on;
-    });
-  }
-  const entities = useMemo(() => (assets ? mapEntities(assets, order, { people }) : []), [assets, order, people]);
-
-  /** Write one entity's record (re-parenting, renaming). */
-  async function writeAsset(id: string, patch: Record<string, unknown>) {
+  function showPeople(on: boolean) {
+    setPeople(on);
     try {
-      const { db, ref, update } = await import("../store");
-      await update(ref(db, `assets/${id}`), patch);
-    } catch (err) {
-      console.error("Estate map save error:", err);
+      localStorage.setItem("bfo-map-people", on ? "1" : "0");
+    } catch {
+      // The map still works; it just won't remember.
     }
   }
-
-  // Narrow canvases (phones) get the vertical outline instead of the org chart.
-  const compact = size.w > 0 && size.w < 640;
-  const layout = useMemo(() => layoutEstate(entities, compact), [entities, compact]);
+  const entities = useMemo(() => (assets ? mapEntities(assets, order, { people }) : []), [assets, order, people]);
   const entityById = useMemo(() => new Map(entities.map((e) => [e.id, e])), [entities]);
+  const recs = useMemo(
+    () =>
+      new Map(
+        Object.entries(assets ?? {})
+          .filter(([, a]) => a && typeof a.name === "string")
+          .map(([id, a]) => [id, { ...a, id, name: a.name!, type: entityType(a) } as EntityRec]),
+      ),
+    [assets],
+  );
+  const records = useMemo(() => new Map([...recs.values()].map((r) => [r.id, recordsOf(r, recs)])), [recs]);
+  const dissolved = [...recs.values()].filter(isDissolved).length;
+  const ready = !!assets;
 
-  // Refs so window-level pointer handlers always see the current frame.
+  // The org chart (the top two levels spread in rows, or one) when it fits the window with its
+  // text legible; otherwise a single wide outline in a canvas as tall as it needs, so the page
+  // scrolls to the end of it and nothing sits out of view.
+  const layouts = useMemo(() => ({ wide: layoutEstate(entities, 2), mid: layoutEstate(entities, 1), outline: layoutEstate(entities, 0, OUTLINE_W) }), [entities]);
+  const room = size.w - 48;
+  const windowH = (canvasH ?? 560) - (touch ? 72 : 56) - 24;
+  const fits = (L: Layout) => room >= L.width * FIT_FLOOR && windowH >= L.height * FIT_FLOOR;
+  const layout = size.w > 0 && size.w < 640 ? layouts.outline : fits(layouts.wide) ? layouts.wide : fits(layouts.mid) ? layouts.mid : layouts.outline;
+  const grown = layout === layouts.outline && size.w > 0;
+  const grownH = grown ? Math.ceil((touch ? 72 : 56) + 24 + layout.height * Math.min(1, room / layout.width)) : null;
   const viewRef = useRef(view);
   viewRef.current = view;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
-  // ── Canvas sizing: fill the viewport below the header ─────────────────
+  // ── Canvas sizing: fill the window below the toolbar ─────────────────
   useLayoutEffect(() => {
     function measure() {
       const el = canvasRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top + window.scrollY;
-      const bottom = window.innerWidth >= 1024 ? 32 : 24;
-      setCanvasH(Math.max(440, window.innerHeight - top - bottom));
+      setCanvasH(Math.max(480, Math.min(900, window.innerHeight - Math.min(top, window.innerHeight * 0.4) - 32)));
     }
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [embedded]);
+  }, [embedded, phone, ready]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -664,29 +557,27 @@ export function EstateMapView({
     const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [phone, ready]);
 
-  const fitView = useCallback(() => {
-    if (!size.w || !size.h) return;
-    const padX = Math.min(56, size.w * 0.04);
-    const padTop = compact ? 68 : 76;
-    const padBottom = 56;
-    if (compact) {
-      // Phones: fill the width and scroll (pan) down the outline.
-      const k = Math.max(ZOOM_MIN, Math.min((size.w - padX * 2) / layout.width, 1.1));
-      const free = size.h - padTop - padBottom - layout.height * k;
-      setView({ k, x: (size.w - layout.width * k) / 2, y: padTop + Math.max(0, free / 2) });
-      return;
-    }
-    const k = Math.max(ZOOM_MIN, Math.min((size.w - padX * 2) / layout.width, (size.h - padTop - padBottom) / layout.height, 1.35));
-    setView({
-      k,
-      x: (size.w - layout.width * k) / 2,
-      y: padTop + (size.h - padTop - padBottom - layout.height * k) / 2,
-    });
-  }, [size.w, size.h, layout.width, layout.height, compact]);
+  /** Room above the scene for the controls, so no card starts under them. */
+  const band = touch ? 72 : 56;
+  const fitView = useCallback(
+    (all = false) => {
+      if (!size.w || !size.h || !layout.width) return;
+      const pad = 24;
+      const kw = (size.w - pad * 2) / layout.width;
+      const kh = (size.h - band - pad) / Math.max(1, layout.height);
+      let k = Math.min(kw, kh, grown ? 1 : 1.1);
+      if (!all) k = Math.max(k, Math.min(kw, FIT_FLOOR, 1.1));
+      k = Math.max(ZOOM_MIN, k);
+      const w = layout.width * k;
+      const h = layout.height * k;
+      setView({ k, x: w <= size.w - pad * 2 ? (size.w - w) / 2 : pad, y: h <= size.h - band - pad ? band + (size.h - band - pad - h) / 2 : band });
+    },
+    [size.w, size.h, layout.width, layout.height, band, grown],
+  );
 
-  // Stay fitted until the person pans or zooms themselves.
+  // Stay fitted (after the view switch, the data's arrival, a resize) until the person pans or zooms.
   useEffect(() => {
     if (autoFit.current) fitView();
   }, [fitView]);
@@ -694,7 +585,7 @@ export function EstateMapView({
   function refit() {
     autoFit.current = true;
     setSmooth(true);
-    fitView();
+    fitView(true);
   }
 
   function zoomBy(factor: number) {
@@ -708,18 +599,18 @@ export function EstateMapView({
     });
   }
 
-  // Wheel / trackpad zoom around the cursor. Gentle: a full mouse-wheel notch
-  // (deltaY ≈ 100) is ~8%; pinch gestures arrive as ctrl+wheel with small deltas.
+  // Zoom with a pinch or ⌘/Ctrl and the wheel; a plain wheel scrolls the page, as everywhere else.
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const rect = el!.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const delta = Math.max(-60, Math.min(60, e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY));
-      const factor = Math.exp(-delta * (e.ctrlKey ? 0.006 : 0.0008));
+      const factor = Math.exp(-delta * 0.006);
       autoFit.current = false;
       setSmooth(false);
       setView((v) => {
@@ -729,16 +620,10 @@ export function EstateMapView({
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [phone, ready]);
 
-  // Two-finger pinch on a touch screen (iPad): zoom around the fingers, and
-  // pan with them. The canvas is touch-none, so the browser doesn't zoom the page.
+  // Two fingers on a tablet: zoom around them, and pan with them.
   const pinching = useRef(false);
-  // Touch screens get the touch hints (tap, pinch) instead of hover and scroll.
-  const [touchScreen, setTouchScreen] = useState(false);
-  useEffect(() => {
-    setTouchScreen(window.matchMedia("(hover: none) and (pointer: coarse)").matches);
-  }, []);
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
@@ -764,7 +649,6 @@ export function EstateMapView({
       const { d, m } = two(e);
       const v0 = start.v;
       const k = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v0.k * (d / start.d)));
-      // The scene point first under the fingers stays under them.
       const px = (start.m.x - v0.x) / v0.k;
       const py = (start.m.y - v0.y) / v0.k;
       setView({ k, x: m.x - px * k, y: m.y - py * k });
@@ -772,7 +656,6 @@ export function EstateMapView({
     function onEnd(e: TouchEvent) {
       if (e.touches.length < 2) {
         start = null;
-        // Lifting one finger ends the pinch; the pan it began with doesn't resume.
         if (!e.touches.length) pinching.current = false;
       }
     }
@@ -786,7 +669,7 @@ export function EstateMapView({
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onEnd);
     };
-  }, []);
+  }, [phone, ready]);
 
   function toScene(clientX: number, clientY: number) {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -808,7 +691,7 @@ export function EstateMapView({
     return out;
   }
 
-  // ── Pan the canvas ─────────────────────────────────────────────────────
+  // ── Pan ────────────────────────────────────────────────────────────────
   function handleCanvasPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest("[data-entity],[data-hud],[data-edge]")) return;
@@ -841,25 +724,26 @@ export function EstateMapView({
     window.addEventListener("pointercancel", up);
   }
 
-  // ── Drag an entity onto another to re-parent it ────────────────────────
+  // ── Drag an entity onto another: the page confirms the new owner ───────
   function handleCardPointerDown(e: React.PointerEvent, id: string) {
-    if (e.button !== 0 || editingId === id || isPerson(id)) return;
+    if (e.button !== 0 || isPerson(id)) return;
     if ((e.target as HTMLElement).closest("[data-hud]")) return;
     e.stopPropagation();
     setSelectedEdge(null);
+    if (!canChange) {
+      if (e.pointerType === "touch") setHoveredId(id);
+      return;
+    }
     const start = { x: e.clientX, y: e.clientY };
     const blocked = subtreeOf(id);
     const currentParent = entityById.get(id)?.parentId ?? null;
     let active = false;
     let target: string | null = null;
-
     function hitTest(p: { x: number; y: number }): string | null {
       const L = layoutRef.current;
       for (const b of L.boxes) {
         if (blocked.has(b.id) || isPerson(b.id)) continue;
-        if (p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6) {
-          return b.id === currentParent ? null : b.id;
-        }
+        if (p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6) return b.id === currentParent ? null : b.id;
       }
       const t = L.tray;
       if (t && currentParent && p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h) return "tray";
@@ -880,97 +764,33 @@ export function EstateMapView({
       window.removeEventListener("pointercancel", up);
       setDrag(null);
       if (!active) {
-        // A tap on a touch screen has no hover: keep the card's actions open.
         if (e.pointerType === "touch") setHoveredId(id);
         return;
       }
-      if (target === "tray") handleUnlink(id);
-      else if (target) handleReparent(id, target);
+      if (target === "tray") onChangeOwner?.(id, "");
+      else if (target) onChangeOwner?.(id, target);
     }
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
   }
 
-  // Compliance per matched record, scored once per assets snapshot.
-  const complianceByName = useMemo(() => {
-    const m = new Map<string, Compliance>();
-    for (const [name, rec] of Object.entries(assetByName)) {
-      const r = entityCompleteness(rec.data);
-      m.set(name, { score: r.score, missing: r.missing.map((i) => i.label) });
-    }
-    return m;
-  }, [assetByName]);
+  const openEntity = (id: string) => !isPerson(id) && navigate(`/assets/${id}`);
 
-  function assetIdFor(id: string): string | undefined {
-    const ent = entityById.get(id);
-    return ent ? assetByName[ent.name.toLowerCase()]?.id : undefined;
+  // Keys, while the map has focus: F fits, + and − zoom, Delete asks to remove the selected owner link.
+  function onCanvasKey(e: React.KeyboardEvent) {
+    const tgt = e.target as HTMLElement;
+    if (tgt.tagName === "INPUT" || e.metaKey || e.ctrlKey || e.altKey) return;
+    if ((e.key === "Delete" || e.key === "Backspace") && selectedEdge && canChange) {
+      e.preventDefault();
+      onChangeOwner?.(selectedEdge, "");
+    } else if (e.key === "Escape") setSelectedEdge(null);
+    else if (e.key === "f" || e.key === "F" || e.key === "0") refit();
+    else if (e.key === "+" || e.key === "=") zoomBy(ZOOM_STEP);
+    else if (e.key === "-" || e.key === "_") zoomBy(1 / ZOOM_STEP);
   }
 
-  function complianceFor(id: string): Compliance | null {
-    const ent = entityById.get(id);
-    return (ent && complianceByName.get(ent.name.toLowerCase())) ?? null;
-  }
-
-  function openEntity(id: string) {
-    const assetId = assetIdFor(id);
-    if (assetId) navigate(`/assets/${assetId}`);
-  }
-
-  // Dragging onto another entity makes it the owner, on the entity's own record.
-  function handleReparent(id: string, parentId: string) {
-    void writeAsset(id, { ownerId: parentId });
-  }
-
-  function handleUnlink(id: string) {
-    void writeAsset(id, { ownerId: "" });
-    setSelectedEdge(null);
-  }
-
-  function startRename(id: string) {
-    const ent = entityById.get(id);
-    if (!ent) return;
-    setEditingId(id);
-    setEditName(ent.name);
-  }
-
-  function handleEditSubmit() {
-    if (editingId && editName.trim() && editName.trim() !== entityById.get(editingId)?.name) {
-      void writeAsset(editingId, { name: editName.trim() });
-    }
-    setEditingId(null);
-  }
-
-  function handleAddEntity() {
-    if (onAddEntity) onAddEntity();
-    else navigate("/assets?new=1");
-  }
-
-  // Keyboard: F fits, +/- zoom, Delete unlinks the selected connector, Esc clears.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tgt = e.target as HTMLElement | null;
-      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedEdge) {
-        e.preventDefault();
-        handleUnlink(selectedEdge);
-      } else if (e.key === "Escape") {
-        setSelectedEdge(null);
-      } else if (e.key === "f" || e.key === "F" || e.key === "0") {
-        refit();
-      } else if (e.key === "+" || e.key === "=") {
-        zoomBy(ZOOM_STEP);
-      } else if (e.key === "-" || e.key === "_") {
-        zoomBy(1 / ZOOM_STEP);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
-  // Hovering an entity lights its chain of ownership: up to the trust, and
-  // everything it owns below.
+  // Hovering (or focusing) an entity lights its chain: up to the top, and everything it owns.
   const lit = useMemo(() => {
     const focus = drag ? null : hoveredId;
     if (!focus || !layout.byId.has(focus)) return null;
@@ -982,249 +802,214 @@ export function EstateMapView({
       cur = layout.parentOf.get(cur);
     }
     return s;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hoveredId, drag, layout]);
 
-  const stats = useMemo(() => {
-    return { entities: entities.filter((e) => !e.person).length, branches: layout.branches, levels: layout.levels, unlinked: layout.tray?.count ?? 0 };
-  }, [entities, layout]);
+  // The share each entity's chain holds from the top (effective ownership), where every link's share is known.
+  const effective = useMemo(() => {
+    const out = new Map<string, number | null>();
+    const visit = (id: string, above: number | null) => {
+      out.set(id, above);
+      for (const c of layout.childrenOf.get(id) ?? []) {
+        if (isPerson(c)) continue;
+        const e = entityById.get(c);
+        const share = e?.share ?? (e?.partners?.length ? null : 100);
+        visit(c, above == null || share == null ? null : (above * share) / 100);
+      }
+    };
+    for (const b of layout.boxes) if (b.kind === "root") visit(b.id, 100);
+    return out;
+  }, [layout, entityById]);
 
-  // ── Skins ───────────────────────────────────────────────────────────────
-  const ink = isDark ? "text-gray-100" : "text-gray-900";
-  const muted = isDark ? "text-gray-500" : "text-gray-500";
-  const hudChip = isDark ? "border-white/[0.08] bg-[#0b0d14]/80 text-gray-400" : "border-gray-200 bg-white/85 text-gray-500";
-  const hudBtn = isDark
-    ? "border-white/[0.08] bg-[#0b0d14]/80 text-gray-300 hover:text-white hover:border-white/20 hover:bg-white/[0.06]"
-    : "border-gray-200 bg-white/90 text-gray-600 hover:text-gray-900 hover:border-gray-300 hover:bg-white";
-  const coarse = "[@media(pointer:coarse)]:h-[40px] [@media(pointer:coarse)]:min-w-[40px]";
-  const toolBtn = `${coarse} h-7 min-w-7 px-1.5 inline-flex items-center justify-center gap-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
-    isDark ? "text-gray-400 hover:text-white hover:bg-white/10" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-  }`;
+  const stats = { entities: entities.filter((e) => !e.person).length, levels: layout.levels, unlinked: layout.tray?.count ?? 0 };
 
-  function metaFor(box: Box, info: ReturnType<typeof describe>): string {
-    const who = entityById.get(box.id);
-    if (who?.person) {
-      const owned = entityById.get(who.person.of);
-      return `${info.label} · ${who.person.percent != null ? `${who.person.percent}% of ` : "owner of "}${owned ? describe(owned.name, owned.type).display : "it"}`;
+  function metaFor(box: Box): string {
+    const ent = entityById.get(box.id)!;
+    if (ent.person) {
+      const owned = entityById.get(ent.person.of);
+      const word = owned ? OWNER_WORD[owned.type ?? "LLC"] : "Owner";
+      return `${word} · ${ent.person.percent != null ? `${share(ent.person.percent)} of ` : "share not recorded in "}${owned ? shortName(owned.name) : "it"}`;
     }
-    if (box.kind === "orphan") return `${info.label} · Unlinked`;
+    const type = TYPE_WORD[ent.type ?? "LLC"];
+    if (box.kind === "orphan") return type;
     if (box.kind === "root") {
-      // Entities under it; people shown alongside don't count.
-      const count = (id: string): number => (layout.childrenOf.get(id) ?? []).reduce((n, c) => n + (isPerson(c) ? 0 : 1 + count(c)), 0);
-      const n = count(box.id);
-      return `${info.label} · ${n} ${n === 1 ? "entity" : "entities"}`;
+      const all = [...subtreeOf(box.id)].filter((id) => id !== box.id && !isPerson(id));
+      const whole = all.filter((id) => effective.get(id) === 100).length;
+      return `${type} · ${format.count(all.length, "entity", "entities")}${whole < all.length ? `, ${whole} wholly owned` : ""}`;
     }
-    const ent = entityById.get(box.id);
-    if (ent?.partners?.length) {
-      const p = ent.partners[0];
-      const more = ent.partners.length > 1 ? ` +${ent.partners.length - 1}` : "";
-      // "Sameh Elguizaoui" → "Sameh E." so it fits the card; a company keeps its name.
-      const words = p.name.trim().split(/\s+/);
-      const short = words.length > 1 && !/\b(llc|inc|corp|trust|lp|ltd|company)\b/i.test(p.name) ? `${words[0]} ${words[words.length - 1][0]}.` : p.name;
-      return `${info.label} · Partner ${short}${p.percent != null ? ` (${p.percent}%)` : ""}${more}`;
+    const parts = [type];
+    const others = ent.partners?.length ?? 0;
+    if (ent.share != null) parts.push(`${share(ent.share)} held`);
+    else if (others) parts.push("share not recorded");
+    if (others) parts.push(`${format.count(others, "other owner")}`);
+    if (!others) {
+      const subs = (layout.childrenOf.get(box.id) ?? []).filter((c) => !isPerson(c)).length;
+      if (subs) parts.push(format.count(subs, "subsidiary", "subsidiaries"));
     }
-    const subs = (layout.childrenOf.get(box.id) ?? []).filter((c) => !isPerson(c)).length;
-    if (subs) return `${info.label} · ${subs} ${subs === 1 ? "subsidiary" : "subsidiaries"}`;
-    if (ent?.share != null) return `${info.label} · ${ent.share}% owned`;
-    return info.pct ? `${info.label} · ${info.pct} owned` : info.label;
+    return parts.join(" · ");
   }
 
-  function renderCardBody(box: Box, opts: { ghost?: boolean } = {}) {
+  function scoreOf(id: string) {
+    const r = records.get(id);
+    if (!r) return null;
+    const g = r.tone === "positive" ? { icon: "check" as const, cls: "text-positive" } : r.tone === "warning" ? { icon: "warning" as const, cls: "text-warning" } : r.tone === "negative" ? { icon: "x" as const, cls: "text-negative" } : null;
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 text-small text-ink tabular-nums" title={r.conflicts.length ? `Records disagree: ${r.conflicts.map((c) => c.title).join("; ")}` : `Records ${r.score}%`}>
+        {g && (
+          <span className={cx("inline-flex", g.cls)}>
+            <Icon name={g.icon} size={16} />
+          </span>
+        )}
+        {r.score}%
+      </span>
+    );
+  }
+
+  function markOf(ent: Entity) {
+    const rec = recs.get(ent.id);
+    const text = ent.person ? format.initials(ent.name) : rec?.initials || entityTag(ent.name);
+    return (
+      <span aria-hidden="true" className={cx("inline-flex h-6 min-w-[40px] shrink-0 items-center justify-center bg-sunken px-1 text-caption font-medium text-ink-2", ent.person ? "rounded-full" : "rounded-mark")}>
+        {text}
+      </span>
+    );
+  }
+
+  function renderCard(box: Box, ghost = false) {
     const ent = entityById.get(box.id);
     if (!ent) return null;
-    const info = ent.person ? personInfo(ent.name) : describe(ent.name, ent.type);
-    const c = ent.person ? (isDark ? "#e2e8f0" : "#475569") : toneColor(box.tone, isDark);
-    const leaf = box.kind === "leaf" || box.kind === "owner";
-    const root = box.kind === "root";
-    const orphan = box.kind === "orphan";
     const hovered = hoveredId === box.id && !drag;
-    const isTarget = drag?.target === box.id;
+    const target = drag?.target === box.id;
     const on = !!lit?.has(box.id);
-    const unlit = !!highlight && !highlight.has(ent.name.toLowerCase());
-    const dim = (lit ? !on : unlit && !opts.ghost) || (drag && drag.id === box.id && !opts.ghost);
-    const glyph = leaf ? 24 : root ? 34 : 30;
-    const editing = editingId === box.id && !opts.ghost;
-    const ringSize = leaf ? 24 : root ? 32 : 28;
-
-    const ring = isTarget
-      ? `0 0 0 1.5px ${c}, 0 0 28px -2px ${c}aa`
-      : hovered || on || opts.ghost
-        ? `0 0 0 1px ${c}66, 0 0 26px -6px ${c}88${isDark ? "" : ", 0 10px 24px -14px rgba(15,23,42,0.35)"}`
-        : root
-          ? `0 0 0 1px ${c}40, 0 0 40px -12px ${c}80`
-          : undefined;
-
+    const unlit = !!highlight && !ent.person && !highlight.has(box.id);
+    const quiet = (lit ? !on : unlit) && !ghost;
     return (
       <div
-        className={`relative flex h-full items-center gap-2.5 overflow-hidden rounded-xl border px-3 transition-[opacity,box-shadow,border-color] duration-200 ${
-          isDark ? `${root ? "bg-[#10122a]" : "bg-[#0b0d15]"} border-white/[0.09] ${ink}` : `bg-white border-gray-200 ${ink} shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_20px_-16px_rgba(15,23,42,0.3)]`
-        } ${orphan ? "border-dashed" : ""}`}
-        style={{
-          boxShadow: ring,
-          borderColor: isTarget || hovered || on ? `${c}80` : undefined,
-          opacity: dim ? 0.35 : 1,
-        }}
+        className={cx(
+          "flex h-full items-center gap-3 rounded-card border px-3",
+          box.kind === "orphan" ? "border-dashed" : "",
+          target || hovered || ghost ? "border-accent" : on ? "border-edge" : box.kind === "orphan" ? "border-edge" : "border-line",
+          quiet ? "bg-sunken" : "bg-raised",
+          ghost && "shadow-(--elevation-2)",
+        )}
       >
-        {/* Hairline accent along the top edge */}
-        <span className="pointer-events-none absolute inset-x-3 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${c}${root ? "" : "b0"}, transparent)` }} />
-        {root && <span className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(120% 140% at 50% -40%, ${c}${isDark ? "26" : "14"}, transparent 60%)` }} />}
-        <span
-          className={`relative grid shrink-0 place-items-center font-mono font-semibold tracking-tight ${ent.person ? "rounded-full" : "rounded-lg"}`}
-          style={{
-            width: glyph,
-            height: glyph,
-            fontSize: leaf ? 8 : 9.5,
-            color: c,
-            background: `${c}${isDark ? "1a" : "12"}`,
-            boxShadow: `inset 0 0 0 1px ${c}40`,
-          }}
-        >
-          {info.abbr}
-        </span>
-        <div className="relative min-w-0 flex-1">
-          {editing ? (
-            <input
-              autoFocus
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onBlur={handleEditSubmit}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleEditSubmit();
-                if (e.key === "Escape") setEditingId(null);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onFocus={(e) => e.currentTarget.select()}
-              className={`w-full bg-transparent text-[12.5px] font-semibold outline-none border-b ${isDark ? "border-white/30 text-white" : "border-gray-400 text-gray-900"}`}
-            />
-          ) : (
-            <div className={`truncate font-semibold tracking-[-0.01em] ${root ? "text-[14px]" : leaf ? "text-[12px]" : "text-[13px]"}`} title={ent.name}>
-              {info.display}
-            </div>
-          )}
-          <div className={`mt-0.5 truncate text-[10.5px] ${muted}`}>{metaFor(box, info)}</div>
+        {markOf(ent)}
+        <div className="min-w-0 flex-1">
+          <div className={cx("line-clamp-2 break-words", box.kind === "root" ? "text-section" : "text-body font-medium", quiet ? "text-ink-2" : "text-ink")} title={ent.name}>
+            {shortName(ent.name)}
+          </div>
+          <div className={cx("truncate text-small", quiet ? "text-ink-3" : "text-ink-2")}>{metaFor(box)}</div>
         </div>
-        {!ent.person && <ComplianceRing c={complianceFor(box.id)} size={ringSize} isDark={isDark} />}
+        {!ent.person && scoreOf(box.id)}
       </div>
     );
   }
 
-  const hoverBox = hoveredId && !drag && !editingId ? layout.byId.get(hoveredId) : undefined;
+  const hoverBox = hoveredId && !drag ? layout.byId.get(hoveredId) : undefined;
   const selEdge = selectedEdge ? layout.edges.find((e) => e.id === selectedEdge) : undefined;
   const dragBox = drag ? layout.byId.get(drag.id) : undefined;
   const targetBox = drag?.target && drag.target !== "tray" ? layout.byId.get(drag.target) : undefined;
-  const gridSize = 24 * view.k;
+  // Part of the scene past the canvas's edge: say so, so nobody counts short.
+  const outOfView =
+    size.w > 0 && (view.x < -2 || view.y < band - 40 || view.x + layout.width * view.k > size.w + 2 || view.y + layout.height * view.k > size.h + 2);
+
+  // The structure as a nested list, for screen readers (and the phone outline).
+  const tree = useMemo(() => {
+    type Node = { id: string; depth: number };
+    const out: Node[] = [];
+    const walk = (id: string, depth: number) => {
+      out.push({ id, depth });
+      for (const c of layout.childrenOf.get(id) ?? []) if (!isPerson(c)) walk(c, depth + 1);
+    };
+    for (const b of layout.boxes) if (b.kind === "root") walk(b.id, 0);
+    const orphans = layout.boxes.filter((b) => b.kind === "orphan").map((b) => ({ id: b.id, depth: 0 }));
+    return { rows: out, orphans };
+  }, [layout]);
+
+  const describe = (id: string) => {
+    const box = layout.byId.get(id);
+    const r = records.get(id);
+    return box ? `${entityById.get(id)?.name ?? ""}, ${metaFor(box)}${r ? `, records ${r.score}%` : ""}` : "";
+  };
+
+  if (!assets) {
+    return phone ? <Skeleton kind="card" rows={6} /> : <div className="ds h-[480px] rounded-card border border-line bg-sunken" aria-busy="true" />;
+  }
+
+  // ── Phones: the outline in the page ────────────────────────────────────
+  if (phone) {
+    const row = (id: string, depth: number) => (
+      <li key={id} className="border-b border-line last:border-b-0">
+        <Link to={`/assets/${id}`} className="flex min-h-(--row-2) items-center gap-3 py-2 pr-4" style={{ paddingLeft: 16 + depth * 12 }}>
+          {markOf(entityById.get(id)!)}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="line-clamp-2 break-words text-ink">{shortName(entityById.get(id)!.name)}</span>
+            <span className="truncate text-small text-ink-2">{layout.byId.get(id) ? metaFor(layout.byId.get(id)!) : ""}</span>
+          </span>
+          {scoreOf(id)}
+        </Link>
+      </li>
+    );
+    return (
+      <div className="ds flex flex-col gap-4">
+        <Card title="Ownership" flush>
+          <ul aria-label="Ownership">{tree.rows.map((r) => row(r.id, r.depth))}</ul>
+        </Card>
+        {tree.orphans.length > 0 && (
+          <Card title="Owner not recorded" count={tree.orphans.length} flush>
+            <ul aria-label="Owner not recorded">{tree.orphans.map((r) => row(r.id, 0))}</ul>
+          </Card>
+        )}
+        {dissolved > 0 && <p className="text-small text-ink-2">{format.count(dissolved, "dissolved entity", "dissolved entities")} not shown.</p>}
+      </div>
+    );
+  }
 
   return (
-    <div>
-      {/* Edges are drawn owner → owned; the flow runs the other way, up from each entity to its owner. */}
-      <style>{`
-        @keyframes estate-flow { to { stroke-dashoffset: 32; } }
-        .estate-flow { animation: estate-flow 1.8s linear infinite; }
-        @keyframes estate-live { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
-        .estate-live { animation: estate-live 2.4s ease-in-out infinite; }
-        @keyframes estate-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
-        .estate-in { animation: estate-in 140ms ease-out both; }
-        @media (prefers-reduced-motion: reduce) {
-          .estate-flow { animation: none; opacity: 0; }
-          .estate-live, .estate-in { animation: none; }
-        }
-      `}</style>
-
-      {/* Header */}
-      {!embedded && (
-        <div className="mb-4 flex items-center gap-3">
-          <Link
-            to="/home"
-            aria-label="Back"
-            className={`grid h-[40px] w-[40px] lg:h-8 lg:w-8 place-items-center rounded-lg border transition-colors ${
-              isDark ? "border-white/10 text-gray-500 hover:text-white hover:border-white/25" : "border-gray-200 text-gray-400 hover:text-gray-900 hover:border-gray-300"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <div>
-            <div className={`text-[11.5px] font-medium ${muted}`}>Burton Family Office</div>
-            <h1 className={`text-[22px] font-semibold leading-tight tracking-[-0.02em] ${ink}`}>Estate Map</h1>
-          </div>
-        </div>
-      )}
-
-      {/* Canvas */}
+    <div className="ds flex flex-col gap-2">
+      {!embedded && <h2 className="sr-only">Ownership map</h2>}
       <div
         ref={canvasRef}
-        className={`relative select-none overflow-hidden rounded-2xl border touch-none ${
-          panning ? "cursor-grabbing" : "cursor-grab"
-        } ${isDark ? "border-white/[0.08] bg-[#05060b]" : "border-gray-200 bg-[#f6f7fb]"}`}
-        style={{ height: canvasH ?? (embedded ? "calc(100vh - 240px)" : "calc(100vh - 140px)") }}
+        role="application"
+        aria-label="Ownership map. Use the outline that follows to read it by keyboard."
+        tabIndex={-1}
+        onKeyDown={onCanvasKey}
+        className={cx("relative overflow-hidden rounded-card border border-line bg-sunken select-none", grown ? "touch-pan-y" : "touch-none", panning ? "cursor-grabbing" : "cursor-grab")}
+        style={{ height: grownH ?? canvasH ?? 560 }}
         onPointerDown={handleCanvasPointerDown}
         onContextMenu={(e) => e.preventDefault()}
       >
-        {/* Dot grid that moves with the scene, plus a soft glow behind the trust */}
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage: `radial-gradient(${isDark ? "rgba(255,255,255,0.07)" : "rgba(15,23,42,0.09)"} 1px, transparent 1.2px)`,
-            backgroundSize: `${gridSize}px ${gridSize}px`,
-            backgroundPosition: `${view.x}px ${view.y}px`,
-          }}
-        />
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background: isDark
-              ? "radial-gradient(60% 45% at 50% 0%, rgba(99,102,241,0.12), transparent 70%), radial-gradient(80% 60% at 50% 120%, rgba(56,189,248,0.05), transparent 70%)"
-              : "radial-gradient(60% 45% at 50% 0%, rgba(99,102,241,0.08), transparent 70%)",
-          }}
-        />
-
         {/* Scene */}
         <div
-          className="absolute left-0 top-0"
+          className="absolute top-0 left-0"
           style={{
             width: layout.width,
             height: layout.height,
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`,
             transformOrigin: "0 0",
-            transition: smooth ? "transform 320ms cubic-bezier(0.22, 1, 0.36, 1)" : undefined,
+            transition: smooth ? "transform 240ms cubic-bezier(0.16, 1, 0.3, 1)" : undefined,
           }}
         >
-          {/* Unlinked tray */}
           {layout.tray && (
             <div
-              className={`absolute rounded-2xl border border-dashed transition-colors ${
-                drag?.target === "tray"
-                  ? isDark
-                    ? "border-amber-400/70 bg-amber-400/[0.06]"
-                    : "border-amber-500/70 bg-amber-50"
-                  : isDark
-                    ? "border-white/[0.1] bg-white/[0.015]"
-                    : "border-gray-300 bg-white/40"
-              }`}
+              className={cx("absolute rounded-card border border-dashed", drag?.target === "tray" ? "border-accent bg-accent-tint" : "border-edge")}
               style={{ left: layout.tray.x, top: layout.tray.y, width: layout.tray.w, height: layout.tray.h }}
             >
-              {/* One line: in a one-card tray the hint is cut short rather than wrapping under the card. */}
-              <div className={`absolute left-4 right-4 top-3 flex min-w-0 items-center gap-2 text-[11px] font-medium ${muted}`}>
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                <span className="shrink-0 whitespace-nowrap">Unlinked · {layout.tray.count}</span>
-                <span className="min-w-0 truncate normal-case tracking-normal opacity-70" title="Drag onto an entity to place it in the structure">
-                  — drag onto an entity to place it in the structure
-                </span>
+              <div className="absolute top-2 right-4 left-4 flex min-w-0 items-center gap-2 text-small text-ink-2">
+                <span className="shrink-0 font-medium whitespace-nowrap text-ink">Owner not recorded · {layout.tray.count}</span>
+                {canChange && <span className="min-w-0 truncate">Drag one onto its owner to record it</span>}
               </div>
             </div>
           )}
 
-          {/* Connectors */}
-          <svg className="absolute left-0 top-0 overflow-visible" width={layout.width} height={layout.height} style={{ pointerEvents: "none" }}>
+          <svg className="absolute top-0 left-0 overflow-visible" width={layout.width} height={layout.height} style={{ pointerEvents: "none" }} aria-hidden="true">
             {layout.edges.map((edge) => {
-              const c = toneColor(edge.tone, isDark);
               const on = !!lit && lit.has(edge.id) && lit.has(edge.parentId);
-              const faded = !!lit && !on;
               const sel = selectedEdge === edge.id;
+              const child = entityById.get(edge.id);
+              const unknown = !edge.owner && !!child?.partners?.length && child.share == null;
               return (
                 <g key={edge.id} data-edge>
-                  {!edge.owner && (
+                  {!edge.owner && canChange && (
                     <path
                       d={edge.d}
                       fill="none"
@@ -1240,117 +1025,57 @@ export function EstateMapView({
                   <path
                     d={edge.d}
                     fill="none"
-                    stroke={sel ? (isDark ? "#ffffff" : "#0f172a") : c}
-                    strokeOpacity={sel || on ? 0.95 : faded ? 0.1 : isDark ? 0.34 : 0.45}
-                    strokeWidth={sel || on ? 1.75 : 1.25}
+                    className={sel ? "stroke-accent" : on ? "stroke-ink-3" : "stroke-edge"}
+                    strokeWidth={sel || on ? 2 : 1}
+                    strokeDasharray={unknown || edge.owner ? "4 4" : undefined}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    style={{
-                      pointerEvents: "none",
-                      transition: "stroke-opacity 200ms",
-                      filter: on && isDark ? `drop-shadow(0 0 3px ${c})` : undefined,
-                    }}
                   />
-                  {!faded && !sel && !edge.owner && (
-                    <path
-                      className="estate-flow"
-                      d={edge.d}
-                      fill="none"
-                      stroke={c}
-                      strokeOpacity={on ? 1 : isDark ? 0.75 : 0.6}
-                      strokeWidth={1.75}
-                      strokeLinecap="round"
-                      strokeDasharray="1.5 14.5"
-                      style={{ pointerEvents: "none" }}
-                    />
-                  )}
                 </g>
               );
             })}
-            {/* Link preview while dragging onto a new parent */}
             {drag && targetBox && dragBox && (
               <path
                 d={`M ${targetBox.x + (targetBox.kind === "leaf" ? RAIL : targetBox.w / 2)} ${targetBox.y + targetBox.h} L ${drag.x} ${drag.y - dragBox.h / 2}`}
                 fill="none"
-                stroke={toneColor(targetBox.tone, isDark)}
+                className="stroke-accent"
                 strokeWidth={1.5}
                 strokeDasharray="5 5"
-                className="estate-flow"
               />
             )}
           </svg>
 
-          {/* Entities */}
           {layout.boxes.map((box) => (
             <div
               key={box.id}
               data-entity
-              className={`absolute ${drag?.id === box.id ? "z-10" : "z-20"} ${editingId === box.id ? "cursor-text" : "cursor-grab active:cursor-grabbing"}`}
+              role={isPerson(box.id) ? undefined : "link"}
+              tabIndex={isPerson(box.id) ? undefined : 0}
+              aria-label={isPerson(box.id) ? undefined : describe(box.id)}
+              className={cx("absolute rounded-card", drag?.id === box.id ? "z-10" : "z-20", canChange && !isPerson(box.id) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer")}
               style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
               onPointerDown={(e) => handleCardPointerDown(e, box.id)}
               onPointerEnter={(e) => e.pointerType !== "touch" && setHoveredId(box.id)}
               onPointerLeave={(e) => e.pointerType !== "touch" && setHoveredId((h) => (h === box.id ? null : h))}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                if (!isPerson(box.id)) startRename(box.id);
+              onFocus={() => setHoveredId(box.id)}
+              onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setHoveredId((h) => (h === box.id ? null : h))}
+              onDoubleClick={() => openEntity(box.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && e.target === e.currentTarget) openEntity(box.id);
               }}
             >
-              {renderCardBody(box)}
-
-              {/* Hover actions */}
+              {renderCard(box)}
               {hoverBox?.id === box.id && !isPerson(box.id) && (
-                // The wrapper's bottom padding bridges the gap to the card, so
-                // moving the pointer up onto the toolbar keeps it open.
-                <div data-hud className="absolute bottom-full right-0 z-30 w-max pb-1.5" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-                  <div
-                    className={`estate-in flex items-center gap-0.5 rounded-lg border p-0.5 shadow-lg backdrop-blur-md ${
-                      isDark ? "border-white/10 bg-[#11131c]/95 shadow-black/50" : "border-gray-200 bg-white/95 shadow-gray-900/10"
-                    }`}
-                  >
-                    {(() => {
-                      const c = complianceFor(box.id);
-                      if (!c) return null;
-                      return (
-                        <span
-                          title={complianceTitle(c)}
-                          className={`h-7 pl-2 pr-2.5 mr-0.5 [@media(pointer:coarse)]:hidden inline-flex items-center gap-1.5 rounded-md text-[11.5px] font-medium tabular-nums whitespace-nowrap ${
-                            isDark ? "bg-white/[0.04] text-gray-300" : "bg-gray-50 text-gray-700"
-                          }`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: complianceColor(c.score, isDark) }} />
-                          {c.missing.length ? `${c.missing.length} missing` : "All on file"}
-                        </span>
-                      );
-                    })()}
-                    <button
-                      onClick={() => openEntity(box.id)}
-                      disabled={!assetIdFor(box.id)}
-                      title={assetIdFor(box.id) ? "Go to the entity page" : "No entity page with this name yet"}
-                      className={`h-7 ${coarse} px-2.5 inline-flex items-center gap-1.5 rounded-md text-[11.5px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
-                        isDark ? "bg-white text-gray-900 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"
-                      }`}
-                    >
-                      Go to entity page
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M7 17L17 7M9 7h8v8" />
-                      </svg>
-                    </button>
-                    <button className={toolBtn} onClick={() => startRename(box.id)} title="Rename">
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z" />
-                      </svg>
-                    </button>
-                    {layout.parentOf.has(box.id) && (
-                      <button className={toolBtn} onClick={() => handleUnlink(box.id)} title="Unlink from parent">
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13.828 10.172a4 4 0 00-5.656 0l-1 1a4 4 0 105.656 5.656M10.172 13.828a4 4 0 005.656 0l1-1a4 4 0 00-5.656-5.656M4 4l16 16"
-                          />
-                        </svg>
-                      </button>
+                // The wrapper's padding bridges the gap to the card, so moving up onto the actions keeps them open.
+                <div data-hud className="absolute right-0 bottom-full z-30 w-max pb-2" onPointerDown={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1 rounded-card border border-line-strong bg-overlay p-1 shadow-(--elevation-2)">
+                    <Button size="sm" variant="quiet" onClick={() => openEntity(box.id)}>
+                      Open entity
+                    </Button>
+                    {canChange && (
+                      <Button size="sm" variant="quiet" onClick={() => onChangeOwner?.(box.id, entityById.get(box.id)?.parentId ?? "")}>
+                        Change owner…
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -1358,153 +1083,94 @@ export function EstateMapView({
             </div>
           ))}
 
-          {/* Ghost card following the pointer while re-parenting */}
           {drag && dragBox && (
-            <div
-              className="pointer-events-none absolute z-40"
-              style={{
-                left: drag.x - dragBox.w / 2,
-                top: drag.y - dragBox.h / 2,
-                width: dragBox.w,
-                height: dragBox.h,
-                transform: "rotate(-1.5deg)",
-              }}
-            >
-              {renderCardBody(dragBox, { ghost: true })}
+            <div className="pointer-events-none absolute z-40" style={{ left: drag.x - dragBox.w / 2, top: drag.y - dragBox.h / 2, width: dragBox.w, height: dragBox.h }}>
+              {renderCard(dragBox, true)}
             </div>
           )}
 
-          {/* Selected connector: unlink chip */}
-          {selEdge && (
-            <button
-              data-hud
-              className={`estate-in absolute z-30 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-lg cursor-pointer ${
-                isDark ? "border-red-400/40 bg-[#1a0d10] text-red-300 hover:bg-[#2a1015]" : "border-red-200 bg-white text-red-600 hover:bg-red-50"
-              }`}
-              style={{ left: selEdge.mx, top: selEdge.my }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => handleUnlink(selEdge.id)}
-              title="Unlink (Delete)"
-            >
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Unlink
-            </button>
+          {selEdge && canChange && (
+            <div data-hud className="absolute z-30 -translate-x-1/2 -translate-y-1/2" style={{ left: selEdge.mx, top: selEdge.my }} onPointerDown={(e) => e.stopPropagation()}>
+              <Button size="sm" onClick={() => onChangeOwner?.(selEdge.id, "")}>
+                Remove owner…
+              </Button>
+            </div>
           )}
         </div>
 
-        {/* HUD: status + stats */}
-        <div data-hud className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5 text-[11px]">
-          <span className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 backdrop-blur-md ${hudChip}`}>
-            <span className="estate-live h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-            Live
-          </span>
-          <span className={`hidden h-7 items-center gap-3 rounded-lg border px-2.5 backdrop-blur-md sm:inline-flex ${hudChip}`}>
-            <span>
-              <b className={`font-semibold ${ink}`}>{stats.entities}</b> entities
-            </span>
-            <span className="opacity-40">/</span>
-            <span>
-              <b className={`font-semibold ${ink}`}>{stats.branches}</b> branches
-            </span>
-            <span className="opacity-40">/</span>
-            <span>
-              <b className={`font-semibold ${ink}`}>{stats.levels}</b> levels
-            </span>
+        {/* Controls: what's shown, and when it's from; then the view. */}
+        <div data-hud className="absolute top-3 left-3 flex flex-wrap items-center gap-2 text-small text-ink-2">
+          <span className="inline-flex h-(--control-sm) items-center rounded-control border border-line bg-raised px-3 tabular-nums">
+            {format.count(stats.entities, "entity", "entities")} · {format.count(stats.levels, "level")}
+            {dissolved ? ` · ${dissolved} dissolved not shown` : ""}
+            {updatedAt ? ` · updated ${format.time(updatedAt)}` : ""}
           </span>
         </div>
-
-        {/* HUD: controls */}
-        <div data-hud className="absolute right-3 top-3 flex items-center gap-1.5">
-          <button
-            onClick={togglePeople}
-            aria-pressed={people}
-            title={people ? "Hide the owners who hold shares of entities" : "Show the owners who hold shares of entities, above them"}
-            className={`inline-flex h-7 ${coarse} justify-center items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium backdrop-blur-md transition-colors cursor-pointer ${
-              people ? (isDark ? "border-white/25 bg-white/[0.12] text-white" : "border-gray-900 bg-gray-900 text-white") : hudBtn
-            }`}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span className="hidden sm:inline">Owners</span>
-          </button>
-          <button
-            onClick={handleAddEntity}
-            aria-label="Add entity"
-            className={`inline-flex h-7 ${coarse} justify-center items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium backdrop-blur-md transition-colors cursor-pointer ${hudBtn}`}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
-            </svg>
-            <span className="hidden sm:inline">Entity</span>
-          </button>
-          <div className={`inline-flex h-7 [@media(pointer:coarse)]:h-[42px] items-center rounded-lg border backdrop-blur-md ${hudChip}`}>
-            <button
-              onClick={() => zoomBy(1 / ZOOM_STEP)}
-              className={`grid h-full w-7 [@media(pointer:coarse)]:w-[40px] place-items-center rounded-l-lg transition-colors cursor-pointer ${isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"}`}
-              aria-label="Zoom out"
-            >
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeWidth={2.2} d="M5 12h14" />
-              </svg>
-            </button>
-            <span className={`w-11 text-center font-mono text-[10.5px] tabular-nums ${ink}`}>{Math.round(view.k * 100)}%</span>
-            <button
-              onClick={() => zoomBy(ZOOM_STEP)}
-              className={`grid h-full w-7 [@media(pointer:coarse)]:w-[40px] place-items-center rounded-r-lg transition-colors cursor-pointer ${isDark ? "hover:bg-white/[0.06] hover:text-white" : "hover:bg-gray-100 hover:text-gray-900"}`}
-              aria-label="Zoom in"
-            >
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeWidth={2.2} d="M12 5v14m7-7H5" />
-              </svg>
-            </button>
+        <div data-hud className="absolute top-3 right-3 flex items-center gap-2">
+          <Segmented
+            label="Show"
+            value={people ? "owners" : "entities"}
+            onChange={(v) => showPeople(v === "owners")}
+            options={[
+              { value: "entities", label: "Entities" },
+              { value: "owners", label: "With owners" },
+            ]}
+          />
+          <span className="inline-flex items-center rounded-control border border-line bg-raised">
+            <IconButton icon="minus" label="Zoom out" onClick={() => zoomBy(1 / ZOOM_STEP)} />
+            <span className="w-12 text-center text-small text-ink tabular-nums" aria-live="polite">
+              {Math.round(view.k * 100)}%
+            </span>
+            <IconButton icon="plus" label="Zoom in" onClick={() => zoomBy(ZOOM_STEP)} />
+          </span>
+          <Button size="sm" onClick={refit}>
+            Fit
+          </Button>
+          {onAddEntity && !embedded && (
+            <Button size="sm" icon="plus" onClick={onAddEntity}>
+              Entity
+            </Button>
+          )}
+          <Popover label="Using the map" align="end" trigger={<IconButton icon="info" label="Using the map" variant="secondary" />}>
+            <ul className="flex flex-col gap-2 text-body text-ink-2">
+              <li>{touch ? "Tap an entity" : "Point at an entity"} to light the chain that owns it and what it owns; open it from there.</li>
+              <li>{touch ? "Drag the background to move around; pinch to zoom." : "Drag the background to move around. Pinch, or hold ⌘ or Ctrl and scroll, to zoom. F fits the map."}</li>
+              {canChange && <li>To change an owner, drag the entity onto its new owner, or choose a line and Remove owner. You confirm it, with an effective date, before anything is recorded.</li>}
+              <li>A dashed line is an owner whose share isn&apos;t on record.</li>
+            </ul>
+          </Popover>
+        </div>
+        {outOfView && (
+          <div data-hud className="absolute bottom-3 left-1/2 -translate-x-1/2">
+            <Button size="sm" onClick={refit}>
+              Part of the map is out of view · Fit
+            </Button>
           </div>
-          <button
-            onClick={refit}
-            title="Fit to screen (F)"
-            aria-label="Fit to screen"
-            className={`inline-flex h-7 ${coarse} justify-center items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] font-medium backdrop-blur-md transition-colors cursor-pointer ${hudBtn}`}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 9V5a1 1 0 011-1h4M15 4h4a1 1 0 011 1v4M20 15v4a1 1 0 01-1 1h-4M9 20H5a1 1 0 01-1-1v-4" />
-            </svg>
-            <span className="hidden sm:inline">Fit</span>
-          </button>
-        </div>
+        )}
+      </div>
 
-        {/* HUD: hint */}
-        <div data-hud className={`absolute bottom-3 left-3 hidden items-center gap-3 rounded-lg border px-2.5 py-1.5 text-[11px] backdrop-blur-md md:inline-flex ${hudChip}`}>
-          {touchScreen ? (
-            <>
-              <span>Tap · actions</span>
-              <span className="opacity-40">/</span>
-              <span>Drag onto entity · re-parent</span>
-              <span className="opacity-40">/</span>
-              <span>Drag the background · pan</span>
-              <span className="opacity-40">/</span>
-              <span>Pinch · zoom</span>
-            </>
-          ) : (
-            <>
-              <span>Hover · actions</span>
-              <span className="opacity-40">/</span>
-              <span>Drag onto entity · re-parent</span>
-              <span className="opacity-40">/</span>
-              <span>Double-click · rename</span>
-              <span className="opacity-40">/</span>
-              <span>Scroll · zoom</span>
-              <span className="opacity-40">/</span>
-              <span>F · fit</span>
-            </>
-          )}
-        </div>
-
-        {/* HUD corner brackets */}
-        {(["left-2 top-2 border-l border-t", "right-2 top-2 border-r border-t", "left-2 bottom-2 border-l border-b", "right-2 bottom-2 border-r border-b"] as const).map((pos) => (
-          <span key={pos} className={`pointer-events-none absolute h-3 w-3 ${pos} ${isDark ? "border-white/25" : "border-gray-400/50"}`} />
-        ))}
+      {/* The same structure as a nested list, for keyboards and screen readers. */}
+      <div className="sr-only">
+        <h3>Ownership outline</h3>
+        <ul>
+          {tree.rows.map((r) => (
+            <li key={r.id} style={{ marginLeft: r.depth * 12 }}>
+              <Link to={`/assets/${r.id}`}>{describe(r.id)}</Link>
+            </li>
+          ))}
+        </ul>
+        {tree.orphans.length > 0 && (
+          <>
+            <h3>Owner not recorded</h3>
+            <ul>
+              {tree.orphans.map((r) => (
+                <li key={r.id}>
+                  <Link to={`/assets/${r.id}`}>{describe(r.id)}</Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     </div>
   );

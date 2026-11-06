@@ -188,28 +188,16 @@ export type PatchResult = {
 };
 
 /**
- * Apply `patch` to every row a taught rule matches (findMatching) and
- * satisfies `baseFilter`, except rows `exclude` sets aside. Returns which
- * rows changed and their values before, so the caller can write one history
- * row per field per row and offer an Undo. A failed chunk is logged and
- * counted, not thrown.
+ * Patch `rows` (by id, 200 at a time) and keep each one's values before the
+ * change, for the history and an Undo. A failed chunk is logged and counted,
+ * not thrown, so the caller reports what did land.
  */
-export async function patchMatching(
-  db: Db,
-  rule: TaughtRule | string,
-  baseFilter: string,
-  patch: Record<string, unknown>,
-  opts: { entityOf?: (accountId: string) => { id: string | null; name: string | null } | null; exclude?: (row: MatchedRow) => boolean } = {},
-): Promise<PatchResult> {
-  const rows = await findMatching(db, rule, baseFilter, opts.entityOf);
-  const excluded = opts.exclude ? rows.filter(opts.exclude) : [];
-  const out = new Set(excluded.map((r) => r.transaction_id));
-  const todo = rows.filter((r) => !out.has(r.transaction_id));
+export async function patchRows(db: Db, rows: MatchedRow[], patch: Record<string, unknown>): Promise<Omit<PatchResult, "excluded">> {
   const before = new Map<string, Record<string, unknown>>();
   const ids: string[] = [];
   let failed = 0;
-  for (let i = 0; i < todo.length; i += 200) {
-    const chunk = todo.slice(i, i + 200);
+  for (let i = 0; i < rows.length; i += 200) {
+    const chunk = rows.slice(i, i + 200);
     const list = chunk.map((t) => `"${t.transaction_id.replace(/"/g, "")}"`).join(",");
     const r = await db(`book_transactions?transaction_id=in.(${list})`, {
       method: "PATCH",
@@ -225,7 +213,31 @@ export async function patchMatching(
       console.error("books: rule patch failed", r.status, (await r.text().catch(() => "")).slice(0, 200));
     }
   }
-  return { applied: ids.length, ids, before, excluded, failed };
+  return { applied: ids.length, ids, before, failed };
+}
+
+/**
+ * Apply `patch` to every row a taught rule matches (findMatching) and
+ * satisfies `baseFilter`, except rows `exclude` sets aside (a closed period,
+ * a hand edit). Returns which rows changed and their values before, so the
+ * caller can write one history row per field per row and offer an Undo.
+ */
+export async function patchMatching(
+  db: Db,
+  rule: TaughtRule | string,
+  baseFilter: string,
+  patch: Record<string, unknown>,
+  opts: { entityOf?: (accountId: string) => { id: string | null; name: string | null } | null; exclude?: (row: MatchedRow) => boolean } = {},
+): Promise<PatchResult> {
+  const rows = await findMatching(db, rule, baseFilter, opts.entityOf);
+  const excluded = opts.exclude ? rows.filter(opts.exclude) : [];
+  const out = new Set(excluded.map((r) => r.transaction_id));
+  const done = await patchRows(
+    db,
+    rows.filter((r) => !out.has(r.transaction_id)),
+    patch,
+  );
+  return { ...done, excluded };
 }
 
 /** A rule's pattern as words: "internal revenue, gcrevenu, …". */

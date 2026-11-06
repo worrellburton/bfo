@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listMail, type MailCount, type MailFilter, type MailFolder, type MailSummary } from "../mail-client";
-import { LIST_LOADER_MS, LOADER_OUT_MS, SEARCH_LOADER_MS, holdFor } from "./constants";
 import { eachRow, listRows, sortsAfter, threadSortsAfter, type ListState } from "./list-state";
 
-/** The list the page shows: read for the folder, filter, search and mailbox in the URL, paged, and re-read as the count moves. */
-export function useMailList({ folder, filter, q, box, count }: { folder: MailFolder; filter: MailFilter; q: string; box: string; count: MailCount | null }) {
+type Where = { folder: MailFolder; filter: MailFilter; attachments: boolean; q: string; box: string };
+
+/**
+ * The list the page shows: read for the folder, filters, search and mailbox in
+ * the URL, paged, and re-read as the count moves. Rows show the moment they
+ * arrive; the skeleton (app/ui) appears only if the read takes over 300ms.
+ */
+export function useMailList({ folder, filter, attachments, q, box, count }: Where & { count: MailCount | null }) {
   const [list, setList] = useState<ListState | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -15,36 +20,19 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
   // Newest first. "refresh" re-reads the first page and keeps any older pages already loaded.
   // "reset" re-reads the first page without blanking the list first, and drops older pages: after an action
   // that can move rows anywhere (a star, an archive in Active), merging would keep stale rows or lose moved ones.
-  /** The loader on its way out, and rows that have just arrived (they animate in once, not again when the list comes back into view). */
-  const [loaderLeaving, setLoaderLeaving] = useState(false);
-  const [rowsFresh, setRowsFresh] = useState(false);
-  const loadList = useCallback(async (which: MailFolder, narrow: MailFilter, term: string, to: string, mode: "replace" | "refresh" | "reset") => {
+  const loadList = useCallback(async (w: Where, mode: "replace" | "refresh" | "reset") => {
     const req = ++listReq.current;
-    const shownAt = performance.now();
     if (mode === "replace") {
       setList(null);
       setListError(null);
     }
     try {
-      const head = await listMail({ folder: which, filter: narrow, q: term, to: to || undefined });
+      const head = await listMail({ folder: w.folder, filter: w.filter, attachments: w.attachments, q: w.q, to: w.box || undefined });
       if (req !== listReq.current) return;
       setListError(null);
-      if (mode === "replace") {
-        // The loader plays through (the constellation assembles, the sonar sweeps), fades out in place, and the rows come in.
-        await holdFor(shownAt, term ? SEARCH_LOADER_MS : LIST_LOADER_MS);
-        if (req !== listReq.current) return;
-        setLoaderLeaving(true);
-        await new Promise((r) => setTimeout(r, LOADER_OUT_MS));
-        if (req !== listReq.current) return;
-        setLoaderLeaving(false);
-        setList({ folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] });
-        setRowsFresh(true);
-        window.setTimeout(() => setRowsFresh(false), 1500);
-        return;
-      }
+      const fresh: ListState = { folder: w.folder, filter: w.filter, attachments: w.attachments, q: w.q, to: w.box, ...head, pinned: head.pinned ?? [] };
       setList((prev) => {
-        const fresh = { folder: which, filter: narrow, q: term, to, ...head, pinned: head.pinned ?? [] };
-        if (mode === "reset" || !prev || prev.folder !== which || prev.filter !== narrow || prev.q !== term || prev.to !== to || !head.messages.length) return fresh;
+        if (mode !== "refresh" || !prev || !same(prev, w) || !head.messages.length) return fresh;
         const ids = new Set([...head.messages, ...fresh.pinned].map((m) => m.id));
         // More than a page arrived since the last read: the head doesn't reach the old list, so keeping it would leave a hole.
         if (head.hasMore && !prev.messages.some((m) => ids.has(m.id))) return fresh;
@@ -53,7 +41,7 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
         const last = head.messages[head.messages.length - 1];
         const threads = new Set([...head.messages, ...fresh.pinned].map((m) => m.threadKey).filter(Boolean));
         const older = prev.messages.filter((m) =>
-          which === "active" && !term ? !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)) && threadSortsAfter(m, last) : !ids.has(m.id) && sortsAfter(m, last),
+          w.folder === "active" && !w.q ? !ids.has(m.id) && !(m.threadKey && threads.has(m.threadKey)) && threadSortsAfter(m, last) : !ids.has(m.id) && sortsAfter(m, last),
         );
         return { ...fresh, messages: [...head.messages, ...older], hasMore: older.length ? prev.hasMore : head.hasMore };
       });
@@ -62,15 +50,17 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
     }
   }, []);
 
+  const where = { folder, filter, attachments, q, box };
   useEffect(() => {
-    void loadList(folder, filter, q, box, "replace");
-  }, [folder, filter, q, box, loadList]);
+    void loadList(where, "replace");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folder, filter, attachments, q, box, loadList]);
 
   // New mail shows up through the shared count; when it moves, re-read the list.
   const unreadKey = count ? `${count.unread}/${count.otherUnread}` : null;
   const lastKey = useRef(unreadKey);
   useEffect(() => {
-    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(folder, filter, q, box, "refresh");
+    if (lastKey.current && unreadKey && lastKey.current !== unreadKey) void loadList(where, "refresh");
     lastKey.current = unreadKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unreadKey]);
@@ -83,9 +73,9 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
       const last = cur.messages[cur.messages.length - 1];
       // Active pages by conversation; everything else by message.
       const after = cur.folder === "active" && !cur.q && last.threadAt && last.threadKey ? { before: last.threadAt, beforeKey: last.threadKey } : { before: last.occurredAt, beforeId: last.id };
-      const next = await listMail({ folder: cur.folder, filter: cur.filter, q: cur.q, to: cur.to || undefined, ...after });
+      const next = await listMail({ folder: cur.folder, filter: cur.filter, attachments: cur.attachments, q: cur.q, to: cur.to || undefined, ...after });
       setList((prev) => {
-        if (!prev || prev.folder !== cur.folder || prev.filter !== cur.filter || prev.q !== cur.q || prev.to !== cur.to) return prev;
+        if (!prev || !same(prev, { folder: cur.folder, filter: cur.filter, attachments: cur.attachments, q: cur.q, box: cur.to })) return prev;
         const ids = new Set(listRows(prev).map((m) => m.id));
         const threads = new Set(
           prev.folder === "active" && !prev.q
@@ -104,6 +94,12 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
     }
   }
 
+  /** Read the list showing now again from its first page (after an undo, say), without blanking it. */
+  function reread() {
+    const cur = listRef.current;
+    if (cur) void loadList({ folder: cur.folder, filter: cur.filter, attachments: cur.attachments, q: cur.q, box: cur.to }, "reset");
+  }
+
   /**
    * Active shows each conversation under its newest message, so a reply, move or
    * delete can change a row or its place: read the list again. Reads the list
@@ -111,11 +107,16 @@ export function useMailList({ folder, filter, q, box, count }: { folder: MailFol
    */
   function refreshActive() {
     const cur = listRef.current;
-    if (cur?.folder === "active" && !cur.q) void loadList(cur.folder, cur.filter, cur.q, cur.to, "reset");
+    if (cur?.folder === "active" && !cur.q) reread();
   }
 
   /** Change one row in the list (if it's there). */
   const patchRow = (id: string, patch: Partial<MailSummary>) => setList((prev) => prev && eachRow(prev, (rows) => rows.map((m) => (m.id === id ? { ...m, ...patch } : m))));
 
-  return { list, setList, listError, setListError, loadingMore, listRef, loaderLeaving, rowsFresh, loadList, loadMore, refreshActive, patchRow };
+  return { list, setList, listError, setListError, loadingMore, listRef, loadList, loadMore, reread, refreshActive, patchRow };
+}
+
+/** The list was read for this place. */
+export function same(l: Pick<ListState, "folder" | "filter" | "attachments" | "q" | "to">, w: Where): boolean {
+  return l.folder === w.folder && l.filter === w.filter && l.attachments === w.attachments && l.q === w.q && l.to === w.box;
 }

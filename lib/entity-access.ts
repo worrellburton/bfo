@@ -1,10 +1,15 @@
-import { sb, type AppUser } from "./auth.js";
-
 /**
  * Which entities an invited owner (a "partner") may see: one entity_access
  * row per person and entity. Staff see everything and need no rows; a row
  * for a staff member only records that they were invited from that entity.
+ *
+ * HTTP surface: none; a library for api/members.ts (grant, revoke, list)
+ * and api/tree.ts (what a partner may read).
+ * Who may call it: server code, after the endpoint's own role check.
+ * Env: SUPABASE_URL and SUPABASE_SERVICE_KEY (through sb() in lib/auth.ts).
  */
+
+import { sb, type AppUser } from "./auth.js";
 
 type AccessRow = { user_id: string; asset_id: string; member_name: string | null; invited_by: string | null; invited_at: string };
 

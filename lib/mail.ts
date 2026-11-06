@@ -180,8 +180,6 @@ const notDeleted = (on = trashOn()) => (on ? "&deleted_at=is.null" : "");
 
 export type SummaryRow = Pick<
   MailRow,
-  | "deleted_at"
-  | "held_at"
   | "id"
   | "user_id"
   | "folder"
@@ -202,6 +200,8 @@ export type SummaryRow = Pick<
   | "thread_at"
   | "spf_pass"
   | "dkim_pass"
+  | "deleted_at"
+  | "held_at"
 >;
 
 export const BUCKET = "mail";
@@ -390,7 +390,7 @@ export function snippetOf(text: string | null | undefined, html?: string | null,
   const own = withoutBoilerplate(text?.trim() ? withoutQuotes(text) : html ? withoutQuotes(htmlToText(htmlWithoutQuotes(html))) : "");
   // A reply that says nothing new: show the quote rather than nothing.
   const source = own.trim() ? own : full;
-  const flat = storable(source).replace(/\s+/g, " ").trim();
+  const flat = tidySnippet(storable(source));
   if (flat.length <= max) return flat;
   let cut = flat.slice(0, max - 1);
   if (/[\ud800-\udbff]$/.test(cut)) cut = cut.slice(0, -1); // don't split a pair
@@ -483,7 +483,8 @@ export function toSummary(row: SummaryRow): MailSummary {
     to: cleanAddrs(row.to_addrs),
     cc: cleanAddrs(row.cc_addrs),
     subject: row.subject ?? "",
-    snippet: row.snippet ?? "",
+    // Older rows were stored before the snippet was tidied: the same tidy on the way out.
+    snippet: tidySnippet(row.snippet),
     occurredAt: row.occurred_at ?? row.created_at,
     read: !!row.read_at,
     starred: !!row.starred_at,
@@ -493,6 +494,8 @@ export function toSummary(row: SummaryRow): MailSummary {
     other: row.user_id === null,
     ...(row.thread_key ? { threadKey: row.thread_key, threadAt: row.thread_at ?? row.occurred_at ?? row.created_at } : {}),
     ...(unverified(row) ? { unverified: true } : {}),
+    ...(row.deleted_at ? { deletedAt: row.deleted_at, purgeAt: purgeAfter(row.deleted_at) } : {}),
+    ...(row.held_at ? { held: true } : {}),
   };
 }
 
@@ -518,14 +521,27 @@ export function toMessage(row: MailRow): MailMessage {
     messageId: row.message_id ?? null,
     // Our own sent copies carry no SPF/DKIM result, and need none.
     unverifiedSender: unverified(row),
+    replyTo: row.direction === "in" ? replyToOf(row) : [],
+    paymentRisk: row.direction === "in" && paymentRisk({ subject: row.subject, text: row.text_body ?? (row.html_body ? htmlToText(row.html_body) : ""), attachmentNames: (row.attachments ?? []).map((a) => a.filename) }),
   };
+}
+
+/** The Reply-To addresses that differ from the From (a sender naming itself adds nothing). */
+function replyToOf(row: Pick<MailRow, "reply_to" | "from_email">): MailAddress[] {
+  const from = (row.from_email ?? "").toLowerCase();
+  return cleanAddrs(row.reply_to).filter((a) => a.email.toLowerCase() !== from);
 }
 
 // ── Who sees what ─────────────────────────────────────────────────────
 
-/** PostgREST filter for the rows a user may touch: their own, plus the catch-all for owners/admins. */
+/** PostgREST filter for the rows a user may touch: their own, plus the catch-all for owners/admins. Trash included. */
 export function scopeFilter(userId: string, admin: boolean): string {
   return admin ? `or=(user_id.eq.${userId},user_id.is.null)` : `user_id=eq.${userId}`;
+}
+
+/** The rows a user may touch that aren't in Trash: what a search looks through. */
+export function liveScope(userId: string, admin: boolean, opts: { trash?: boolean } = {}): string {
+  return `${scopeFilter(userId, admin)}${notDeleted(opts.trash)}`;
 }
 
 /** True when the row is the user's own, or a catch-all copy and they're an owner/admin. */
@@ -533,13 +549,19 @@ export function canSee(row: Pick<MailRow, "user_id">, userId: string, admin: boo
   return row.user_id === userId || (row.user_id === null && admin);
 }
 
-/** PostgREST filter for one folder of a user's mail. Archive also holds archived catch-all mail for admins. */
-export function folderFilter(folder: MailFolder, userId: string, admin: boolean): string {
+/**
+ * PostgREST filter for one folder of a user's mail. Archive and Trash also
+ * hold catch-all mail for admins. Every folder but Trash leaves out deleted
+ * mail; `trash: false` (before the migration) leaves the column out.
+ */
+export function folderFilter(folder: MailFolder, userId: string, admin: boolean, opts: { trash?: boolean } = {}): string {
+  const live = notDeleted(opts.trash);
   // Active leaves out conversations archived from it (mail_messages.active_hidden).
-  if (folder === "active") return `user_id=eq.${userId}&folder=in.(inbox,sent)&active_hidden=is.false`;
-  if (folder === "other") return "user_id=is.null&folder=eq.inbox";
-  if (folder === "archive") return `${scopeFilter(userId, admin)}&folder=eq.archive`;
-  return `user_id=eq.${userId}&folder=eq.${folder}`;
+  if (folder === "active") return `user_id=eq.${userId}&folder=in.(inbox,sent)&active_hidden=is.false${live}`;
+  if (folder === "other") return `user_id=is.null&folder=eq.inbox${live}`;
+  if (folder === "archive") return `${scopeFilter(userId, admin)}&folder=eq.archive${live}`;
+  if (folder === "trash") return `${scopeFilter(userId, admin)}&deleted_at=not.is.null`;
+  return `user_id=eq.${userId}&folder=eq.${folder}${live}`;
 }
 
 /** A value quoted for a PostgREST condition, so commas, parentheses and dots in it are literal. */
@@ -584,6 +606,9 @@ export function filterClause(filter: MailFilter): string {
   if (filter === "unread-starred") return "&read_at=is.null&starred_at=not.is.null";
   return "";
 }
+
+/** Narrows a list to mail with files: the source documents (receipts, invoices, statements). */
+export const WITH_ATTACHMENTS = `&attachments=neq.${encodeURIComponent("[]")}`;
 
 const SEARCH_MAX = 100;
 
@@ -779,7 +804,53 @@ export type BirdInbound = {
   dkim_pass: boolean | null;
   attachments?: { id: string; filename: string | null; content_type: string | null; size: number }[] | null;
   received_at: string;
+  /** Where the sender wants replies, when Bird passes it on (else it's read from the headers). */
+  reply_to?: BirdAddress[] | BirdAddress | string | null;
 };
+
+/** "Name <a@x.com>, b@y.com" → addresses (lowercase), the names kept. Commas inside "quoted names" don't split. */
+function addressesIn(value: string): MailAddress[] {
+  const parts: string[] = [];
+  let cur = "";
+  let quoted = false;
+  let angled = false;
+  for (const ch of value) {
+    if (ch === '"' && !angled) quoted = !quoted;
+    else if (ch === "<" && !quoted) angled = true;
+    else if (ch === ">" && !quoted) angled = false;
+    if (!quoted && !angled && (ch === "," || ch === ";")) {
+      parts.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  parts.push(cur);
+  const out: MailAddress[] = [];
+  for (const part of parts) {
+    const angle = /<([^<>\s]+)>\s*$/.exec(part);
+    const email = (angle ? angle[1] : part).trim().toLowerCase();
+    if (!isValidEmail(email) || out.some((a) => a.email === email)) continue;
+    const name = angle ? part.slice(0, angle.index).trim().replace(/^"|"$/g, "").trim() : "";
+    out.push(name ? { email: storable(email), name: storable(name) } : { email: storable(email) });
+  }
+  return out;
+}
+
+/**
+ * The Reply-To a received message carries: Bird's field when it gives one,
+ * else the header line. Exported for tests.
+ */
+export function replyToFrom(msg: Pick<BirdInbound, "reply_to">, headers: string | null): MailAddress[] {
+  const given = msg.reply_to;
+  if (typeof given === "string") return addressesIn(given);
+  if (Array.isArray(given) || (given && typeof given === "object")) {
+    return (Array.isArray(given) ? given : [given])
+      .map((a) => ({ email: String(a?.email ?? "").toLowerCase(), name: a?.name ?? null }))
+      .filter((a) => isValidEmail(a.email))
+      .map((a) => (a.name ? { email: storable(a.email), name: storable(a.name) } : { email: storable(a.email) }));
+  }
+  const line = headers ? headerBlock(headers).split(/\r?\n/).find((l) => /^reply-to\s*:/i.test(l)) : undefined;
+  return line ? addressesIn(line.slice(line.indexOf(":") + 1)) : [];
+}
 
 const inboundPath = (id: string) => `/v1/email/inbound-messages/${enc(id)}`;
 
@@ -912,8 +983,9 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
 
   let recipients = ourRecipients(msg);
   let users = await usersAt(recipients);
+  let headers: string | null | undefined;
   if (!users.length) {
-    const headers = await inboundHeaders(msg.id);
+    headers = await inboundHeaders(msg.id);
     const envelope = headers ? rawHeaderRecipients(headers) : [];
     users = await usersAt(envelope);
     recipients = [...envelope, ...recipients.filter((r) => !envelope.includes(r))];
@@ -943,6 +1015,10 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
 
   const body = await inboundBody(msg.id);
   const attachments = await keepInboundAttachments(msg);
+  // Reply-To lives in the header block unless Bird passed it on; it's kept only once its column exists.
+  const keepsReplyTo = await mailSchemaReady();
+  if (keepsReplyTo && msg.reply_to === undefined && headers === undefined) headers = await inboundHeaders(msg.id).catch(() => null);
+  const replyTo = keepsReplyTo ? replyToFrom(msg, headers ?? null) : [];
   const shared = {
     folder: "inbox",
     direction: "in",
@@ -966,6 +1042,7 @@ export async function ingestInbound(msg: BirdInbound): Promise<number> {
     read_at: null,
     starred_at: null,
     occurred_at: occurredAt,
+    ...(keepsReplyTo ? { reply_to: replyTo.length ? replyTo : null } : {}),
   };
   // Only rows actually stored come back (duplicates are ignored), so each new message is announced once.
   const inserted = await sb<NewMail[]>("mail_messages?on_conflict=dedupe_key&select=id,user_id,thread_key,from_email,from_name,subject,snippet,occurred_at", {
@@ -1295,20 +1372,155 @@ export async function sendMail(sender: Sender, req: SendRequest, original: MailR
   return stored;
 }
 
-// ── Deleting ──────────────────────────────────────────────────────────
+// ── Deleting: Trash, holds and the purge ──────────────────────────────
+
+/** Days a message stays in Trash before it goes for good. */
+export const TRASH_DAYS = 30;
+const DAY_MS = 24 * 60 * 60_000;
+
+/** When a message deleted at `deletedAt` leaves Trash for good (unless it's held). */
+export function purgeAfter(deletedAt: string): string {
+  const t = Date.parse(deletedAt);
+  return Number.isNaN(t) ? deletedAt : new Date(t + TRASH_DAYS * DAY_MS).toISOString();
+}
+
+/** A records hold on one mailbox (user_id) or on all mail (user_id null), until lifted (mail_holds). */
+export type MailHold = { id: string; user_id: string | null; reason: string | null; set_by: string | null; set_at: string };
+
+/** Holds in force. None when the table isn't there yet (the migration not applied). */
+export async function activeHolds(): Promise<MailHold[]> {
+  try {
+    return (await sb<MailHold[]>("mail_holds?lifted_at=is.null&select=id,user_id,reason,set_by,set_at&order=set_at.asc")) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Whether a message must be kept: held itself, or in a mailbox (or all mail) under a hold. Catch-all mail is covered by an all-mail hold. */
+export function isHeld(row: Pick<MailRow, "user_id" | "held_at">, holds: Pick<MailHold, "user_id">[]): boolean {
+  return !!row.held_at || holds.some((h) => h.user_id === null || (row.user_id !== null && h.user_id === row.user_id));
+}
+
+/** What the audit log keeps of a message: who, to whom, what and when. Never its words. */
+export type MailRecord = Pick<MailRow, "id" | "user_id" | "direction" | "folder" | "from_email" | "to_addrs" | "subject" | "occurred_at" | "held_at" | "thread_key"> & {
+  attachments?: StoredAttachment[] | null;
+  dedupe_key?: string;
+  bird_id?: string | null;
+  deleted_at?: string | null;
+};
+
+const RECORD_COLUMNS = "id,user_id,direction,folder,from_email,to_addrs,subject,occurred_at,held_at,thread_key,attachments,dedupe_key,bird_id,deleted_at";
+
+/** One message as the audit log lists it. */
+export function auditLine(r: MailRecord): Record<string, unknown> {
+  return {
+    id: r.id,
+    from: r.from_email ?? null,
+    to: cleanAddrs(r.to_addrs)
+      .map((a) => a.email)
+      .slice(0, 10),
+    subject: (r.subject ?? "").slice(0, 200),
+    occurred_at: r.occurred_at ?? null,
+    direction: r.direction,
+    files: r.attachments?.length ?? 0,
+  };
+}
+
+/** "Moved 3 messages to Trash" / "Moved “Q3 statements” to Trash". */
+export function actionSummary(verb: string, rows: Pick<MailRecord, "subject">[], tail = ""): string {
+  const what = rows.length === 1 ? `“${(rows[0].subject ?? "").trim().slice(0, 120) || "(no subject)"}”` : `${rows.length} messages`;
+  return `${verb} ${what}${tail}`;
+}
+
+/** What Delete did: moved to Trash, archived instead (held mail that came in), or left alone (held mail sent out). */
+export type TrashResult = { trashed: MailRecord[]; archived: MailRecord[]; kept: MailRecord[] };
 
 /**
- * Delete rows for good (already scoped to the caller), and any attachment
- * file no other copy still points at. A received copy leaves a tombstone so
- * the sync or a webhook retry doesn't bring it back.
+ * Delete: the messages (already scoped to the caller) move to Trash, with who
+ * did it. Held mail isn't deleted: what came in is archived instead, and what
+ * went out stays where it is. Nothing is removed for good here.
  */
-export async function deleteMessages(ids: string[], scope: string): Promise<void> {
-  if (!ids.length) return;
-  const rows = await sb<Pick<MailRow, "id" | "attachments" | "dedupe_key" | "bird_id" | "direction">[]>(
-    `mail_messages?id=in.(${ids.join(",")})&${scope}&select=id,attachments,dedupe_key,bird_id,direction`,
-  );
-  if (!rows?.length) return;
-  const tombstones = rows.filter((r) => r.direction === "in" && r.bird_id).map((r) => ({ dedupe_key: r.dedupe_key, bird_id: r.bird_id }));
+export async function trashMessages(ids: string[], scope: string, by: string, holds: MailHold[]): Promise<TrashResult> {
+  const out: TrashResult = { trashed: [], archived: [], kept: [] };
+  if (!ids.length) return out;
+  const rows = (await sb<MailRecord[]>(`mail_messages?id=in.(${ids.join(",")})&${scope}&deleted_at=is.null&select=${RECORD_COLUMNS}`)) ?? [];
+  for (const r of rows) {
+    if (!isHeld(r, holds)) out.trashed.push(r);
+    else if (r.direction === "in" && r.folder === "inbox") out.archived.push(r);
+    else out.kept.push(r);
+  }
+  const now = new Date().toISOString();
+  if (out.trashed.length) {
+    await sb(`mail_messages?id=in.(${out.trashed.map((r) => r.id).join(",")})&${scope}&deleted_at=is.null`, { method: "PATCH", body: { deleted_at: now, deleted_by: by } });
+  }
+  if (out.archived.length) {
+    await sb(`mail_messages?id=in.(${out.archived.map((r) => r.id).join(",")})&${scope}`, { method: "PATCH", body: { folder: "archive" } });
+  }
+  return out;
+}
+
+/** Out of Trash, back where each message was. Returns the messages restored. */
+export async function restoreMessages(ids: string[], scope: string): Promise<MailRecord[]> {
+  if (!ids.length) return [];
+  const rows = (await sb<MailRecord[]>(`mail_messages?id=in.(${ids.join(",")})&${scope}&deleted_at=not.is.null&select=${RECORD_COLUMNS}`)) ?? [];
+  if (!rows.length) return [];
+  await sb(`mail_messages?id=in.(${rows.map((r) => r.id).join(",")})&${scope}`, { method: "PATCH", body: { deleted_at: null, deleted_by: null } });
+  return rows;
+}
+
+/**
+ * Remove messages for good: only ones already in Trash, never held ones.
+ * `ids` null takes every message in Trash the scope reaches (Empty Trash);
+ * `before` only those deleted before then (the 30-day purge).
+ */
+export async function purgeMessages(o: { ids: string[] | null; scope: string; holds: MailHold[]; before?: string; limit?: number }): Promise<{ purged: MailRecord[]; kept: MailRecord[] }> {
+  const which = o.ids ? `id=in.(${o.ids.join(",")})&` : "";
+  const when = o.before ? `&deleted_at=lt.${enc(o.before)}` : "&deleted_at=not.is.null";
+  const rows =
+    (await sb<MailRecord[]>(`mail_messages?${which}${o.scope}${when}&select=${RECORD_COLUMNS}&order=deleted_at.asc,id.asc&limit=${Math.min(o.limit ?? 200, 1000)}`)) ?? [];
+  const purged = rows.filter((r) => !isHeld(r, o.holds));
+  const kept = rows.filter((r) => isHeld(r, o.holds));
+  await destroy(purged, o.scope);
+  return { purged, kept };
+}
+
+/**
+ * The purge: messages in Trash for more than 30 days go for good, oldest
+ * first, in batches until `budgetMs` runs out. Held mail stays. Each batch
+ * is one line in the audit log, listing every message (never its words).
+ */
+export async function purgeExpired(o: { now?: number; budgetMs?: number; actor?: AuditActor } = {}): Promise<number> {
+  const started = Date.now();
+  const before = new Date((o.now ?? started) - TRASH_DAYS * DAY_MS).toISOString();
+  const holds = await activeHolds();
+  // Every mailbox: the purge runs for the office, not for one person.
+  const scope = "or=(user_id.not.is.null,user_id.is.null)";
+  let total = 0;
+  for (let round = 0; round < 20 && Date.now() - started < (o.budgetMs ?? 20_000); round++) {
+    const { purged } = await purgeMessages({ ids: null, scope, holds, before, limit: 100 });
+    if (!purged.length) break;
+    total += purged.length;
+    await audit({
+      actor: o.actor ?? "system",
+      action: "mail.purge",
+      target: purged.length === 1 ? { type: "mail", id: purged[0].id, label: purged[0].subject ?? null } : null,
+      count: purged.length,
+      summary: actionSummary("Removed", purged, ` from Trash for good, ${TRASH_DAYS} days after ${purged.length === 1 ? "it was" : "they were"} deleted`),
+      detail: { reason: "trash_expired", messages: purged.map(auditLine) },
+    });
+    if (purged.length < 100) break;
+  }
+  return total;
+}
+
+/**
+ * Delete rows for good (already scoped and checked), and any attachment file
+ * no other copy still points at. A received copy leaves a tombstone so the
+ * sync or a webhook retry doesn't bring it back.
+ */
+async function destroy(rows: MailRecord[], scope: string): Promise<void> {
+  if (!rows.length) return;
+  const tombstones = rows.filter((r) => r.direction === "in" && r.bird_id && r.dedupe_key).map((r) => ({ dedupe_key: r.dedupe_key, bird_id: r.bird_id }));
   if (tombstones.length) {
     await sb("mail_deleted?on_conflict=dedupe_key", { method: "POST", body: tombstones, prefer: "resolution=ignore-duplicates,return=minimal" });
   }

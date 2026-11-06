@@ -1,125 +1,167 @@
-import { useTone } from "../entity/ui";
-import { FileKindIcons } from "../file-icon";
+import type { ReactNode } from "react";
+import { cx } from "../ui";
 import type { MailSummary } from "../mail-client";
-import { fullAddress, fullDate, listDate } from "./helpers";
+import { Glyph } from "./glyphs";
+import { cleanSnippet, fullAddress, fullStamp, listDate } from "./helpers";
 import { SelectBox, StarButton } from "./controls";
-import { UnreadDot, whoOf } from "./list-row";
+import { UnverifiedTag, whoOf } from "./list-row";
 
-/** The spreadsheet: sender, subject, summary, attachment and time in columns, one line per message. */
+/**
+ * The desktop table (§8.10): who, subject, the first words, files and date in
+ * columns, one 40px row per message. Head 32px in caption ink-2, sticky on
+ * the card. Unread is a dot in its own gutter and a semibold sender and
+ * subject. The pick box shows on hover and focus, and on every row while
+ * anything is picked; then the bulk bar (`bulkBar`) takes the head's place,
+ * at the head's height, so nothing moves.
+ */
 export function MailTable({
   rows,
   sent,
   mixed = false,
-  me,
+  mine,
   onOpen,
   onStar,
   picked,
   onPick,
   onPickAll,
-  className = "",
+  bulkBar,
+  trash = false,
 }: {
   rows: MailSummary[];
   sent: boolean;
-  /** Active: in and out together, so each row says which. */
+  /** Inbox (conversations): in and out together, so each row says which. */
   mixed?: boolean;
-  me: string;
+  mine: string[];
   onOpen: (id: string) => void;
   onStar: (m: MailSummary, on: boolean) => void;
   picked: Set<string>;
   onPick: (id: string, shift: boolean) => void;
   onPickAll: () => void;
-  className?: string;
+  /** Shown in the head's place while anything is picked. */
+  bulkBar?: ReactNode;
+  /** Trash: the date column says when each goes for good. */
+  trash?: boolean;
 }) {
   const all = rows.length > 0 && rows.every((m) => picked.has(m.id));
   const some = !all && rows.some((m) => picked.has(m.id));
-  const t = useTone();
-  const th = `px-2 pb-2 pt-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.08em] ${t.faint}`;
+  const picking = picked.size > 0;
+  const th = "sticky top-0 z-sticky h-8 border-b border-line-strong bg-raised text-left text-caption font-medium whitespace-nowrap text-ink-2";
   return (
-    <table className={`w-full table-fixed border-collapse text-[12.5px] ${className}`}>
+    <table className="w-full table-fixed border-separate border-spacing-0 text-body text-ink">
+      <caption className="sr-only">Messages</caption>
       <colgroup>
-        <col className="w-[76px]" />
-        <col className="w-[22%] lg:w-[200px] xl:w-[220px]" />
-        <col className="w-[30%]" />
+        <col className="w-[72px]" />
+        <col className="w-[24%] xl:w-[220px]" />
+        <col className="w-[32%]" />
         <col />
-        <col className="w-[32px]" />
-        <col className="w-[84px]" />
+        <col className="w-[36px]" />
+        <col className="w-[104px]" />
+        <col className="w-[48px]" />
       </colgroup>
-      {/* While anything is picked, the action bar above takes the header's place. */}
-      <thead className={`sticky top-0 z-[1] ${picked.size ? "hidden" : ""} ${t.dark ? "bg-[#0b0b0f]/95" : "bg-white/95"} backdrop-blur-xl`}>
-        <tr className={`border-b ${t.line}`}>
-          <th scope="col" className={`${th} py-1 pl-[14px]`}>
-            <SelectBox on={all} mixed={some} onToggle={onPickAll} label={all ? "Unselect all" : "Select all"} />
-          </th>
-          <th scope="col" className={th}>
-            {mixed ? "From / To" : sent ? "To" : "From"}
-          </th>
-          <th scope="col" className={th}>
-            Subject
-          </th>
-          <th scope="col" className={th}>
-            Summary
-          </th>
-          <th scope="col" className={th}>
-            <span className="sr-only">Attachments</span>
-          </th>
-          <th scope="col" className={`${th} pr-4 text-right`}>
-            Time
-          </th>
-        </tr>
+      <thead>
+        {picking && bulkBar ? (
+          <tr>
+            <th colSpan={7} className={cx(th, "rounded-t-card p-0")}>
+              {bulkBar}
+            </th>
+          </tr>
+        ) : (
+          <tr>
+            <th scope="col" className={cx(th, "rounded-tl-card pl-5")}>
+              <span className="ml-3 inline-flex">
+                <SelectBox on={all} mixed={some} onToggle={onPickAll} label={all ? "Unselect all" : "Select all"} className="-my-1" />
+              </span>
+            </th>
+            <th scope="col" className={cx(th, "px-3")}>
+              {mixed ? "From or to" : sent ? "To" : "From"}
+            </th>
+            <th scope="col" className={cx(th, "px-3")}>
+              Subject
+            </th>
+            <th scope="col" className={cx(th, "px-3")}>
+              Preview
+            </th>
+            <th scope="col" className={th}>
+              <span className="sr-only">Attachments</span>
+            </th>
+            <th scope="col" className={cx(th, "px-3 text-right")}>
+              {trash ? "Deleted for good" : "Date"}
+            </th>
+            <th scope="col" className={cx(th, "rounded-tr-card pr-5")}>
+              <span className="sr-only">Star</span>
+            </th>
+          </tr>
+        )}
       </thead>
-      <tbody className={`divide-y ${t.divide}`}>
-        {rows.map((m) => {
+      <tbody>
+        {rows.map((m, i) => {
           const unread = !m.read;
           const out = sent || (mixed && m.direction === "out");
-          const who = mixed && out ? `To ${whoOf(m, true, me)}` : whoOf(m, out, me);
+          const who = mixed && out ? `To ${whoOf(m, true, mine)}` : whoOf(m, out, mine);
           const on = picked.has(m.id);
+          const last = i === rows.length - 1;
+          const cell = cx("h-(--row-1) py-2 align-middle", !last && "border-b border-line");
+          const preview = cleanSnippet(m.snippet);
           return (
             <tr
               aria-selected={on}
               key={m.id}
               data-mail-row={m.id}
               tabIndex={0}
-              onClick={() => onOpen(m.id)}
+              onClick={(e) => (picking ? onPick(m.id, e.shiftKey) : onOpen(m.id))}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onOpen(m.id);
                 }
               }}
-              className={`group cursor-pointer transition-colors duration-150 ${
-                on
-                  ? t.dark
-                    ? "bg-(--mail-accent-deep)/[0.13] hover:bg-(--mail-accent-deep)/[0.17]"
-                    : "bg-(--mail-accent-deep)/10 hover:bg-(--mail-accent-deep)/15"
-                  : unread
-                    ? t.dark
-                      ? "bg-(--mail-accent-deep)/[0.09] hover:bg-(--mail-accent-deep)/[0.14]"
-                      : "bg-(--mail-accent-deep)/[0.055] hover:bg-(--mail-accent-deep)/[0.09]"
-                    : t.hover
-              } focus-visible:outline-none ${t.dark ? "focus-visible:bg-white/[0.05]" : "focus-visible:bg-gray-50"}`}
+              className={cx("group/row cursor-pointer", on ? "bg-selected" : "hover:bg-hover")}
             >
-              {/* Unread: an accent bar down the row's left edge. */}
-              <td className={`py-1.5 pl-2 pr-0 align-middle ${unread ? "shadow-[inset_3px_0_0_var(--mail-accent)]" : ""}`}>
-                <div className="flex items-center gap-0.5">
-                  <UnreadDot on={unread} />
-                  <SelectBox on={on} onToggle={(shift) => onPick(m.id, shift)} label={on ? "Unselect" : "Select"} />
-                  <StarButton on={m.starred} onToggle={(next) => onStar(m, next)} />
-                </div>
+              <td className={cx(cell, "pl-5", last && "rounded-bl-card")}>
+                <span className="flex items-center gap-1">
+                  <span className="flex w-2 shrink-0 justify-center">
+                    {unread && <span aria-hidden="true" className="size-2 rounded-full bg-accent" />}
+                    {unread && <span className="sr-only">Unread. </span>}
+                  </span>
+                  <span className={cx(picking || on ? "visible" : "invisible group-hover/row:visible group-focus-within/row:visible")}>
+                    <SelectBox on={on} onToggle={(shift) => onPick(m.id, shift)} label={on ? "Unselect" : "Select"} className="-my-1" />
+                  </span>
+                </span>
               </td>
-              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-bold ${t.text}` : `font-normal ${t.soft}`}`} title={out ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
-                {who}
+              <td className={cx(cell, "px-3")} title={out ? m.to.map(fullAddress).join(", ") : fullAddress(m.from)}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={cx("min-w-0 truncate", unread ? "font-semibold" : "font-normal")}>{who}</span>
+                  {!out && m.unverified && <UnverifiedTag />}
+                </span>
               </td>
-              <td className={`truncate px-2 py-2.5 align-middle ${unread ? `font-semibold ${t.text}` : `font-normal ${t.soft}`}`}>{m.subject || "(no subject)"}</td>
-              <td className={`truncate px-2 py-2.5 align-middle ${unread ? t.soft : t.muted}`}>{m.snippet}</td>
-              <td className={`px-1 py-2.5 align-middle ${t.muted}`}>
-                {m.attachmentCount > 0 && <FileKindIcons kinds={m.attachmentKinds?.length ? m.attachmentKinds : ["file"]} count={m.attachmentCount} className="h-4 w-4" />}
+              <td className={cx(cell, "truncate px-3", unread ? "font-semibold" : "font-normal")}>
+                {m.subject || "(no subject)"}
+                {m.held && <span className="sr-only">, kept for records</span>}
               </td>
-              <td
-                className={`whitespace-nowrap py-2.5 pl-2 pr-4 text-right align-middle text-[11.5px] tabular-nums ${unread ? `font-semibold ${t.dark ? "text-(--mail-accent)" : "text-(--mail-accent-ink)"}` : t.muted}`}
-              >
-                <time dateTime={m.occurredAt} title={fullDate(m.occurredAt)}>
-                  {listDate(m.occurredAt)}
-                </time>
+              <td className={cx(cell, "truncate px-3 text-ink-2")}>{preview}</td>
+              <td className={cx(cell, "text-ink-3")}>
+                {m.attachmentCount > 0 && (
+                  <span title={`${m.attachmentCount} ${m.attachmentCount === 1 ? "attachment" : "attachments"}`} className="inline-flex">
+                    <Glyph name="clip" size={16} />
+                    <span className="sr-only">
+                      {m.attachmentCount} {m.attachmentCount === 1 ? "attachment" : "attachments"}
+                    </span>
+                  </span>
+                )}
+              </td>
+              <td className={cx(cell, "px-3 text-right whitespace-nowrap text-small text-ink-2 tabular-nums")}>
+                {trash && m.purgeAt ? (
+                  <time dateTime={m.purgeAt} title={`Deleted ${fullStamp(m.deletedAt ?? m.purgeAt)}; removed for good ${fullStamp(m.purgeAt)}`}>
+                    {m.held ? "Kept" : listDate(m.purgeAt)}
+                  </time>
+                ) : (
+                  <time dateTime={m.occurredAt} title={fullStamp(m.occurredAt)}>
+                    {listDate(m.occurredAt)}
+                  </time>
+                )}
+              </td>
+              <td className={cx(cell, "pr-3", last && "rounded-br-card")}>
+                <StarButton on={m.starred} onToggle={(next) => onStar(m, next)} reveal className="-my-1" />
               </td>
             </tr>
           );

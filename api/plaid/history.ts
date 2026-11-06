@@ -1,10 +1,3 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { canWrite, cronAuth, currentUser, fail, guard, handleError, sb } from "../../lib/auth.js";
-import { recordCronRun } from "../../lib/cron.js";
-import { fetchAll } from "../../lib/db-pages.js";
-import { getPlaidClient } from "../../lib/plaid.js";
-import { dayList, fetchCloses, isCashLike, pickMode, PLAID_HISTORY_DAYS, rebuild, type Closes, type HPoint, type HPosition, type HSecurity, type HTx, type Mode } from "../../lib/invest-history.js";
-
 /**
  * Rebuilds the Investments chart's past (lib/invest-history.ts) into
  * investment_history: today's holdings, walked back through up to 24 months
@@ -16,8 +9,21 @@ import { dayList, fetchCloses, isCashLike, pickMode, PLAID_HISTORY_DAYS, rebuild
  *
  * Accounts hidden in Treasury are left out, as on the page. A connection
  * that can't give holdings or transactions is skipped and named in `skipped`.
+ * Closing prices come from Yahoo Finance's public chart data
+ * (lib/invest-history.ts); the page names that source beside the chart.
+ * Every rebuild is written to the audit log (investments.rebuild) with who
+ * ran it, the method chosen and its error against recorded days.
+ * Who may call it: owners, admins and members (canWrite) for POST; the cron
+ * with Bearer CRON_SECRET for GET. Partners get 403 (PartnerRefused).
  * Env: PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV, SUPABASE_URL, SUPABASE_SERVICE_KEY, CRON_SECRET.
  */
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { canWrite, cronAuth, currentUser, fail, guard, handleError, sb } from "../../lib/auth.js";
+import { audit } from "../../lib/audit.js";
+import { recordCronRun } from "../../lib/cron.js";
+import { fetchAll } from "../../lib/db-pages.js";
+import { getPlaidClient } from "../../lib/plaid.js";
+import { dayList, fetchCloses, isCashLike, pickMode, PLAID_HISTORY_DAYS, rebuild, type Closes, type HPoint, type HPosition, type HSecurity, type HTx, type Mode } from "../../lib/invest-history.js";
 
 class IncompleteBuild extends Error {
   constructor(readonly skipped: string[]) {
@@ -40,6 +46,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (cronAuth(req) !== "ok") return fail(res, 401, "unauthorized");
       return recordCronRun("investment-history", async (run) => {
         const out = await build();
+        await audit({
+          actor: "cron",
+          action: "investments.rebuild",
+          summary: `Rebuilt the investments history: ${out.days} days from ${out.from ?? "—"} (${out.method})`,
+          count: out.days,
+          detail: { method: out.method, error: out.error, from: out.from, to: out.to, unpriced: out.unpriced },
+        });
         run.note(`${out.days} days from ${out.from ?? "—"} (${out.method}${out.error != null ? `, ${(out.error * 100).toFixed(2)}% off recorded days` : ""})`);
         if (out.skipped.length) run.failed(`skipped: ${out.skipped.join("; ")}`);
         return res.status(200).json(out);
@@ -47,8 +60,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const me = await currentUser(req);
     if (!me) return fail(res, 401, "unauthorized");
-    if (!canWrite(me)) return fail(res, 403, "forbidden");
-    return res.status(200).json(await build());
+    if (!canWrite(me)) return fail(res, 403, "forbidden", "Viewers can see Investments but not rebuild its history.");
+    const out = await build();
+    await audit({
+      actor: me,
+      action: "investments.rebuild",
+      summary: `Rebuilt the investments history: ${out.days} days from ${out.from ?? "—"} (${out.method})`,
+      count: out.days,
+      detail: { method: out.method, error: out.error, from: out.from, to: out.to, unpriced: out.unpriced },
+    });
+    return res.status(200).json({ ...out, built_by: me.name ?? null, built_at: new Date().toISOString() });
   } catch (err) {
     if (err instanceof PricesUnavailable) return fail(res, 502, "prices_unavailable", err.message);
     if (err instanceof IncompleteBuild) return fail(res, 502, "incomplete", err.message);

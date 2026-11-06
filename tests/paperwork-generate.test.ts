@@ -14,6 +14,7 @@ import {
   stateAddressStep,
   w9Data,
   W9_BOX,
+  W9_REVIEW,
   type Rec,
 } from "../app/paperwork-generate";
 import { sameAddressText, stateFindings } from "../app/palm";
@@ -34,13 +35,18 @@ describe("W-9", () => {
     expect(d).toMatchObject({ name: "Burton Partners, LLC", business: "Child, LLC", box: W9_BOX.llc, llcLetter: "P", tin: { kind: "ein", digits: "931234567" } });
     expect(d.street).toBe("11201 N Tatum Blvd Ste 300, PMB 44879");
     expect(d.cityStateZip).toBe("Phoenix, AZ 85028");
-    expect(d.notes).toEqual([]);
+    expect(d.blocked).toBeNull();
+    expect(d.notes[0]).toBe("Line 1 follows the owners: Child, LLC (disregarded) → Burton Partners, LLC (partnership).");
+    expect(d.notes.at(-1)).toBe(W9_REVIEW);
   });
 
-  it("through a grantor trust it's the grantor's, whose SSN BFO never has", () => {
+  it("through a grantor trust it's a grantor's, whose SSN BFO never has, and with two grantors someone chooses which", () => {
     const d = w9Data(assets.tallulah, lookup);
-    expect(d).toMatchObject({ name: "Robert Burton", business: "TallulahMD LLC", box: W9_BOX.individual, tin: null });
-    expect(d.notes[0]).toContain("SSN goes in Part I");
+    expect(d).toMatchObject({ name: "", business: "TallulahMD LLC", box: W9_BOX.individual, tin: null, grantorChoices: ["Robert Burton", "Jane Burton"] });
+    expect(d.notes.join(" ")).toContain("Choose one before it's filled in");
+    const chosen = w9Data(assets.tallulah, lookup, { grantor: "Jane Burton" });
+    expect(chosen.name).toBe("Jane Burton");
+    expect(chosen.notes.join(" ")).toContain("Jane Burton's SSN goes in Part I");
   });
 
   it("an entity that files its own return uses its own name and EIN", () => {
@@ -66,14 +72,14 @@ describe("W-9", () => {
 });
 
 describe("operating agreement", () => {
-  it("drafts a single-member agreement from the owner on record", () => {
+  it("drafts a single-member agreement from the owner on record, effective but not backdated", () => {
     const input = oaInput(assets.tallulah, lookup);
     expect(input).toMatchObject({ state: "DE", effective: "2026-10-20", managed: "members", taxClass: "Disregarded Entity", members: [{ name: "Ledger Louise, LLC", percent: 100, address: OFFICE }] });
     expect(oaProblems(input)).toEqual([]);
     const doc = operatingAgreement(input);
     expect(doc.title).toBe("Single-Member Operating Agreement");
     expect(doc.subtitle).toBe("of TallulahMD LLC, a Delaware limited liability company");
-    expect(doc.preamble).toContain("effective as of October 20, 2026 by Ledger Louise, LLC, as the sole member");
+    expect(doc.preamble).toContain("is entered into by Ledger Louise, LLC, as the sole member of the Company (the \"Member\") on the dates of their signatures below, and is effective as of October 20, 2026");
     const text = doc.sections.flatMap((s) => s.paragraphs).join(" ");
     expect(text).toContain("6 Del. C. § 18-101");
     expect(text).toContain("disregarded as an entity separate from its owner");
@@ -252,3 +258,59 @@ describe("operating agreement wording and execution page", () => {
     expect(single.signers[0]).toEqual({ name: "Solo", capacity: "Sole Member", share: undefined });
   });
 });
+
+// Made-up records for the tax-class rules.
+describe("W-9 and the agreement wait for the tax class", () => {
+  const recs: Record<string, Rec & { name: string }> = {
+    revocable: { name: "Rivera Family Revocable Trust", type: "Trust", grantors: "Alex Rivera" },
+    grantor: { name: "Rivera Grantor Trust", type: "Trust", llcType: "Grantor trust", grantors: "Alex Rivera" },
+    hold: { name: "Northwind Holdings, LLC", type: "LLC", llcType: "Disregarded Entity", ownerId: "revocable", address: OFFICE },
+    held: { name: "Alder Ridge, LLC", type: "LLC", llcType: "Disregarded Entity", ownerId: "grantor", address: OFFICE },
+    multi: {
+      name: "Harbor Point, LLC",
+      type: "LLC",
+      state: "Arizona",
+      llcType: "Disregarded Entity",
+      ownerId: "hold",
+      ein: "00-0000001",
+      address: OFFICE,
+      members: [
+        { name: "Northwind Holdings, LLC", percent: 65, role: "Member" },
+        { name: "Sam Lee", percent: 20, role: "Member" },
+        { name: "Pat Kim", percent: 15, role: "Member" },
+      ],
+    },
+  };
+  const find = (id: string) => recs[id];
+
+  it("refuses a W-9 for a multi-member LLC recorded as disregarded", async () => {
+    const d = w9Data(recs.multi, find);
+    expect(d.blocked).toMatch(/several owners/);
+    expect(d.name).toBe("");
+    await expect(fillW9(d, new ArrayBuffer(0))).rejects.toThrow(/Settle the tax classification/);
+  });
+
+  it("never uses a grantor's SSN on an assumed class, and follows a recorded grantor trust", () => {
+    const assumed = w9Data(recs.hold, find);
+    expect(assumed).toMatchObject({ name: "", blocked: null });
+    expect(assumed.notes.join(" ")).toContain("tax classification isn't on record");
+    const recorded = w9Data(recs.held, find);
+    expect(recorded).toMatchObject({ name: "Alex Rivera", business: "Alder Ridge, LLC", box: W9_BOX.individual });
+    expect(recorded.chain.map((c) => c.as)).toEqual(["disregarded", "grantor trust", "grantor"]);
+  });
+
+  it("won't draft the agreement while the class conflicts, and names the Arizona agency and agent", () => {
+    const input = oaInput(recs.multi, find);
+    expect(oaProblems(input).join(" ")).toMatch(/Settle its tax classification first/);
+    const ok = oaInput({ ...recs.multi, llcType: "Partnership", stateRecord: { mode: "live", checkedAt: 1, formationDate: "2023-09-11" } as never }, find);
+    expect(oaProblems(ok)).toEqual([]);
+    expect(ok).toMatchObject({ effective: "2023-09-11", effectiveFrom: "state" });
+    const doc = operatingAgreement(ok);
+    const text = doc.sections.flatMap((x) => x.paragraphs).join(" ");
+    expect(text).toContain("with the Arizona Corporation Commission");
+    expect(text).toContain("statutory agent in Arizona");
+    expect(doc.sections.map((x) => x.heading)).toContain("Offices and Statutory agent");
+    expect(text).toContain("partnership representative");
+  });
+});
+

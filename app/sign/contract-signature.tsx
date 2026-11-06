@@ -1,52 +1,41 @@
-import { useState } from "react";
-import { Link } from "react-router";
-import { blankTab, isOpen, PARTY_LABEL, signApi, when, type SignField, type SignatureRequest } from "./api";
-import { usePoll } from "./use-poll";
-import { PartyDot, Small, StatusChip } from "../routes/tools-signatures";
-
 /**
- * The contract page's signature card. Before a request exists: who signs for
- * each side, then one button that uploads the generated PDF, places the
- * fields on its signature block, and sends it. After: how far it has got,
- * with the same buttons Tools › Signatures has.
+ * The contract page's signature card. Before a request exists: who signs
+ * for each side, with their title and their own email, then one button that
+ * builds the agreement with those names printed, confirms what's going out,
+ * uploads it, places the fields on its signature block, and sends it.
+ * After: how far it has got, with the same actions Signatures has.
+ *
+ * The Manager's signer comes from the entity's record (its managers,
+ * officers or acting trustees), never from whoever is signed in, and the
+ * signing link never goes to the sender's own address for someone else:
+ * the link is what proves who signed.
  */
 
-/** Where the generated contract's signature block sits (jsPDF points, y from the top). */
-export type SigGeometry = {
-  page: number;
-  pw: number;
-  ph: number;
-  left: { x: number; line: number; date: number };
-  right: { x: number; line: number; date: number };
-  colW: number;
+import { useState } from "react";
+import { Banner, Button, Card, CardSection, Field, Input, Select, Status, TextLink, confirm, format, toast } from "../ui";
+import { contractFields, type SigGeometry } from "../entity/msa-document";
+import { isOpen, PARTY_LABEL, signApi, STATUS_LABEL, type SignatureRequest } from "./api";
+import { usePoll } from "./use-poll";
+
+export type { SigGeometry } from "../entity/msa-document";
+
+/** Someone the record says may sign for the entity, with the email on their BFO account when one matches. */
+export type RecordSigner = { name: string; title: string; email: string | null; source?: string };
+export type SignerPair = { manager: { name: string; title: string }; client: { name: string; title: string } };
+
+const emailLike = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+const same = (a?: string | null, b?: string | null) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const REQUEST_TONE: Record<SignatureRequest["status"], "neutral" | "info" | "positive" | "warning" | "negative"> = {
+  draft: "neutral",
+  sent: "info",
+  partial: "info",
+  completed: "positive",
+  declined: "negative",
+  voided: "neutral",
 };
 
-/** The fields a contract's signature block needs, from where the generator drew it. */
-function contractFields(g: SigGeometry): SignField[] {
-  const f = (party: "a" | "b", type: SignField["type"], x: number, yTop: number, w: number, h: number, id: string): SignField => ({
-    id,
-    party,
-    type,
-    page: g.page,
-    x: x / g.pw,
-    y: yTop / g.ph,
-    w: w / g.pw,
-    h: h / g.ph,
-  });
-  const sigH = 40;
-  const lineW = g.colW - 20;
-  return [
-    f("a", "signature", g.left.x, g.left.line - sigH + 2, lineW, sigH, "a-sig"),
-    f("b", "signature", g.right.x, g.right.line - sigH + 2, lineW, sigH, "b-sig"),
-    f("a", "date", g.left.x + 34, g.left.date - 11, lineW - 34, 13, "a-date"),
-    f("b", "date", g.right.x + 34, g.right.date - 11, lineW - 34, 13, "b-date"),
-    // The client's name line is blank in the contract; their typed name fills it.
-    f("b", "name", g.right.x + 34, g.right.date - 32 - 11, lineW - 34, 13, "b-name"),
-  ];
-}
-
 export function ContractSignature({
-  isDark,
   request,
   open,
   onClose,
@@ -54,13 +43,16 @@ export function ContractSignature({
   title,
   assetId,
   contractId,
-  manager,
+  managerEntity,
   client,
-  pdf,
-  geometry,
+  signers,
+  me,
+  build,
   brand,
+  blockers,
+  note,
+  onSent,
 }: {
-  isDark: boolean;
   request: SignatureRequest | null;
   open: boolean;
   onClose: () => void;
@@ -68,23 +60,32 @@ export function ContractSignature({
   title: string;
   assetId: string;
   contractId: string;
-  manager: { name: string; email: string; entity: string };
+  /** The Manager's legal name. */
+  managerEntity: string;
   client: { name: string };
-  pdf: () => Blob | null;
-  geometry: () => SigGeometry | null;
-  /** Send under this name and never BFO's (the contract's "Entity name only"). */
+  /** Who may sign for the Manager, from the record. */
+  signers: RecordSigner[];
+  /** The person sending: their name and email. */
+  me: { name: string | null; email: string | null };
+  /** The agreement as it will go out, with these signers' names and titles printed. */
+  build: (s: SignerPair) => Promise<{ blob: Blob; pages: number; geometry: SigGeometry }>;
+  /** Send under this name, never BFO's (an agreement headed with the entity's legal name). */
   brand?: string | null;
+  /** What has to be fixed before it can go out. */
+  blockers: string[];
+  /** A line about what signing now means (fees already accrued). */
+  note?: string | null;
+  onSent: (r: SignatureRequest) => void;
 }) {
-  const [a, setA] = useState({ name: manager.name, email: manager.email });
-  const [b, setB] = useState({ name: client.name, email: "" });
+  const first = signers[0] ?? null;
+  const [pick, setPick] = useState<string | null>(first?.name ?? null);
+  const chosen = signers.find((s) => s.name === pick) ?? null;
+  const [aTitle, setATitle] = useState(first?.title ?? "");
+  const [aEmail, setAEmail] = useState(first?.email ?? "");
+  const [b, setB] = useState({ name: "", title: "", email: "" });
+  const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [note, setNote] = useState("");
-
-  const box = `mb-4 rounded-lg border p-4 ${isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`;
-  const label = `text-xs block mb-1 ${isDark ? "text-gray-400" : "text-gray-500"}`;
-  const input = `w-full px-3 py-2 text-sm max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg border ${isDark ? "bg-white/5 border-white/10 text-white focus:border-white/30" : "bg-white border-gray-200 text-gray-900 focus:border-gray-400"} focus:outline-none`;
-  const t2 = isDark ? "text-gray-400" : "text-gray-500";
 
   // Progress arrives as the other side signs.
   usePoll(
@@ -95,16 +96,46 @@ export function ContractSignature({
     isOpen(request?.status),
   );
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
-    const blob = pdf();
-    const g = geometry();
-    if (!blob || !g) {
-      setError("The PDF isn't ready yet. Give it a second.");
+  const ownAddressForSomeoneElse = !!chosen && same(aEmail, me.email) && !same(chosen.name, me.name);
+  const errs = {
+    aName: tried && !chosen ? "Choose who signs for the Manager." : undefined,
+    aTitle: tried && !aTitle.trim() ? "Add their title." : undefined,
+    aEmail:
+      tried && !emailLike(aEmail)
+        ? `Add ${chosen?.name ?? "their"}’s email.`
+        : ownAddressForSomeoneElse
+          ? `That’s your own address. Use ${chosen?.name}’s: the link they sign with is what shows who signed.`
+          : undefined,
+    bName: tried && !b.name.trim() ? "Add the full name of the person signing for the client." : undefined,
+    bTitle: tried && !b.title.trim() ? "Add their title: it shows their authority to sign." : undefined,
+    bEmail: tried && !emailLike(b.email) ? "Add their email." : same(b.email, aEmail) && b.email ? "Each signer needs their own email." : undefined,
+  };
+
+  async function send() {
+    setTried(true);
+    setError("");
+    if (blockers.length || !chosen || Object.values(errs).some(Boolean) || !aTitle.trim() || !emailLike(aEmail) || !b.name.trim() || !b.title.trim() || !emailLike(b.email)) return;
+    const pair: SignerPair = { manager: { name: chosen.name, title: aTitle.trim() }, client: { name: b.name.trim(), title: b.title.trim() } };
+    setBusy("build");
+    let doc: Awaited<ReturnType<typeof build>>;
+    try {
+      doc = await build(pair);
+    } catch {
+      setBusy("");
+      setError("The agreement couldn’t be drawn. Reload the page and try again.");
       return;
     }
+    setBusy("");
+    const ok = await confirm({
+      title: "Send the agreement for signature?",
+      object: { name: title, detail: `${doc.pages} ${doc.pages === 1 ? "page" : "pages"}` },
+      details: [`For ${managerEntity}: ${pair.manager.name}, ${pair.manager.title} · ${aEmail.trim()}`, `For ${client.name}: ${pair.client.name}, ${pair.client.title} · ${b.email.trim()}`],
+      message: "Each signer gets an email with a private link. Their signature and the date go on the last page; the signed copy goes to both.",
+      confirmLabel: "Send for signature",
+      tone: "commit",
+    });
+    if (!ok) return;
     setBusy("send");
-    setError("");
     try {
       const created = await signApi.act("create", {
         title,
@@ -112,40 +143,43 @@ export function ContractSignature({
         contractId,
         brand: brand || undefined,
         parties: [
-          { role: "Manager", name: a.name.trim(), email: a.email.trim() },
-          { role: "Client", name: b.name.trim(), email: b.email.trim() },
+          { role: "Manager", name: pair.manager.name, email: aEmail.trim() },
+          { role: "Client", name: pair.client.name, email: b.email.trim() },
         ],
       });
-      await signApi.attach(created.id, blob);
-      await signApi.act("update", { id: created.id, fields: contractFields(g) });
+      await signApi.attach(created.id, doc.blob);
+      await signApi.act("update", { id: created.id, fields: contractFields(doc.geometry) });
       const sent = await signApi.act("send", { id: created.id });
       onChange(sent);
+      onSent(sent);
+      toast({ message: `Sent to ${pair.manager.name} and ${pair.client.name}` });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't send it.");
+      setError(err instanceof Error && err.message ? err.message : "Couldn’t send it. Check your connection and try again.");
     } finally {
       setBusy("");
     }
   }
 
-  async function act(action: "remind" | "send-copy" | "download" | "void") {
+  async function act(action: "remind" | "send-copy" | "download") {
     if (!request) return;
-    // The tab opens inside the click, before the link is awaited.
-    const tab = action === "download" ? blankTab() : null;
+    const tab = action === "download" ? window.open("", "_blank") : null;
+    if (tab) tab.opener = null;
     setBusy(action);
     setError("");
-    setNote("");
     try {
-      if (tab) {
-        tab.go(await signApi.download(request.id));
+      if (action === "download") {
+        const url = await signApi.download(request.id);
+        if (tab) tab.location.href = url;
+        else window.open(url, "_blank", "noopener");
         return;
       }
       const next = await signApi.act(action, { id: request.id });
       onChange(next);
-      setNote(action === "remind" ? "Reminder sent." : action === "send-copy" ? `Signed copy sent to ${next.parties.map((p) => p.email).join(" and ")}.` : "Voided.");
+      toast({ message: action === "remind" ? "Reminder sent" : `Signed copy sent to ${next.parties.map((p) => p.email).join(" and ")}` });
     } catch (err) {
       tab?.close();
-      setError(err instanceof Error ? err.message : "That didn't work.");
+      setError(err instanceof Error && err.message ? err.message : "That didn’t work. Try again.");
     } finally {
       setBusy("");
     }
@@ -154,94 +188,117 @@ export function ContractSignature({
   if (!request) {
     if (!open) return null;
     return (
-      <form onSubmit={send} className={box}>
-        <h3 className="text-sm font-semibold">Send for signature</h3>
-        <p className={`mt-0.5 text-xs ${t2}`}>Each signer gets an email with a private link. Their signature and the date land on the agreement's signature block.</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t2}`}>Manager · {manager.entity}</p>
-            <label className="block">
-              <span className={label}>Signer</span>
-              <input value={a.name} onChange={(e) => setA({ ...a, name: e.target.value })} required className={input} placeholder="Full name" />
-            </label>
-            <label className="block">
-              <span className={label}>Email</span>
-              <input type="email" value={a.email} onChange={(e) => setA({ ...a, email: e.target.value })} required className={input} placeholder="signer@email.com" />
-            </label>
+      <Card title="Send for signature">
+        <form
+          noValidate
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
+        >
+          <p className="text-small text-ink-2">Each signer gets an email with a private link. Their names and titles are printed on the agreement.</p>
+          {blockers.length > 0 && <Banner tone="warning">Before it can go out, the record needs {blockers.join(", ")}.</Banner>}
+          {note && <Banner tone="info">{note}</Banner>}
+          <CardSection title={`For ${managerEntity}`}>
+            <div className="flex flex-col gap-4">
+              {signers.length === 0 ? (
+                <Banner tone="warning">No one on record can sign for {managerEntity}. Add its managers on the Owners tab first.</Banner>
+              ) : (
+                <Field label="Signer" error={errs.aName} hint={chosen?.source ? `From ${chosen.source.charAt(0).toLowerCase()}${chosen.source.slice(1)}.` : undefined}>
+                  <Select
+                    label="Signer"
+                    value={pick}
+                    onChange={(v) => {
+                      setPick(v);
+                      const s = signers.find((x) => x.name === v);
+                      setATitle(s?.title ?? "");
+                      setAEmail(s?.email ?? "");
+                    }}
+                    options={signers.map((s) => ({ value: s.name, label: s.name, hint: s.title }))}
+                  />
+                </Field>
+              )}
+              <Field label="Title" error={errs.aTitle}>
+                <Input value={aTitle} onChange={(e) => setATitle(e.target.value)} />
+              </Field>
+              <Field label="Email" error={errs.aEmail} hint={chosen && !chosen.email ? `No BFO account matches ${chosen.name} exactly; type their own address.` : undefined}>
+                <Input type="email" value={aEmail} onChange={(e) => setAEmail(e.target.value)} placeholder="name@example.com" autoComplete="off" />
+              </Field>
+            </div>
+          </CardSection>
+          <CardSection title={`For ${client.name}`}>
+            <div className="flex flex-col gap-4">
+              <Field label="Signer" error={errs.bName}>
+                <Input value={b.name} onChange={(e) => setB({ ...b, name: e.target.value })} placeholder="Full name of the person signing" autoComplete="off" />
+              </Field>
+              <Field label="Title" error={errs.bTitle}>
+                <Input value={b.title} onChange={(e) => setB({ ...b, title: e.target.value })} placeholder="Managing partner" autoComplete="off" />
+              </Field>
+              <Field label="Email" error={errs.bEmail}>
+                <Input type="email" value={b.email} onChange={(e) => setB({ ...b, email: e.target.value })} placeholder="name@example.com" autoComplete="off" />
+              </Field>
+            </div>
+          </CardSection>
+          {error && <Banner tone="negative">{error}</Banner>}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={onClose} disabled={!!busy}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              busy={!!busy}
+              busyLabel={busy === "build" ? "Preparing…" : "Sending…"}
+              disabled={blockers.length > 0 || signers.length === 0}
+              disabledReason={blockers.length ? "The record is missing something (above)" : signers.length === 0 ? "No signer on record" : undefined}
+            >
+              Review and send
+            </Button>
           </div>
-          <div className="space-y-2">
-            <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t2}`}>Client · {client.name}</p>
-            <label className="block">
-              <span className={label}>Signer</span>
-              <input value={b.name} onChange={(e) => setB({ ...b, name: e.target.value })} required className={input} placeholder="Full name" />
-            </label>
-            <label className="block">
-              <span className={label}>Email</span>
-              <input type="email" value={b.email} onChange={(e) => setB({ ...b, email: e.target.value })} required className={input} placeholder="signer@email.com" />
-            </label>
-          </div>
-        </div>
-        {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
-        <div className="mt-4 flex items-center gap-2">
-          <button
-            type="submit"
-            disabled={!!busy}
-            className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg text-sm disabled:opacity-50 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}
-          >
-            {busy ? "Sending…" : "Send to both parties"}
-          </button>
-          <button type="button" onClick={onClose} className={`px-3 py-2 max-sm:min-h-[40px] text-sm ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}>
-            Cancel
-          </button>
-        </div>
-      </form>
+        </form>
+      </Card>
     );
   }
 
   return (
-    <div className={box}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
-          Signatures <StatusChip status={request.status} isDark={isDark} />
-        </h3>
-        <div className="flex flex-wrap gap-1.5">
-          {(request.status === "sent" || request.status === "partial") && (
-            <Small isDark={isDark} disabled={!!busy} onClick={() => act("remind")}>
-              Remind
-            </Small>
-          )}
-          {request.status === "completed" && (
-            <>
-              <Small isDark={isDark} primary disabled={!!busy} onClick={() => act("send-copy")}>
-                Send to both parties
-              </Small>
-              <Small isDark={isDark} disabled={!!busy} onClick={() => act("download")}>
-                Download signed copy
-              </Small>
-            </>
-          )}
-          <Link
-            to={`/tools/signatures/${request.id}`}
-            className={`inline-flex h-7 items-center rounded-lg px-2.5 text-[12px] font-medium ${isDark ? "bg-white/[0.06] text-gray-200 hover:bg-white/10" : "bg-black/[0.04] text-gray-700 hover:bg-black/[0.08]"}`}
-          >
-            Open in Tools
-          </Link>
-        </div>
+    <Card
+      title="Signatures"
+      action={<TextLink to={`/tools/signatures/${request.id}`}>Open in Signatures</TextLink>}
+      footer={
+        request.status === "sent" || request.status === "partial" ? (
+          <Button size="sm" busy={busy === "remind"} busyLabel="Sending…" onClick={() => void act("remind")}>
+            Remind
+          </Button>
+        ) : request.status === "completed" ? (
+          <>
+            <Button size="sm" busy={busy === "send-copy"} busyLabel="Sending…" onClick={() => void act("send-copy")}>
+              Send the copy again
+            </Button>
+            <Button size="sm" variant="primary" busy={busy === "download"} busyLabel="Opening…" onClick={() => void act("download")}>
+              Download signed copy
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <Status tone={REQUEST_TONE[request.status]}>{STATUS_LABEL[request.status]}</Status>
+        <ul className="flex flex-col gap-2">
+          {request.parties.map((p) => (
+            <li key={p.key} className="flex flex-col">
+              <span className="text-body text-ink">
+                {p.name} <span className="text-ink-2">· {p.role}</span>
+              </span>
+              <span className="text-small text-ink-2">
+                {PARTY_LABEL[p.status]}
+                {p.signedAt ? ` ${format.dateTime(p.signedAt)}` : p.viewedAt ? ` ${format.dateTime(p.viewedAt)}` : ""} · {p.email}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {error && <Banner tone="negative">{error}</Banner>}
       </div>
-      <ul className="mt-3 space-y-1.5 text-sm">
-        {request.parties.map((p) => (
-          <li key={p.key} className="flex flex-wrap items-center gap-2">
-            <PartyDot status={p.status} />
-            <span className="font-medium">{p.name}</span>
-            <span className={`text-xs ${t2}`}>{p.role}</span>
-            <span className={`text-xs ${t2}`}>
-              · {PARTY_LABEL[p.status]}
-              {p.signedAt ? ` ${when(p.signedAt)}` : p.viewedAt ? ` ${when(p.viewedAt)}` : ""}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {(error || note) && <p className={`mt-2 text-xs ${error ? "text-red-400" : isDark ? "text-emerald-300" : "text-emerald-700"}`}>{error || note}</p>}
-    </div>
+    </Card>
   );
 }

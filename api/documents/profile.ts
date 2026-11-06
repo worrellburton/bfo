@@ -4,12 +4,18 @@ import { canWrite, currentUser, handleError, type AppUser } from "../../lib/auth
 import { fetchDocument } from "../../lib/fetch-document.js";
 
 /**
- * What an entity IS, read from its own governing documents: the operating
- * agreement (or bylaws, partnership or trust agreement) first, then its
- * formation filing and anything else on file. Returns a structured profile —
- * purpose, what it owns, who runs it, who owns it and how much, how it's
- * taxed, the terms that matter — for the entity page to show and keep.
- * Read-only: nothing is written here.
+ * What an entity IS, read from its own governing documents by Anthropic's
+ * Claude: the operating agreement (or bylaws, partnership or trust
+ * agreement) first, then its formation filing and anything else on file.
+ * Returns a structured profile — purpose, what it owns, who runs it, who owns
+ * it and how much, how it's taxed, the terms that matter — for the entity
+ * page to show as a labelled AI summary. Read-only: nothing is written here,
+ * and the page proposes the owners it lists rather than recording them.
+ *
+ * POST { entity: { name, type, state }, documents: [{ name, url, contentType, filedAs }] } → the profile
+ * Who may call it: owners, admins and members (canWrite); a partner gets 403.
+ * Runs only when someone asks (the About card's Read button).
+ * Env: ANTHROPIC_API_KEY; SUPABASE_URL and SUPABASE_SERVICE_KEY to fetch the files.
  */
 
 const MODEL = "claude-sonnet-5-5";
@@ -65,8 +71,10 @@ const SYSTEM = [
   "Read the governing document first — LLC operating agreement, corporate bylaws, partnership agreement or trust agreement — then the formation filing and the rest.",
   "When several versions exist (an original and a 2023 restatement), the latest signed one governs; earlier ones are history.",
   "whatItIs: two or three plain sentences — what the entity is for, what it owns or operates, and where it sits in the family structure (who owns it, what it owns).",
-  "purpose: the purpose clause, condensed. properties: real estate or businesses it owns or owned, with the state and 'owned' or 'sold YYYY-MM-DD' when stated.",
+  "purpose: the purpose clause, condensed. properties: real estate or businesses it owns or owned, with the state and 'owned' or 'sold Aug 11, 2023' when stated.",
   "management: how it is run. managers: the managers / directors / trustees / general partners named now.",
+  "Use the document's own words for who runs it: write 'managers' only when it says managers, and 'managing members' only when it says that. If the management clause and the signature blocks or schedules disagree (manager-managed, but signed by 'Managing Members'), say what each says and put the disagreement in issues; never smooth it over.",
+  "Write every date as 'Aug 11, 2023' (month abbreviated, no leading zero), never 08/11/2023 or 2023-08-11.",
   "members: the CURRENT owners and percentages (the member schedule of the latest agreement, as amended by later assignments on file); since = the date they were admitted, when stated.",
   "taxTreatment: the federal classification the documents support, applying the IRS defaults —",
   "an LLC with one member is a Disregarded Entity, two or more a Partnership, unless an election (8832 / 2553) says otherwise. Template 'partnership' language in a single-member LLC's agreement does not make it a partnership; say so in taxEvidence.",

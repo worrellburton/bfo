@@ -91,8 +91,8 @@ describe("/api/auth/request-code", () => {
     const ipCount = calls.find((c) => c.method === "COUNT" && c.path.includes("ip=eq."))!;
     expect(ipCount.path).toContain("ip=eq.203.0.113.9");
     expect(ipCount.path).toContain("&created_at=lt.2026-10-23T12:00:00.123456+00:00");
-    // The count runs before the account lookup, so a refusal says nothing about who has an account.
-    expect(calls.indexOf(ipCount)).toBeLessThan(calls.findIndex((c) => c.method === "GET" && c.path.startsWith("app_users")));
+    // There is no account lookup at all, so no answer says anything about who has an account.
+    expect(calls.some((c) => c.path.startsWith("app_users"))).toBe(false);
 
     calls.length = 0;
     verifyStart.mockClear();

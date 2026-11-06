@@ -35,8 +35,9 @@ describe("effType", () => {
 
 describe("eliminated", () => {
   const entityOf = (id: string) => (({ "acct-a": "E1", "acct-b": "E2" }) as Record<string, string>)[id];
-  it("all entities: every intercompany row vanishes", () => {
-    expect(eliminated(txn({ counterparty_account_id: null }), null, entityOf)).toBe(true);
+  it("all entities: a leg vanishes only when its other side is in Books", () => {
+    expect(eliminated(txn({ counterparty_account_id: "acct-b" }), null, entityOf)).toBe(true);
+    expect(eliminated(txn({ counterparty_account_id: null }), null, entityOf)).toBe(false);
   });
   it("partial selection: only when the other leg's entity is selected too", () => {
     expect(eliminated(txn({ counterparty_account_id: "acct-b" }), ["E1", "E2"], entityOf)).toBe(true);
@@ -69,8 +70,8 @@ describe("flowSummary", () => {
       txn({ transaction_id: "4", date: "2026-09-05", amount: 100 }),
     ];
     const f = flowSummary(rows, now, () => "Ledger Louise, LLC");
-    expect(f.current).toEqual({ in: 1000, out: 250, net: 750 });
-    expect(f.prior).toEqual({ in: 400, out: 100, net: 300 });
+    expect(f.current).toMatchObject({ in: 1000, out: 250, net: 750 });
+    expect(f.prior).toMatchObject({ in: 400, out: 100, net: 300 });
     expect(f.recentIn[0]).toMatchObject({ id: "1", who: "Tenant", amount: 1000, entity: "Ledger Louise, LLC", account: "Rent income" });
     expect(f.recentOut[0]).toMatchObject({ id: "2", who: "Keyt Law", amount: 250, account: "Legal & professional" });
     expect(f.countIn).toBe(1);

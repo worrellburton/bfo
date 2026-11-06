@@ -1,6 +1,8 @@
 // The browser's side of /api/sign (api/sign.ts): types the office pages and
-// the contract page share, and the calls they make.
+// the contract page share, the calls they make, and the words for statuses
+// and modes (one list, so every screen names them the same).
 import { authFetch } from "../auth";
+import { date as formatDate, dateTime } from "../ui/format";
 
 export type PartyKey = "a" | "b";
 export type FieldType = "signature" | "initials" | "name" | "date" | "address";
@@ -15,19 +17,35 @@ export type SignField = { id: string; party: PartyKey; type: FieldType; page: nu
 export type Party = {
   key: PartyKey;
   role: string;
+  /** The person who signs. */
   name: string;
   email: string;
+  /** The company they sign for, and their title there ("Manager"). */
+  entity?: string;
+  title?: string;
   status: PartyStatus;
   sentAt?: string;
+  expiresAt?: string;
   viewedAt?: string;
+  viewIp?: string;
+  viewDevice?: string;
   signedAt?: string;
+  ip?: string;
+  device?: string;
+  method?: "drawn" | "typed";
+  via?: "page" | "game";
+  timeZone?: string;
   declinedAt?: string;
   declinedReason?: string;
+  declineIp?: string;
+  declineDevice?: string;
   signedAs?: string;
   /** The address they typed when signing, when the document had an address box for them. */
   address?: string;
+  /** Their agreement to use electronic records and signatures. */
+  consent?: { version: string; at: string; ip?: string; device?: string };
 };
-export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; note?: string };
+export type SignEvent = { at: string; kind: string; party?: PartyKey; by?: string; byName?: string; note?: string; ip?: string; device?: string };
 
 export type SignatureRequest = {
   id: string;
@@ -53,6 +71,36 @@ export type SignatureRequest = {
   brand: string | null;
   /** The plain page or the game; rows from before the column come back without it. */
   mode?: SignMode;
+  /** Fingerprints: the original as sent, the signed pages (on the certificate), the signed copy as filed and sent. */
+  original_sha256?: string | null;
+  executed_sha256?: string | null;
+  signed_sha256?: string | null;
+  archived_at?: string | null;
+  archived_by_name?: string | null;
+  archived_reason?: string | null;
+  /** The request this was sent again from, and the one that replaced it. */
+  replaces?: string | null;
+  replaced_by?: string | null;
+  /** Where the signed copy was filed with the entity's documents. */
+  filed_path?: string | null;
+};
+
+/** Another request for the same document and entity: a version. */
+export type RelatedRequest = { id: string; status: RequestStatus; created_at: string; sent_at: string | null; completed_at: string | null; archived: boolean };
+
+/** What the request's page gets with the request. */
+export type RequestPage = {
+  request: SignatureRequest;
+  pdfKey: string | null;
+  pdfUrl: string | null;
+  gameAllowed?: boolean;
+  gameEntity?: boolean;
+  entityName?: string | null;
+  /** The role of each party that already has a BFO account. */
+  accounts?: Partial<Record<PartyKey, string>>;
+  /** Names for the history's actors, by id. */
+  people?: Record<string, string>;
+  related?: RelatedRequest[];
 };
 
 class SignError extends Error {
@@ -71,15 +119,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const signApi = {
-  list: () => call<{ requests: SignatureRequest[] }>("/api/sign").then((r) => r.requests),
-  /** With `have`, the key of the PDF already on screen: pdfUrl comes back null unless there's a newer one. */
-  /** One request; gameAllowed says whether this draft may go out as the game (only TallulahMD LLC's). */
-  get: (id: string, have?: string | null) =>
-    call<{ request: SignatureRequest; pdfKey: string | null; pdfUrl: string | null; gameAllowed?: boolean; gameEntity?: boolean }>(
-      `/api/sign?id=${encodeURIComponent(id)}${have ? `&have=${encodeURIComponent(have)}` : ""}`,
-    ),
+  /** Every request that isn't archived (or only the archived ones), and the names of their entities. */
+  list: (archived = false) =>
+    call<{ requests: SignatureRequest[]; entityNames?: Record<string, string> }>(`/api/sign${archived ? "?archived=1" : ""}`).then((r) => ({ requests: r.requests, entityNames: r.entityNames ?? {} })),
+  /** One request. With `have`, the key of the PDF already on screen: pdfUrl comes back null unless there's a newer one. gameAllowed: this draft may go out as the game (only TallulahMD LLC's). */
+  get: (id: string, have?: string | null) => call<RequestPage>(`/api/sign?id=${encodeURIComponent(id)}${have ? `&have=${encodeURIComponent(have)}` : ""}`),
   act: (action: string, body: Record<string, unknown>) => call<{ request: SignatureRequest }>("/api/sign", { method: "POST", body: JSON.stringify({ action, ...body }) }).then((r) => r.request),
   download: (id: string) => call<{ url: string }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "download", id }) }).then((r) => r.url),
+  /** Deletes a draft that never went out (the server refuses anything else). */
   remove: (id: string) => call<{ ok: true }>("/api/sign", { method: "POST", body: JSON.stringify({ action: "delete", id }) }),
   /** Makes a PDF already in an entity's documents the request's document (the server copies it). */
   attachStored: (id: string, path: string) => signApi.act("attach-stored", { id, path }),
@@ -133,7 +180,14 @@ export const PARTY_LABEL: Record<PartyStatus, string> = {
 
 export const FIELD_LABEL: Record<FieldType, string> = { signature: "Signature", initials: "Initials", name: "Name", date: "Date", address: "Address" };
 
-export const MODE_LABEL: Record<SignMode, string> = { normal: "Normal e-signature", game: "Anything Is Possible game", race: "Racetrack game" };
+/** The ways a request can be signed, in the order they're offered: the plain page first, the default. */
+export const MODES: Array<{ mode: SignMode; label: string; blurb: string }> = [
+  { mode: "normal", label: "Normal e-signature", blurb: "They open the link, read the document and sign." },
+  { mode: "game", label: "Anything Is Possible film", blurb: "On a computer a short film plays first, then the signing page. A phone signs straight away." },
+  { mode: "race", label: "Racetrack game", blurb: "On a computer a two-lap race comes first, then the signing page. A phone signs straight away." },
+];
+
+export const MODE_LABEL: Record<SignMode, string> = { normal: MODES[0].label, game: MODES[1].label, race: MODES[2].label };
 
 /** A fresh field of a type for a party, sized for the type. */
 export function newField(party: PartyKey, type: FieldType, page: number, at?: { x: number; y: number }): SignField {
@@ -143,4 +197,62 @@ export function newField(party: PartyKey, type: FieldType, page: number, at?: { 
   return { id: Math.random().toString(36).slice(2, 10), party, type, page, x, y, ...size };
 }
 
-export const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
+/** The office keeps Arizona time, as the certificate does. */
+export const OFFICE_ZONE = "America/Phoenix";
+
+/** "Nov 5, 2026" in Arizona time (lists, headers); "" for nothing. */
+export const when = (iso?: string | null) => (iso ? formatDate(iso, "medium", { timeZone: OFFICE_ZONE }) : "");
+
+/** "Nov 5" this year, "Nov 5, 2025" otherwise, in Arizona time (rows). */
+export const whenShort = (iso?: string | null) => (iso ? formatDate(iso, "short", { timeZone: OFFICE_ZONE }) : "");
+
+/** An audit stamp: "Nov 5, 2026, 6:58 AM MST". */
+export const stamp = (iso?: string | null) => (iso ? dateTime(iso, { zone: true, timeZone: OFFICE_ZONE }) : "");
+
+/** "Northwind Holdings, LLC, by Alex Rivera, Manager", or the person's name. */
+export function capacity(p: Pick<Party, "name" | "entity" | "title" | "role">): string {
+  if (!p.entity) return p.name || p.role;
+  return `${p.entity}, by ${p.name || "its signer"}${p.title ? `, ${p.title}` : ""}`;
+}
+
+/** The first characters of a fingerprint, grouped to read aloud: "3f9a 41c2 7be0". */
+export const shortSha = (sha?: string | null) => (sha ? (sha.slice(0, 12).match(/.{1,4}/g) ?? []).join(" ") : "");
+
+/** A user agent as a few words: "Safari on iPhone". */
+export function deviceWords(ua?: string): string {
+  if (!ua) return "";
+  const os = /iPhone/.test(ua)
+    ? "iPhone"
+    : /iPad/.test(ua)
+      ? "iPad"
+      : /Android/.test(ua)
+        ? "Android"
+        : /Mac OS X|Macintosh/.test(ua)
+          ? "Mac"
+          : /Windows/.test(ua)
+            ? "Windows"
+            : /CrOS/.test(ua)
+              ? "ChromeOS"
+              : /Linux/.test(ua)
+                ? "Linux"
+                : "";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /Firefox\/|FxiOS/.test(ua) ? "Firefox" : /CriOS|Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "";
+  return browser && os ? `${browser} on ${os}` : browser || os || "a browser";
+}
+
+/** A name that reads as a company, trust or other organisation (the same test the server's Send uses). */
+export function looksLikeEntity(name: string): boolean {
+  return (
+    /\b(l\.?l\.?c|l\.?l\.?p|l\.?p|inc|incorporated|corp|corporation|company|co|ltd|limited|trust|foundation|partners(hip)?|holdings|pllc|pc|p\.c)\b\.?,?\s*$/i.test(name.trim()) ||
+    /,\s*(llc|inc|lp|ltd)\b/i.test(name)
+  );
+}
+
+/** Every open request whose document and entity have a later, completed version: still live, though superseded. */
+export function supersededBy(r: SignatureRequest, all: SignatureRequest[]): SignatureRequest | null {
+  if (!isOpen(r.status)) return null;
+  const later = all
+    .filter((o) => o.id !== r.id && o.status === "completed" && o.title === r.title && (o.asset_id ?? null) === (r.asset_id ?? null) && o.created_at > r.created_at)
+    .sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""));
+  return later[0] ?? null;
+}

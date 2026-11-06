@@ -231,3 +231,27 @@ export function businessDifferences(
   add("Address", palmAddress, e.address, sameAddressText);
   return out;
 }
+
+/**
+ * What a new Palm business is created with: the state's formation date and
+ * principal address where a live read of the state's record (in the same
+ * state) has them, else ours. Palm can't change these once the business is
+ * added, and the state's are the ones its filings must match. Our record is
+ * left as it is; its differences show on the Compliance tab.
+ */
+export function linkFacts(
+  e: { formationDate?: string; address?: string; jurisdiction?: string },
+  rec: { mode?: string; formationDate?: string; address?: string | null; jurisdiction?: string | null } | null | undefined,
+): { formationDate?: string; address?: string; from: { formationDate: "state" | "record" | null; address: "state" | "record" | null } } {
+  const usable = !!rec && rec.mode === "live" && (!rec.jurisdiction || !e.jurisdiction || rec.jurisdiction === e.jurisdiction);
+  const stateDate = usable && rec!.formationDate && /^\d{4}-\d{2}-\d{2}/.test(rec!.formationDate) ? rec!.formationDate.slice(0, 10) : undefined;
+  const ourDate = e.formationDate && /^\d{4}-\d{2}-\d{2}$/.test(e.formationDate) ? e.formationDate : undefined;
+  const stateAddress = usable && rec!.address?.trim() ? rec!.address.trim() : undefined;
+  const ourAddress = e.address?.trim() || undefined;
+  return {
+    formationDate: stateDate ?? ourDate,
+    address: stateAddress ?? ourAddress,
+    from: { formationDate: stateDate ? "state" : ourDate ? "record" : null, address: stateAddress ? "state" : ourAddress ? "record" : null },
+  };
+}
+

@@ -1,7 +1,23 @@
+/**
+ * Finish connecting a bank: trade Plaid Link's public token for an access
+ * token, store the connection (plaid_items), and hand each account the
+ * mapping its earlier incarnation carried (lib/plaid-mappings.ts).
+ *
+ * POST { public_token, institution_name, institution_id, kind } → { success, item_id, adopted_mappings }
+ *
+ * Who may call it: owners and admins (isAdmin): connecting a bank shares its
+ * data with BFO and Plaid. Partners get 403 (PartnerRefused).
+ * Env: PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV; SUPABASE_URL,
+ * SUPABASE_SERVICE_KEY. The access token is stored server-side only and never
+ * logged or returned.
+ *
+ * Each connection is written to the audit log (treasury.connect).
+ */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getPlaidClient } from "../../lib/plaid.js";
-import { canWrite, currentUser, fail, handleError, type AppUser } from "../../lib/auth.js";
-import { adoptMappings, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
+import { currentUser, fail, handleError, isAdmin, type AppUser } from "../../lib/auth.js";
+import { adoptMappings, keepColumnsReady, stampIdentity, type LiveAccount } from "../../lib/plaid-mappings.js";
+import { audit } from "../../lib/audit.js";
 import { CountryCode } from "plaid";
 
 async function upsertItem(row: {
@@ -46,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return handleError(res, err);
   }
   if (!user) return res.status(401).json({ error: "unauthorized" });
-  if (!canWrite(user)) return res.status(403).json({ error: "forbidden" });
+  if (!isAdmin(user)) return fail(res, 403, "forbidden", "Only an owner or admin can connect a bank.");
 
   const { public_token, institution_name, institution_id, kind } = req.body || {};
   if (!public_token) return res.status(400).json({ error: "Missing public_token" });
@@ -89,6 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // A reconnected account arrives with a new id; hand it back the mapping
     // its previous incarnation carried.
     let adopted = 0;
+    let accountCount = 0;
     try {
       const live = await client.accountsGet({ access_token });
       const accounts: LiveAccount[] = live.data.accounts.map((a) => ({
@@ -97,16 +114,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         mask: a.mask ?? null,
         subtype: a.subtype ?? null,
         name: a.name ?? null,
+        type: a.type ?? null,
       }));
-      await stampIdentity(accounts);
-      adopted = await adoptMappings(accounts);
+      accountCount = accounts.length;
+      const ready = await keepColumnsReady();
+      await stampIdentity(accounts, ready);
+      adopted = await adoptMappings(accounts, ready);
     } catch (err: any) {
-      console.error("mapping adoption failed:", err.response?.data || err.message);
+      console.error("mapping adoption failed:", err.response?.data?.error_code ?? "unknown");
     }
+
+    await audit({
+      actor: user,
+      action: "treasury.connect",
+      target: { type: "bank_connection", id: item_id, label: name || "Unknown" },
+      count: accountCount,
+      summary: `Connected ${name || "a bank"} (${accountCount} account${accountCount === 1 ? "" : "s"})`,
+      detail: { kind: kind === "bank" ? "bank" : "investments", adopted_mappings: adopted },
+    });
 
     res.json({ success: true, item_id, adopted_mappings: adopted });
   } catch (err: any) {
-    console.error("Plaid exchange error:", err.response?.data || err.message);
+    console.error("Plaid exchange error:", err.response?.data?.error_code ?? "unknown");
     // Plaid's display_message is written for people; anything else stays in
     // the log line above (never the raw error: it carries Plaid's credentials).
     const shown = err.response?.data?.display_message;

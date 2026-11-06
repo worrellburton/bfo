@@ -31,7 +31,7 @@ describe("postBatchEdit", () => {
       ids(1200),
       { book_category: "6250 Utilities" },
     );
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual({ ok: true, undo: [] });
     expect(bodies.map((b) => b.transaction_ids.length)).toEqual([500, 500, 200]);
     expect(bodies[0]).toMatchObject({ action: "batch_update", book_category: "6250 Utilities" });
   });
@@ -40,12 +40,12 @@ describe("postBatchEdit", () => {
     let n = 0;
     const r = await postBatchEdit(async () => (++n === 2 ? json({ error: "bad_selection" }, 400) : json({})), ids(1200), { type_override: "transfer" });
     expect(n).toBe(2);
-    expect(r).toEqual({ ok: false, done: 500, message: "Too many rows selected (at most 500 at a time). 500 of 1200 were saved." });
+    expect(r).toEqual({ ok: false, done: 500, message: "Too many rows selected (at most 500 at a time). 500 of 1200 were saved.", undo: [] });
   });
 
   it("names a view-only refusal", async () => {
     const r = await postBatchEdit(async () => json({ error: "forbidden" }, 403), ids(2), { name: "x" });
-    expect(r).toEqual({ ok: false, done: 0, message: "You have view-only access to Books." });
+    expect(r).toEqual({ ok: false, done: 0, message: "You have view-only access to Books.", undo: [] });
     expect(batchErrorMessage(500)).toBe("Couldn't apply that batch edit.");
   });
 });

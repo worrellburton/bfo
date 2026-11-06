@@ -2,8 +2,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { birdChannels, birdWorkspace, currentUser, fail, guard, handleError, isAdmin } from "../../lib/auth.js";
 
 /**
- * Diagnostics for the Bird setup. Admin-only, and it never returns the access
- * key — only its shape, plus what the API says when we use it.
+ * Diagnostics for the Bird setup (texts, sign-in codes, mail).
+ *
+ * HTTP: GET → a report of the key's shape, the workspace and channels Bird sees.
+ * Who may call it: owners and admins. It never returns the access key, only
+ * its shape, plus what the API says when we use it.
+ * Env: BIRD_ACCESS_KEY, BIRD_WORKSPACE_ID (optional).
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET"])) return;

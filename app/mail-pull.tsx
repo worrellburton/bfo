@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useTone } from "./entity/ui";
+import { Icon, Spinner, cx } from "./ui";
 import { haptic } from "./native";
 
 /**
@@ -12,9 +12,9 @@ import { haptic } from "./native";
  * came ("3 new" or "Up to date"), then the list eases back.
  *
  * The drag never re-renders React: the finger drives the DOM directly, and
- * state changes only at the phases (pulling → refreshing → done → idle). The
- * pull also tells the aurora how far it's come (a "mail-pull" event), so the
- * sky brightens with the pull instead of twitching at it.
+ * state changes only at the phases (pulling → refreshing → done → idle).
+ * Drawn with the system's parts: a ring in ink-3, the spinner while it
+ * checks, a check and a caption when it's done.
  */
 
 const HOLD = 64; // the distance that commits
@@ -24,10 +24,7 @@ const C = 2 * Math.PI * 11; // the ring's circumference (r = 11)
 
 type Phase = "idle" | "pulling" | "refreshing" | "done";
 
-const PULL_EVENT = "mail-pull";
-
 export function PullToRefresh({ enabled, onRefresh, className = "", children }: { enabled: boolean; onRefresh: () => Promise<{ fresh: number } | void>; className?: string; children: ReactNode }) {
-  const t = useTone();
   const outer = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const badge = useRef<HTMLDivElement>(null);
@@ -43,7 +40,6 @@ export function PullToRefresh({ enabled, onRefresh, className = "", children }: 
     const st = { y0: 0, x0: 0, active: false, y: 0, armed: false, busy: false, tracking: false };
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-    const tell = (f: number) => window.dispatchEvent(new CustomEvent(PULL_EVENT, { detail: f }));
     const place = (y: number, animate: boolean) => {
       const L = list.current;
       const B = badge.current;
@@ -56,7 +52,6 @@ export function PullToRefresh({ enabled, onRefresh, className = "", children }: 
       B.style.transform = `translate(-50%, ${Math.max(-40, y - 48)}px) scale(${0.72 + 0.28 * f})`;
       B.style.opacity = String(Math.min(1, y / 28));
       if (arc.current) arc.current.style.strokeDashoffset = String(C * (1 - f));
-      tell(f);
     };
     const settle = () => {
       place(0, true);
@@ -156,23 +151,33 @@ export function PullToRefresh({ enabled, onRefresh, className = "", children }: 
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onEnd);
-      tell(0);
     };
   }, []);
 
   return (
-    <div ref={outer} className={`relative ${className}`}>
-      <div ref={badge} data-phase={phase} aria-hidden={phase === "idle"} role="status" aria-live="polite" className="ptr-badge z-10 flex flex-col items-center gap-1.5 md:hidden">
-        <svg viewBox="0 0 28 28" className="ptr-ring" fill="none" strokeWidth={2.2} strokeLinecap="round">
-          <circle cx="14" cy="14" r="11" className="ptr-track" />
-          <circle ref={arc} cx="14" cy="14" r="11" className="ptr-arc" strokeDasharray={C} strokeDashoffset={C} />
-          <path d="M9 14.5l3.5 3.5L19.5 11" className="ptr-check" strokeWidth={2.4} strokeLinejoin="round" />
-        </svg>
-        <span className={`ptr-note whitespace-nowrap text-[11px] font-medium tracking-wide ${t.dark ? "" : ""}`}>{note}</span>
+    <div ref={outer} className={cx("relative", className)}>
+      <div
+        ref={badge}
+        data-phase={phase}
+        aria-hidden={phase === "idle"}
+        role="status"
+        aria-live="polite"
+        style={{ transform: "translate(-50%, -40px)", opacity: 0 }}
+        className="pointer-events-none absolute top-0 left-1/2 z-sticky flex flex-col items-center gap-1 text-ink-3 md:hidden"
+      >
+        {phase === "refreshing" ? (
+          <Spinner className="size-[24px]" />
+        ) : phase === "done" ? (
+          <Icon name="check" size={24} />
+        ) : (
+          <svg viewBox="0 0 28 28" className="size-[24px] -rotate-90" fill="none" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+            <circle cx="14" cy="14" r="11" stroke="currentColor" strokeOpacity="0.25" />
+            <circle ref={arc} cx="14" cy="14" r="11" stroke="currentColor" strokeDasharray={C} strokeDashoffset={C} />
+          </svg>
+        )}
+        <span className="text-caption whitespace-nowrap text-ink-2">{note}</span>
       </div>
-      <div ref={list} className="ptr-list">
-        {children}
-      </div>
+      <div ref={list}>{children}</div>
     </div>
   );
 }

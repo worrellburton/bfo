@@ -1,12 +1,41 @@
 import { useEffect, useState } from "react";
-import { confirmDialog } from "../confirm-dialog";
 import { authFetch, getUser, isAdmin, type User } from "../auth";
 import { isNativeApp } from "../native";
+import { alertTitle, groupAlerts, jobStatus, jobTitle, scheduleLine, type CronLast, type OpsAlert } from "../notifications-model";
 import { enablePush, usePushState } from "../push";
-import { useTheme } from "../theme";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  confirm,
+  Disclosure,
+  Field,
+  format,
+  IconButton,
+  Input,
+  List,
+  ListRow,
+  Page,
+  PageHeader,
+  Select,
+  Skeleton,
+  Status,
+  Switch,
+  TextLink,
+  toast,
+  useDocumentTitle,
+} from "../ui";
+
+/**
+ * Notifications: what BFO tells this person about, and how. Phone notices
+ * (and what they show on a lock screen), the Treasury report's schedule and
+ * who it goes to, and, for admins, the scheduled jobs and open alerts.
+ * Every change saves at once (a toast says so).
+ */
 
 export function meta() {
-  return [{ title: "BFO - Notifications" }];
+  return [{ title: "Notifications · BFO" }];
 }
 
 type Prefs = Record<string, any>;
@@ -16,9 +45,13 @@ const FREQUENCIES = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
-];
-
+] as const;
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const PREVIEWS = [
+  { value: "sender", label: "Sender only", hint: "Who it’s from" },
+  { value: "full", label: "Sender, subject and first words" },
+  { value: "none", label: "Nothing", hint: "“New email”" },
+] as const;
 
 function set(prefs: Prefs, path: string, value: unknown): Prefs {
   const parts = path.split(".");
@@ -34,123 +67,90 @@ function set(prefs: Prefs, path: string, value: unknown): Prefs {
   return next;
 }
 
-/** A switch, with its label and what it's for. */
-function Switch({ on, onToggle, label, hint, isDark }: { on: boolean; onToggle: () => void; label: string; hint: string; isDark: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={onToggle}
-      className={`flex w-full cursor-pointer items-center gap-4 py-3 text-left ${isDark ? "border-white/5" : "border-gray-100"} border-t first:border-t-0`}
-    >
-      <span className="min-w-0 flex-1">
-        <span className={`block text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>{label}</span>
-        <span className={`block text-xs ${isDark ? "text-gray-500" : "text-gray-500"}`}>{hint}</span>
-      </span>
-      <span className={`relative h-[24px] w-[40px] shrink-0 rounded-full transition-colors ${on ? "bg-[#6366f1]" : isDark ? "bg-white/15" : "bg-gray-300"}`} aria-hidden>
-        <span className={`absolute top-[2px] h-[20px] w-[20px] rounded-full bg-white shadow transition-transform ${on ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
-      </span>
-    </button>
-  );
-}
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** An alert's detail as one plain line: its first line, up to any JSON (which stays behind "Technical details"). */
+const plainLine = (detail: string | null) =>
+  (detail ?? "")
+    .split("\n")[0]
+    .split(/\s*[{[]/)[0]
+    .replace(/[:\s]+$/, "")
+    .trim();
 
 export default function Notifications() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-
+  useDocumentTitle("Notifications");
+  const me = getUser();
+  const admin = isAdmin(me);
   const [prefs, setPrefs] = useState<Prefs>({});
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     void (async () => {
       try {
         const res = await authFetch("/api/auth/preferences");
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message ?? "Couldn't load your settings.");
+        if (!res.ok) throw new Error(data?.message ?? "Couldn’t load your settings.");
         setPrefs(data.preferences ?? {});
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn't load your settings.");
+        setLoadError(err instanceof Error ? err.message : "Couldn’t load your settings.");
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  async function save(next: Prefs) {
+  async function save(next: Prefs, said = "Saved") {
+    const before = prefs;
     setPrefs(next);
-    setStatus("Saving…");
-    setError("");
+    setSaveError("");
     try {
-      const res = await authFetch("/api/auth/preferences", {
-        method: "PUT",
-        body: JSON.stringify({ preferences: next }),
-      });
-      if (!res.ok) throw new Error("Couldn't save.");
-      setStatus("Saved");
-      setTimeout(() => setStatus(""), 1500);
-    } catch (err) {
-      setStatus("");
-      setError(err instanceof Error ? err.message : "Couldn't save.");
+      const res = await authFetch("/api/auth/preferences", { method: "PUT", body: JSON.stringify({ preferences: next }) });
+      if (!res.ok) throw new Error();
+      toast({ message: said });
+    } catch {
+      setPrefs(before);
+      setSaveError("Couldn’t save that change. Check your connection and try again.");
     }
   }
 
+  // ── The Treasury report ────────────────────────────────────────────────
   const report = prefs.treasuryReport ?? {};
   const frequency: string = report.frequency ?? "off";
   const recipients: string[] = report.recipients ?? [];
-  const [sampleState, setSampleState] = useState<"idle" | "sending" | "sent">("idle");
-  const [broadcastState, setBroadcastState] = useState<"idle" | "sending" | "sent">("idle");
-
-  async function sendNow() {
-    const count = 1 + recipients.length;
-    if (!(await confirmDialog({ title: "Send the report now?", message: `It goes to ${count} recipient${count === 1 ? "" : "s"} immediately.`, confirmLabel: "Send now" }))) return;
-    setBroadcastState("sending");
-    setError("");
-    try {
-      const res = await authFetch("/api/cron/treasury-report", {
-        method: "POST",
-        body: JSON.stringify({ broadcast: true }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message ?? "Couldn't send the report.");
-      setBroadcastState("sent");
-      setTimeout(() => setBroadcastState("idle"), 4000);
-    } catch (err) {
-      setBroadcastState("idle");
-      setError(err instanceof Error ? err.message : "Couldn't send the report.");
-    }
-  }
   const [team, setTeam] = useState<User[]>([]);
   const [manualEmail, setManualEmail] = useState("");
-
-  // The user dropdown needs the roster; non-admins just get the manual field.
+  const [emailError, setEmailError] = useState("");
+  const [sampleBusy, setSampleBusy] = useState(false);
+  const [sendBusy, setSendBusy] = useState(false);
   useEffect(() => {
     void (async () => {
       try {
         const res = await authFetch("/api/auth/users");
         if (!res.ok) return;
         const data = await res.json();
-        setTeam((data.users ?? []).filter((u: User) => u.email));
-      } catch {}
+        setTeam((data.users ?? []).filter((u: User) => u.email && u.role !== "partner" && u.role !== "email"));
+      } catch {
+        /* without the roster only typed addresses can be added */
+      }
     })();
   }, []);
+  const staffEmails = new Set(team.map((u) => (u.email ?? "").toLowerCase()));
+  const outside = (email: string) => team.length > 0 && !staffEmails.has(email.toLowerCase());
+  const nameOf = (email: string) => team.find((u) => (u.email ?? "").toLowerCase() === email.toLowerCase())?.name ?? null;
 
   function addRecipient(raw: string) {
     const email = raw.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      setError("Enter a valid email address.");
+    if (!EMAIL.test(email)) {
+      setEmailError("Enter an email address, like name@example.com.");
       return;
     }
-    if (email === getUser()?.email || recipients.includes(email)) {
-      setManualEmail("");
-      return;
-    }
+    setEmailError("");
     setManualEmail("");
-    void save(set(prefs, "treasuryReport.recipients", [...recipients, email]));
+    if (email === me?.email?.toLowerCase() || recipients.includes(email)) return;
+    void save(set(prefs, "treasuryReport.recipients", [...recipients, email]), `Added ${email}`);
   }
-
   function removeRecipient(email: string) {
     void save(
       set(
@@ -158,25 +158,52 @@ export default function Notifications() {
         "treasuryReport.recipients",
         recipients.filter((r) => r !== email),
       ),
+      `Removed ${email}`,
     );
   }
 
   async function sendSample() {
-    setSampleState("sending");
-    setError("");
+    setSampleBusy(true);
+    setSaveError("");
     try {
-      const res = await authFetch("/api/cron/treasury-report", { method: "POST" });
+      const res = await authFetch("/api/cron/treasury-report", { method: "POST", body: JSON.stringify({}) });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message ?? "Couldn't send the sample.");
-      setSampleState("sent");
-      setTimeout(() => setSampleState("idle"), 4000);
+      if (!res.ok) throw new Error(data?.message ?? "Couldn’t send the sample.");
+      toast({ message: `Sent a sample to ${me?.email}` });
     } catch (err) {
-      setSampleState("idle");
-      setError(err instanceof Error ? err.message : "Couldn't send the sample.");
+      setSaveError(err instanceof Error ? err.message : "Couldn’t send the sample.");
+    } finally {
+      setSampleBusy(false);
     }
   }
 
-  // Push notifications: the iPhone app's permission, the phones set up, and what to be told about.
+  async function sendNow() {
+    const list = [me?.email ?? "", ...recipients].filter(Boolean);
+    const outsiders = list.filter((e) => outside(e));
+    const ok = await confirm({
+      title: "Send the report now?",
+      object: { names: list.map((e) => `${e === me?.email ? "You" : (nameOf(e) ?? e)}${e !== me?.email && nameOf(e) ? ` · ${e}` : ""}${outside(e) ? " · outside BFO" : ""}`) },
+      message: `The Treasury report goes to each person on their own: balances as of now and recent activity for every connected account, loans and expected income.${outsiders.length ? ` ${format.count(outsiders.length, "address is", "addresses are")} outside BFO.` : ""}`,
+      details: ["Recorded in the audit log with who received it."],
+      tone: "commit",
+      confirmLabel: `Send to ${format.count(list.length, "person", "people")}`,
+    });
+    if (!ok) return;
+    setSendBusy(true);
+    setSaveError("");
+    try {
+      const res = await authFetch("/api/cron/treasury-report", { method: "POST", body: JSON.stringify({ broadcast: true }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message ?? "Couldn’t send the report.");
+      toast({ message: `Sent the Treasury report to ${format.count(Number(data.count ?? list.length), "person", "people")}` });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Couldn’t send the report.");
+    } finally {
+      setSendBusy(false);
+    }
+  }
+
+  // ── Phone notices ──────────────────────────────────────────────────────
   const [push, setPush] = usePushState();
   const [phones, setPhones] = useState<{ configured: boolean; devices: number } | null>(null);
   const [pushNote, setPushNote] = useState("");
@@ -189,15 +216,14 @@ export default function Notifications() {
   useEffect(() => {
     void loadPhones();
   }, []);
-  const pushPrefs = { mail: prefs.push?.mail !== false, texts: prefs.push?.texts !== false, paper: prefs.push?.paper !== false };
-  const admin = isAdmin(getUser());
+  const pushPrefs = { mail: prefs.push?.mail !== false, texts: prefs.push?.texts !== false, paper: prefs.push?.paper !== false, previews: (prefs.push?.previews as string) || "sender" };
 
   async function turnOn() {
     setPushNote("");
     const next = await enablePush();
     setPush(next);
     if (next === "granted") {
-      setPushNote("On. This phone will get BFO's notices.");
+      toast({ message: "Notifications are on for this phone" });
       setTimeout(() => void loadPhones(), 1500);
     } else if (next === "denied") setPushNote("Notifications are off for BFO in iPhone Settings.");
   }
@@ -206,390 +232,343 @@ export default function Notifications() {
     setPushNote("");
     try {
       const r = await authFetch("/api/push", { method: "POST", body: JSON.stringify({ action: "test" }) }).then((x) => x.json());
-      setPushNote(
-        r.error === "not_configured"
-          ? "Not set up on the server yet."
-          : r.sent
-            ? "Sent. Check your lock screen."
+      if (r.sent) toast({ message: "Sent a test notice. Check your lock screen." });
+      else
+        setPushNote(
+          r.error === "not_configured"
+            ? "Phone notices aren’t set up on the server yet."
             : r.devices
-              ? `Apple refused it (${r.error ?? "unknown"}).`
-              : "No phone is set up yet. Turn notifications on in the BFO app.",
-      );
+              ? "Apple didn’t accept the test notice. Try again later."
+              : "No phone is set up yet. Turn notices on in the BFO app on your iPhone.",
+        );
     } catch {
-      setPushNote("Couldn't reach BFO.");
+      setPushNote("Couldn’t reach BFO. Check your connection and try again.");
     } finally {
       setTesting(false);
     }
   }
 
-  // System: open alerts and each cron's last run (admins), from /api/ops.
+  // ── System (admins) ────────────────────────────────────────────────────
   const [ops, setOps] = useState<{ alerts: OpsAlert[]; crons: CronLast[] } | null>(null);
-  const [opsError, setOpsError] = useState("");
+  const [opsError, setOpsError] = useState(false);
   const [acking, setAcking] = useState<string | null>(null);
   const loadOps = () =>
     authFetch("/api/ops")
       .then(async (r) => {
-        if (!r.ok) throw new Error("Couldn't load the system status.");
+        if (!r.ok) throw new Error();
         const d = await r.json();
         setOps({ alerts: d.alerts ?? [], crons: d.crons ?? [] });
-        setOpsError("");
+        setOpsError(false);
       })
-      .catch((err) => setOpsError(err instanceof Error ? err.message : "Couldn't load the system status."));
+      .catch(() => setOpsError(true));
   useEffect(() => {
     if (admin) void loadOps();
   }, [admin]);
-  async function acknowledge(id: string) {
-    setAcking(id);
+  async function acknowledge(key: string, ids: string[]) {
+    setAcking(key);
     try {
-      const r = await authFetch("/api/ops", { method: "POST", body: JSON.stringify({ action: "ack", id }) });
-      if (!r.ok) throw new Error("Couldn't acknowledge it.");
-      setOps((o) => o && { ...o, alerts: o.alerts.map((a) => (a.id === id ? { ...a, acknowledged_at: new Date().toISOString() } : a)) });
-    } catch (err) {
-      setOpsError(err instanceof Error ? err.message : "Couldn't acknowledge it.");
+      for (const id of ids) {
+        const r = await authFetch("/api/ops", { method: "POST", body: JSON.stringify({ action: "ack", id }) });
+        if (!r.ok) throw new Error();
+      }
+      const at = new Date().toISOString();
+      setOps((o) => o && { ...o, alerts: o.alerts.map((a) => (ids.includes(a.id) ? { ...a, acknowledged_at: at } : a)) });
+      toast({ message: ids.length === 1 ? "Marked as seen" : `Marked ${ids.length} as seen` });
+    } catch {
+      setOpsError(true);
     } finally {
       setAcking(null);
     }
   }
-  const openAlerts = ops?.alerts.filter((a) => !a.acknowledged_at) ?? [];
+  const alertGroups = groupAlerts(ops?.alerts ?? []);
 
-  const subtle = isDark ? "text-gray-500" : "text-gray-500";
-  const card = isDark ? "glass-card" : "glass-card";
-  const divider = isDark ? "border-white/5" : "border-gray-100";
-  const field = `px-3 py-2 max-sm:min-h-[44px] max-sm:text-[16px] rounded-lg text-sm border cursor-pointer focus:outline-none ${
-    isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-  }`;
+  const others = recipients.length;
+  const schedule = scheduleLine(report, others);
+  const addable = team.filter((u) => u.email && u.email.toLowerCase() !== me?.email?.toLowerCase() && !recipients.includes(u.email.toLowerCase()));
 
   return (
-    <div className="max-w-3xl">
-      <div className="flex items-start justify-between gap-4 mb-8">
-        <div>
-          <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Notifications</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>Choose what BFO tells you about, and how</p>
-        </div>
-        {status && <span className={`text-xs mt-2 ${subtle}`}>{status}</span>}
-      </div>
-
-      {error && <div className={`mb-6 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
-
+    <Page width="reading" header={<PageHeader title="Notifications" context="What BFO tells you about, and how." />}>
+      {saveError && (
+        <Banner tone="negative" onDismiss={() => setSaveError("")}>
+          {saveError}
+        </Banner>
+      )}
       {loading ? (
-        <p className={`text-sm ${subtle}`}>Loading…</p>
+        <>
+          <Skeleton kind="card" rows={3} />
+          <Skeleton kind="card" rows={3} />
+        </>
+      ) : loadError ? (
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => window.location.reload()}>
+              Try again
+            </Button>
+          }
+        >
+          {loadError}
+        </Banner>
       ) : (
         <>
-          {/* Push notifications: the iPhone app */}
-          <section className={`rounded-xl border p-6 mb-6 ${card}`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>Push notifications</h2>
-                <p className={`text-sm mt-1 ${subtle}`}>On your iPhone, the moment something arrives.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {isNativeApp() && push !== "granted" && push !== "unsupported" && (
-                  <button type="button" onClick={() => void turnOn()} className="rounded-full bg-[#6366f1] px-4 py-2 text-sm font-medium text-white hover:bg-[#4f46e5] max-sm:min-h-[44px]">
-                    Turn on notifications
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void sendTest()}
-                  disabled={testing}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium max-sm:min-h-[44px] ${isDark ? "border-white/15 text-gray-200 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"} disabled:opacity-50`}
-                >
-                  {testing ? "Sending…" : "Send a test notification"}
-                </button>
-              </div>
-            </div>
-            <p className={`mt-3 flex items-center gap-2 text-xs ${subtle}`}>
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${phones === null ? (isDark ? "bg-white/20" : "bg-gray-300") : !phones.configured ? "bg-amber-400" : phones.devices ? "bg-emerald-400" : "bg-amber-400"}`}
-                aria-hidden
-              />
+          {/* ── Phone notices ─────────────────────────────────────── */}
+          <Card
+            title="On your iPhone"
+            action={
+              isNativeApp() && push !== "granted" && push !== "unsupported" ? (
+                <Button variant="primary" size="sm" onClick={() => void turnOn()}>
+                  Turn on notices
+                </Button>
+              ) : undefined
+            }
+          >
+            <p className="text-body text-ink-2">
               {phones === null
-                ? "Checking…"
+                ? "Checking which phones are set up…"
                 : !phones.configured
-                  ? "Not set up on the server yet."
+                  ? "Phone notices aren’t set up on the server yet."
                   : phones.devices
-                    ? `${phones.devices} phone${phones.devices === 1 ? "" : "s"} set up${isNativeApp() ? (push === "granted" ? ", this one included." : push === "denied" ? "; this one has notifications off in iPhone Settings." : "; this one hasn't allowed them yet.") : "."}`
+                    ? `${format.count(phones.devices, "phone")} set up${isNativeApp() ? (push === "granted" ? ", this one included." : push === "denied" ? ". This one has notices off in iPhone Settings." : ". This one hasn’t allowed them yet.") : "."}`
                     : isNativeApp()
-                      ? "No phone set up yet. Turn them on here."
-                      : "No phone set up yet. Open BFO on your iPhone and turn them on."}
-              {pushNote && <span className={isDark ? "text-gray-300" : "text-gray-700"}>{pushNote}</span>}
+                      ? "No phone set up yet. Turn notices on above."
+                      : "No phone set up yet. Open BFO on your iPhone and turn notices on there."}
             </p>
-            <div className="mt-4">
-              <Switch
-                isDark={isDark}
-                on={pushPrefs.mail}
-                onToggle={() => void save(set(prefs, "push.mail", !pushPrefs.mail))}
-                label="New email"
-                hint="Mail to your BFO address, with the sender and subject."
-              />
+            {pushNote && <p className="mt-1 text-body text-ink">{pushNote}</p>}
+            <div className="mt-4 flex flex-col divide-y divide-line">
+              <div className="py-2">
+                <Switch checked={pushPrefs.mail} onChange={(v) => void save(set(prefs, "push.mail", v))} label="New email" hint="Mail to your BFO address." />
+              </div>
               {admin && (
+                <div className="py-2">
+                  <Switch
+                    checked={pushPrefs.texts}
+                    onChange={(v) => void save(set(prefs, "push.texts", v))}
+                    label="Texts to the office"
+                    hint="Texts to BFO’s number. A notice never shows a verification code; texts with a code reach owners only."
+                  />
+                </div>
+              )}
+              <div className="py-2">
                 <Switch
-                  isDark={isDark}
-                  on={pushPrefs.texts}
-                  onToggle={() => void save(set(prefs, "push.texts", !pushPrefs.texts))}
-                  label="Texts to the office"
-                  hint="Texts to BFO's number, including verification codes."
+                  checked={pushPrefs.paper}
+                  onChange={(v) => void save(set(prefs, "push.paper", v))}
+                  label="Paper mail"
+                  hint="Mail arriving at the office’s address: the sender and who it’s for."
                 />
-              )}
-              <Switch
-                isDark={isDark}
-                on={pushPrefs.paper}
-                onToggle={() => void save(set(prefs, "push.paper", !pushPrefs.paper))}
-                label="Physical mail"
-                hint="Paper mail arriving at the office's address."
-              />
+              </div>
+              <div className="pt-3 pb-1">
+                <Field label="What a notice shows on the lock screen" hint="A locked phone shows this without Face ID. Notices pass through Apple’s push service.">
+                  <Select
+                    label="What a notice shows on the lock screen"
+                    value={pushPrefs.previews}
+                    onChange={(v) => void save(set(prefs, "push.previews", v))}
+                    options={PREVIEWS.map((p) => ({ ...p }))}
+                  />
+                </Field>
+              </div>
             </div>
-          </section>
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Button size="sm" busy={testing} busyLabel="Sending…" onClick={() => void sendTest()}>
+                Send a test notice
+              </Button>
+              <TextLink to="/legal/privacy" inline>
+                Privacy
+              </TextLink>
+            </div>
+          </Card>
 
-          {/* Scheduled Treasury report */}
-          <section className={`rounded-xl border p-6 mb-6 ${card}`}>
-            <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>Treasury report</h2>
-            <p className={`text-sm mt-1 ${subtle}`}>A snapshot of every connected account — balances, movement since the last report, and anything that needs reconnecting.</p>
-
-            <div className="flex flex-wrap items-end gap-3 mt-5">
-              <label className="flex flex-col gap-1.5">
-                <span className={`text-xs font-medium uppercase tracking-wider ${subtle}`}>Send</span>
-                <select className={field} value={frequency} onChange={(e) => void save(set(prefs, "treasuryReport.frequency", e.target.value))}>
-                  {FREQUENCIES.map((f) => (
-                    <option key={f.value} value={f.value}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
+          {/* ── The Treasury report ───────────────────────────────── */}
+          <Card title="Treasury report" staffOnly>
+            <p className="text-body text-pretty text-ink-2">An email with every connected account’s balance, the movement since your last report, recent activity, loans and expected income.</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Send">
+                <Select label="Send" value={frequency} onChange={(v) => void save(set(prefs, "treasuryReport.frequency", v))} options={FREQUENCIES.map((f) => ({ ...f }))} />
+              </Field>
               {frequency === "weekly" && (
-                <label className="flex flex-col gap-1.5">
-                  <span className={`text-xs font-medium uppercase tracking-wider ${subtle}`}>On</span>
-                  <select className={field} value={String(report.dayOfWeek ?? 1)} onChange={(e) => void save(set(prefs, "treasuryReport.dayOfWeek", Number(e.target.value)))}>
-                    {DAYS.map((d, i) => (
-                      <option key={d} value={i}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <Field label="On">
+                  <Select
+                    label="On"
+                    value={String(report.dayOfWeek ?? 1)}
+                    onChange={(v) => void save(set(prefs, "treasuryReport.dayOfWeek", Number(v)))}
+                    options={DAYS.map((d, i) => ({ value: String(i), label: d }))}
+                  />
+                </Field>
               )}
-
               {frequency === "monthly" && (
-                <label className="flex flex-col gap-1.5">
-                  <span className={`text-xs font-medium uppercase tracking-wider ${subtle}`}>On the</span>
-                  <select className={field} value={String(report.dayOfMonth ?? 1)} onChange={(e) => void save(set(prefs, "treasuryReport.dayOfMonth", Number(e.target.value)))}>
-                    {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <Field label="On day">
+                  <Select
+                    label="On day"
+                    value={String(report.dayOfMonth ?? 1)}
+                    onChange={(v) => void save(set(prefs, "treasuryReport.dayOfMonth", Number(v)))}
+                    options={Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
+                  />
+                </Field>
               )}
             </div>
+            {schedule && <p className="mt-3 text-small text-ink-2">{schedule}</p>}
 
             {frequency !== "off" && (
-              <div className="mt-5">
-                <span className={`text-xs font-medium uppercase tracking-wider block mb-2 ${subtle}`}>Send to</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* You always get your own report */}
-                  <span className={`px-3 py-1.5 rounded-full text-xs break-all ${isDark ? "bg-white/10 text-gray-300" : "bg-black/5 text-gray-700"}`}>
-                    {getUser()?.email} <span className={subtle}>(you)</span>
-                  </span>
+              <div className="mt-6">
+                <h3 className="text-small font-semibold text-ink">Send to</h3>
+                <List label="Who gets the report" className="-mx-5 mt-1 px-1 touch:-mx-4">
+                  <ListRow title={me?.name ? `${me.name} (you)` : "You"} secondary={me?.email ?? undefined} />
                   {recipients.map((email) => (
-                    <span
+                    <ListRow
                       key={email}
-                      className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1 max-sm:py-1.5 max-sm:pr-2.5 rounded-full text-xs border break-all ${
-                        isDark ? "border-white/15 text-gray-300" : "border-gray-300 text-gray-700"
-                      }`}
-                    >
-                      {email}
-                      <button
-                        onClick={() => removeRecipient(email)}
-                        title="Remove"
-                        aria-label={`Remove ${email}`}
-                        className={`relative p-0.5 rounded-full cursor-pointer max-sm:after:absolute max-sm:after:-inset-[16px] max-sm:after:content-[''] ${isDark ? "hover:bg-white/10 text-gray-500 hover:text-white" : "hover:bg-black/10 text-gray-400 hover:text-black"}`}
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </span>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 mt-3">
-                  {team.filter((u) => u.email !== getUser()?.email && !recipients.includes(u.email!)).length > 0 && (
-                    <select
-                      className={`${field} max-sm:w-full`}
-                      aria-label="Add a user as a recipient"
-                      value=""
-                      onChange={(e) => {
-                        if (e.target.value) addRecipient(e.target.value);
-                      }}
-                    >
-                      <option value="">Add a user…</option>
-                      {team
-                        .filter((u) => u.email !== getUser()?.email && !recipients.includes(u.email!))
-                        .map((u) => (
-                          <option key={u.id} value={u.email!}>
-                            {u.name ? `${u.name} — ${u.email}` : u.email}
-                          </option>
-                        ))}
-                    </select>
-                  )}
-                  <form
-                    className="flex items-center gap-2 max-sm:w-full"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      addRecipient(manualEmail);
-                    }}
-                  >
-                    <input
-                      type="email"
-                      value={manualEmail}
-                      onChange={(e) => {
-                        setManualEmail(e.target.value);
-                        setError("");
-                      }}
-                      placeholder="or add any email…"
-                      aria-label="Add a recipient by email"
-                      className={`${field} cursor-text w-56 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1`}
+                      title={nameOf(email) ?? email}
+                      secondary={
+                        <>
+                          {nameOf(email) ? `${email}` : null}
+                          {outside(email) && !admin ? `${nameOf(email) ? " · " : ""}Not sent: only an owner or admin can include an address outside BFO` : null}
+                        </>
+                      }
+                      label={email}
+                      meta={outside(email) ? <Badge>Outside BFO</Badge> : undefined}
+                      action={<IconButton icon="x" label={`Remove ${email}`} onClick={() => removeRecipient(email)} />}
                     />
-                    <button
-                      type="submit"
-                      disabled={!manualEmail.trim()}
-                      className={`px-3 py-2 max-sm:min-h-[44px] max-sm:px-4 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 ${
-                        isDark ? "bg-white/10 text-white hover:bg-white/15" : "bg-black/5 text-gray-800 hover:bg-black/10"
-                      }`}
+                  ))}
+                </List>
+                <div className="mt-4 flex flex-col gap-4">
+                  {addable.length > 0 && (
+                    <Field label="Add someone at BFO">
+                      <Select
+                        label="Add someone at BFO"
+                        value={null}
+                        placeholder="Choose a person…"
+                        onChange={(v) => addRecipient(v)}
+                        options={addable.map((u) => ({ value: (u.email ?? "").toLowerCase(), label: u.name ?? u.email ?? "", hint: u.email ?? undefined }))}
+                      />
+                    </Field>
+                  )}
+                  {admin && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        addRecipient(manualEmail);
+                      }}
                     >
-                      Add
-                    </button>
-                  </form>
+                      <div className="flex items-end gap-2">
+                        <Field label="Add an address outside BFO" className="min-w-0 flex-1">
+                          <Input
+                            type="email"
+                            value={manualEmail}
+                            onChange={(e) => {
+                              setManualEmail(e.target.value);
+                              setEmailError("");
+                            }}
+                            placeholder="name@example.com"
+                            autoComplete="off"
+                          />
+                        </Field>
+                        <Button type="submit" disabled={!manualEmail.trim()}>
+                          Add
+                        </Button>
+                      </div>
+                      <p className={emailError ? "mt-2 text-small text-negative" : "mt-2 text-small text-ink-2"} role={emailError ? "alert" : undefined}>
+                        {emailError || "They get their own copy with a confidentiality notice, and can ask you to remove them."}
+                      </p>
+                    </form>
+                  )}
                 </div>
-
-                <p className={`text-xs mt-3 ${subtle}`}>Reports go out each morning around 8am Eastern to everyone above.</p>
               </div>
             )}
 
-            <div className={`mt-5 pt-4 border-t ${divider} flex flex-wrap items-center gap-3`}>
-              <button
-                onClick={() => void sendSample()}
-                disabled={sampleState === "sending"}
-                className={`px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-                  isDark ? "border border-white/15 text-gray-200 hover:bg-white/10" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                {sampleState === "sending" ? "Sending…" : "Send me a sample"}
-              </button>
-              <button
-                onClick={() => void sendNow()}
-                disabled={broadcastState === "sending"}
-                className={`px-4 py-2 max-sm:min-h-[40px] rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-                  isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-black"
-                }`}
-              >
-                {broadcastState === "sending" ? "Sending…" : broadcastState === "sent" ? "Sent to everyone" : `Send now${recipients.length ? ` (${recipients.length + 1})` : ""}`}
-              </button>
-              {sampleState === "sent" && (
-                <span role="status" className={`text-xs ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
-                  Sent to {getUser()?.email} — check your inbox
-                </span>
+            <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-4">
+              <Button busy={sampleBusy} busyLabel="Sending…" onClick={() => void sendSample()}>
+                Send me a sample
+              </Button>
+              {admin && recipients.length > 0 && (
+                <Button busy={sendBusy} busyLabel="Sending…" onClick={() => void sendNow()}>
+                  Send now to the list
+                </Button>
               )}
             </div>
-          </section>
+          </Card>
 
-          {/* System: what broke, and when each scheduled job last ran (admins) */}
+          {/* ── System (admins) ───────────────────────────────────── */}
           {admin && (
-            <section className={`rounded-xl border p-6 mb-6 ${card}`}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className={`text-[17px] font-semibold ${isDark ? "" : "text-gray-900"}`}>System</h2>
-                  <p className={`text-sm mt-1 ${subtle}`}>What broke, and when each scheduled job last ran.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void loadOps()}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium max-sm:min-h-[44px] ${isDark ? "border-white/15 text-gray-200 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
-                >
+            <Card
+              title="System"
+              count={alertGroups.length || undefined}
+              countTone="attention"
+              action={
+                <Button variant="quiet" size="sm" onClick={() => void loadOps()}>
                   Refresh
-                </button>
-              </div>
-              {opsError && <p className={`mt-3 text-xs ${isDark ? "text-red-400" : "text-red-700"}`}>{opsError}</p>}
-
-              <span className={`text-xs font-medium uppercase tracking-wider block mt-5 mb-2 ${subtle}`}>Alerts</span>
-              {ops === null ? (
-                <p className={`text-sm ${subtle}`}>Checking…</p>
-              ) : openAlerts.length === 0 ? (
-                <p className={`flex items-center gap-2 text-sm ${subtle}`}>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
-                  Nothing open.
-                </p>
+                </Button>
+              }
+            >
+              <p className="text-body text-ink-2">What went wrong, and when each scheduled job last ran. Only admins see this.</p>
+              {opsError && (
+                <Banner tone="negative" className="mt-3">
+                  Couldn’t load the system status. Refresh to try again.
+                </Banner>
+              )}
+              <h3 className="mt-5 text-small font-semibold text-ink">Alerts</h3>
+              {ops === null && !opsError ? (
+                <Skeleton kind="rows" rows={2} />
+              ) : alertGroups.length === 0 ? (
+                <p className="mt-1 text-body text-ink-2">Nothing open.</p>
               ) : (
-                <ul className={`divide-y ${divider}`}>
-                  {openAlerts.map((a) => (
-                    <li key={a.id} className="flex items-start gap-3 py-3">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" aria-hidden />
-                      <div className="min-w-0 flex-1">
-                        <div className={`text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>{a.title}</div>
-                        {a.detail && <div className={`mt-0.5 whitespace-pre-line break-words text-xs ${subtle}`}>{a.detail}</div>}
-                        <div className={`mt-1 text-xs ${subtle}`}>
-                          {a.kind} · {when(a.created_at)}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void acknowledge(a.id)}
-                        disabled={acking === a.id}
-                        className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium max-sm:min-h-[40px] disabled:opacity-50 ${isDark ? "border-white/15 text-gray-200 hover:bg-white/10" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
-                      >
-                        {acking === a.id ? "…" : "Acknowledge"}
-                      </button>
-                    </li>
+                <List label="Open alerts" className="-mx-5 mt-1 px-1 touch:-mx-4">
+                  {alertGroups.map((g) => (
+                    <ListRow
+                      key={g.key}
+                      title={alertTitle(g)}
+                      label={alertTitle(g)}
+                      secondary={`${g.times > 1 ? `Happened ${g.times} times · last ` : ""}${format.relative(g.latest)}${plainLine(g.detail) ? ` · ${plainLine(g.detail)}` : ""}`}
+                      action={
+                        <Button variant="quiet" size="sm" busy={acking === g.key} busyLabel="Saving…" onClick={() => void acknowledge(g.key, g.ids)}>
+                          Mark as seen
+                        </Button>
+                      }
+                    />
                   ))}
-                </ul>
+                </List>
+              )}
+              {alertGroups.some((g) => g.detail) && (
+                <Disclosure label="Technical details" className="mt-2">
+                  <pre className="mt-2 max-h-64 overflow-auto rounded-card bg-sunken p-4 font-mono text-caption whitespace-pre-wrap text-ink-2">
+                    {alertGroups
+                      .filter((g) => g.detail)
+                      .map((g) => `${g.kind}\n${g.detail}`)
+                      .join("\n\n")}
+                  </pre>
+                </Disclosure>
               )}
 
-              <span className={`text-xs font-medium uppercase tracking-wider block mt-5 mb-2 ${subtle}`}>Scheduled jobs</span>
-              {ops === null ? (
-                <p className={`text-sm ${subtle}`}>Checking…</p>
+              <h3 className="mt-6 text-small font-semibold text-ink">Scheduled jobs</h3>
+              {ops === null && !opsError ? (
+                <Skeleton kind="rows" rows={4} />
               ) : (
-                <ul className={`divide-y ${divider}`}>
-                  {ops.crons.map((c) => (
-                    <li key={c.name} className="flex items-center gap-3 py-2.5">
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${!c.started_at ? (isDark ? "bg-white/20" : "bg-gray-300") : c.ok === false ? "bg-red-400" : c.finished_at ? "bg-emerald-400" : "bg-amber-400"}`}
-                        aria-hidden
+                <List label="Scheduled jobs" className="-mx-5 mt-1 px-1 touch:-mx-4">
+                  {(ops?.crons ?? []).map((c) => {
+                    const st = jobStatus(c);
+                    return (
+                      <ListRow
+                        key={c.name}
+                        title={jobTitle(c.name)}
+                        label={jobTitle(c.name)}
+                        secondary={st.note ?? undefined}
+                        trailing={st.tone === "neutral" ? <span className="text-small font-normal text-ink-2">{st.text}</span> : <Status tone={st.tone}>{st.text}</Status>}
                       />
-                      <span className={`min-w-0 flex-1 text-sm ${isDark ? "text-gray-100" : "text-gray-900"}`}>
-                        {c.name}
-                        {c.note && <span className={`ml-2 text-xs ${subtle}`}>{c.note.split("\n")[0]}</span>}
-                      </span>
-                      <span className={`shrink-0 text-xs ${c.ok === false ? (isDark ? "text-red-400" : "text-red-700") : subtle}`}>
-                        {!c.started_at ? "never ran" : c.ok === false ? `failed ${when(c.started_at)}` : c.finished_at ? `ok ${when(c.started_at)}` : `running since ${when(c.started_at)}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                    );
+                  })}
+                </List>
               )}
-            </section>
+              {(ops?.crons ?? []).some((c) => c.note && /^\s*[[{]|"\w+":|\d{4}-\d{2}-\d{2}T/.test(c.note)) && (
+                <Disclosure label="Job details" className="mt-2">
+                  <pre className="mt-2 max-h-64 overflow-auto rounded-card bg-sunken p-4 font-mono text-caption whitespace-pre-wrap text-ink-2">
+                    {(ops?.crons ?? [])
+                      .filter((c) => c.note)
+                      .map((c) => `${c.name}\n${c.note}`)
+                      .join("\n\n")}
+                  </pre>
+                </Disclosure>
+              )}
+            </Card>
           )}
         </>
       )}
-    </div>
+    </Page>
   );
-}
-
-type OpsAlert = { id: string; kind: string; title: string; detail: string | null; created_at: string; acknowledged_at: string | null };
-type CronLast = { name: string; started_at: string | null; finished_at: string | null; ok: boolean | null; note: string | null };
-
-/** "just now", "12 min ago", "3 h ago", "2 days ago", or the date. */
-function when(iso: string): string {
-  const ms = Date.now() - Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  const min = Math.round(ms / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `${h} h ago`;
-  const d = Math.round(h / 24);
-  if (d < 14) return `${d} day${d === 1 ? "" : "s"} ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

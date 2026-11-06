@@ -3,6 +3,9 @@ import { getPlaidClient } from "../../lib/plaid.js";
 import { canWrite, cronAuth, currentUser, handleError, refuseCron, sbFetch as db, type AppUser } from "../../lib/auth.js";
 import { recordCronRun, type CronRun } from "../../lib/cron.js";
 import { classify, patchMatching } from "../../lib/books-rules.js";
+import { logChanges } from "../../lib/books/audit.js";
+import { readLocks } from "../../lib/books/db.js";
+import { firstRule, isHandEdit, isLocked, orderRules, type PeriodLock, type TaughtRule } from "../../lib/books/ledger.js";
 import { fetchAll } from "../../lib/db-pages.js";
 import { inList } from "../../lib/pg-filter.js";
 import { betterVendor } from "../../lib/vendor-parse.js";
@@ -22,40 +25,49 @@ import { sunriseUtcDate } from "../../lib/sunrise.js";
 
 const HISTORY_MONTHS = 24;
 
-type UserRule = { match: string; book_category: string | null; vendor_name: string | null; type_override: string | null };
+type UserRule = TaughtRule & { id: string };
 
 /**
- * Rules the user taught (category popup, vendor rename) — beat the built-ins.
- * A failed read throws: syncing without them would overwrite every renamed
- * vendor and taught category with the built-in guess.
+ * Rules the user taught (category popup, vendor rename, vendor defaults),
+ * in the order they're tried (lib/books/ledger.ts orderRules: an exact payee
+ * first, then the more specific text). They beat the built-ins. A failed
+ * read throws: syncing without them would overwrite every renamed vendor
+ * and taught category with the built-in guess.
  */
 async function loadUserRules(): Promise<UserRule[]> {
-  return (await fetchAll<UserRule>("book_rules?select=match,book_category,vendor_name,type_override")).map((rule) => ({
-    match: rule.match.toLowerCase(),
-    book_category: rule.book_category ?? null,
-    vendor_name: rule.vendor_name ?? null,
-    type_override: rule.type_override ?? null,
-  }));
+  return orderRules(await fetchAll<UserRule>("book_rules?select=*&order=id.asc"));
 }
 
-function userCategory(rules: UserRule[], name: string | null, merchant: string | null): string | null {
-  const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
-  for (const rule of rules) if (rule.book_category && text.includes(rule.match)) return rule.book_category;
-  return null;
+type RuleTarget = { name: string | null; merchant_name: string | null; date: string; entity_id: string | null };
+
+function userCategory(rules: UserRule[], row: RuleTarget): string | null {
+  return firstRule(rules, row, "book_category")?.book_category ?? null;
 }
 
 /** A user-chosen vendor display name for this transaction, if a rule matches. */
-function userVendor(rules: UserRule[], name: string | null, merchant: string | null): string | null {
-  const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
-  for (const rule of rules) if (rule.vendor_name && text.includes(rule.match)) return rule.vendor_name;
-  return null;
+function userVendor(rules: UserRule[], row: RuleTarget): string | null {
+  return firstRule(rules, row, "vendor_name")?.vendor_name ?? null;
 }
 
-/** A vendor-level type the user chose ("all Samir payments are roll-up"). */
-function userType(rules: UserRule[], name: string | null, merchant: string | null): string | null {
-  const text = `${merchant ?? ""} ${name ?? ""}`.toLowerCase();
-  for (const rule of rules) if (rule.type_override && text.includes(rule.match)) return rule.type_override;
-  return null;
+/** A vendor-level type the user chose ("all Samir payments are intercompany"). */
+function userType(rules: UserRule[], row: RuleTarget): string | null {
+  return firstRule(rules, row, "type_override")?.type_override ?? null;
+}
+
+/**
+ * What the sync must not overwrite: rows with a hand edit on record (every
+ * page of the history is read: it outgrew PostgREST's 1,000-row cap; the
+ * sync's own entries don't count) and the period locks, with each account's
+ * entity to test them.
+ */
+async function loadGuard(): Promise<{ edited: Set<string>; locks: PeriodLock[]; entityOf: (accountId: string) => string | null }> {
+  const [log, locks, prefs] = await Promise.all([
+    fetchAll<{ transaction_id: string; field: string; source: string | null }>("book_txn_log?select=transaction_id,field,source&order=id.asc"),
+    readLocks(db),
+    fetchAll<{ account_id: string; entity_id: string | null }>("plaid_account_prefs?select=account_id,entity_id&order=account_id.asc"),
+  ]);
+  const entity = new Map(prefs.map((p) => [p.account_id, p.entity_id ?? null]));
+  return { edited: new Set(log.filter(isHandEdit).map((e) => e.transaction_id)), locks, entityOf: (a) => entity.get(a) ?? null };
 }
 
 type TxnRow = {
@@ -96,6 +108,42 @@ function mercuryPayee(name: string | null | undefined): string | null {
   if (!name || !/via mercury\.com;\s*merchant name:/i.test(name)) return null;
   const m = name.match(/merchant name:\s*(.+)$/i);
   return m?.[1]?.trim() || null;
+}
+
+/**
+ * When a pending transaction posts, Plaid adds the posted one (naming the
+ * pending id) and removes the pending one. Whatever a person decided on the
+ * pending row (its account, type, vendor, loan, note) and its receipts move
+ * to the posted row, with a history entry, so the removal loses nothing.
+ */
+async function carryPending(txns: Array<{ transaction_id: string; pending_transaction_id?: string | null }>, editedIds: ReadonlySet<string>) {
+  for (const t of txns) {
+    const from = t.pending_transaction_id;
+    if (!from || !editedIds.has(from) || from === t.transaction_id) continue;
+    try {
+      const r = await db(`book_transactions?transaction_id=eq.${encodeURIComponent(from)}&select=book_category,type_override,merchant_name,loan_id,txn_type,intercompany&limit=1`);
+      const prior = r.ok ? ((await r.json()) as Array<Record<string, unknown>>)[0] : null;
+      if (!prior) continue;
+      await db(`book_txn_receipt?transaction_id=eq.${encodeURIComponent(from)}`, { method: "PATCH", body: JSON.stringify({ transaction_id: t.transaction_id }) });
+      // Written after the upsert below creates the posted row; the history
+      // notes the carry, which also guards the row from later syncs.
+      pendingCarry.set(t.transaction_id, { from, values: prior });
+    } catch (err) {
+      console.error("books-sync: couldn't carry a pending row's edits", err instanceof Error ? err.message : err);
+    }
+  }
+}
+
+/** Posted id → the pending row it replaces and the values a person set there (applied after the upsert). */
+const pendingCarry = new Map<string, { from: string; values: Record<string, unknown> }>();
+
+async function applyPendingCarry() {
+  for (const [to, { from, values }] of pendingCarry) {
+    const r = await db(`book_transactions?transaction_id=eq.${encodeURIComponent(to)}`, { method: "PATCH", body: JSON.stringify(values) });
+    const decided = Object.fromEntries(Object.entries(values).filter(([k, v]) => v !== null && k !== "txn_type" && k !== "intercompany"));
+    if (r.ok && Object.keys(decided).length) await logChanges([to], null, decided, `pending:${from}`, null);
+  }
+  pendingCarry.clear();
 }
 
 async function upsertChunked(rows: Array<Record<string, unknown>>) {
@@ -236,27 +284,33 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
     }
   }
 
-  // Re-run the chart-of-accounts rules over everything already synced —
-  // used after the rules change, so history reflects the current chart.
+  // Re-run the chart-of-accounts rules over everything already synced, so
+  // history reflects the current chart. Rows a person decided (a hand edit
+  // on record) and rows in a closed period are left alone; every row that
+  // changes is logged with source "sync".
   if (req.method === "POST" && req.body?.recategorize) {
     try {
-      const userRules = await loadUserRules();
-      const groups = new Map<string, string[]>();
-      for (let from = 0; ; from += 1000) {
-        const r = await db("book_transactions?select=transaction_id,name,merchant_name,plaid_category", { headers: { Range: `${from}-${from + 999}` } });
-        if (!r.ok) throw new Error(await r.text());
-        const rows = (await r.json()) as any[];
-        for (const t of rows) {
-          const taught = userCategory(userRules, t.name, t.merchant_name);
-          const cls = classify(t.name, t.merchant_name, t.plaid_category, taught);
-          const key = JSON.stringify([cls.category, cls.type]);
-          (groups.get(key) ?? groups.set(key, []).get(key)!).push(t.transaction_id);
+      const [userRules, guard] = await Promise.all([loadUserRules(), loadGuard()]);
+      const rows = await fetchAll<{ transaction_id: string; name: string | null; merchant_name: string | null; plaid_category: string | null; date: string; account_id: string; book_category: string | null; txn_type: string; intercompany: boolean }>(
+        "book_transactions?select=transaction_id,name,merchant_name,plaid_category,date,account_id,book_category,txn_type,intercompany&order=transaction_id.asc",
+      );
+      const groups = new Map<string, typeof rows>();
+      let kept = 0;
+      for (const t of rows) {
+        const entityId = guard.entityOf(t.account_id);
+        if (guard.edited.has(t.transaction_id) || isLocked({ date: t.date, entity_id: entityId }, guard.locks)) {
+          kept++;
+          continue;
         }
-        if (rows.length < 1000) break;
+        const taught = userCategory(userRules, { name: t.name, merchant_name: t.merchant_name, date: t.date, entity_id: entityId });
+        const cls = classify(t.name, t.merchant_name, t.plaid_category, taught);
+        if (cls.category === t.book_category) continue;
+        const key = JSON.stringify([cls.category, cls.type]);
+        (groups.get(key) ?? groups.set(key, []).get(key)!).push(t);
       }
       let updated = 0;
-      for (const [key, ids] of groups) {
-        const [category, type] = JSON.parse(key) as [string, string | null];
+      for (const [key, group] of groups) {
+        const [category, type] = JSON.parse(key) as [string | null, string | null];
         const patch: Record<string, unknown> = { book_category: category };
         if (type === "intercompany") {
           patch.intercompany = true;
@@ -265,16 +319,24 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
           patch.txn_type = type;
           patch.intercompany = false;
         }
-        for (let i = 0; i < ids.length; i += 200) {
-          const list = inList(ids.slice(i, i + 200));
-          const r = await db(`book_transactions?transaction_id=in.(${list})`, {
+        for (let i = 0; i < group.length; i += 200) {
+          const part = group.slice(i, i + 200);
+          const r = await db(`book_transactions?transaction_id=in.(${inList(part.map((t) => t.transaction_id))})`, {
             method: "PATCH",
             body: JSON.stringify(patch),
           });
-          if (r.ok) updated += Math.min(200, ids.length - i);
+          if (!r.ok) continue;
+          updated += part.length;
+          await logChanges(
+            part.map((t) => t.transaction_id),
+            new Map(part.map((t) => [t.transaction_id, t as unknown as Record<string, unknown>])),
+            { book_category: category },
+            "sync",
+            null,
+          );
         }
       }
-      return res.status(200).json({ recategorized: true, updated, rules_groups: groups.size });
+      return res.status(200).json({ recategorized: true, updated, kept, rules_groups: groups.size });
     } catch (err: any) {
       console.error("recategorize error:", err.message);
       return res.status(500).json({ error: "recategorize_failed" });
@@ -290,18 +352,16 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
 
     const userRules = await loadUserRules();
 
-    // Rows a person has hand-edited (the audit log knows which): the bank
-    // refresh keeps their vendor/account/type intact and only updates the
-    // mechanical columns. Every page of the log is read (it outgrew PostgREST's
-    // 1,000-row cap), and a failed read aborts the sync: an empty set here
-    // would treat every edit as never made and overwrite it.
-    const editedIds = new Set<string>(
-      (await fetchAll<{ transaction_id: string }>("book_txn_log?select=transaction_id&order=changed_at.asc,transaction_id.asc,field.asc")).map((r) => r.transaction_id),
-    );
+    // Rows a person decided (a hand edit on record) and rows in a closed
+    // period: the bank refresh keeps their vendor, account and type and only
+    // updates the mechanical columns. A failed read aborts the sync: an empty
+    // set here would treat every edit as never made and overwrite it.
+    const guard = await loadGuard();
+    const editedIds = guard.edited;
 
     // Likewise the account mappings: without them every upserted row would be
     // stamped with no entity.
-    const prefs = new Map<string, any>((await fetchAll<any>("plaid_account_prefs?select=*")).map((p) => [p.account_id, p]));
+    const prefs = new Map<string, any>((await fetchAll<any>("plaid_account_prefs?select=*&order=account_id.asc")).map((p) => [p.account_id, p]));
 
     const cutoff = new Date();
     cutoff.setMonth(cutoff.getMonth() - HISTORY_MONTHS);
@@ -336,52 +396,59 @@ async function sync(req: VercelRequest, res: VercelResponse, fromCron: boolean, 
                 .filter((t) => t.date >= cutoffDay)
                 .map((t) => {
                   const pref = prefs.get(t.account_id);
+                  const entityId: string | null = pref?.entity_id ?? null;
+                  // The payee as the books would name it, then any rename a
+                  // person taught; the taught rules are tested against both.
+                  const base = mercuryPayee(t.name) ?? betterVendor(t.name ?? null, t.merchant_name ?? null);
+                  const raw: RuleTarget = { name: t.name ?? null, merchant_name: t.merchant_name ?? base, date: t.date, entity_id: entityId };
+                  const named: RuleTarget = { ...raw, merchant_name: base };
+                  const merchant = userVendor(userRules, named) ?? userVendor(userRules, raw) ?? base;
+                  const target: RuleTarget = { ...raw, merchant_name: merchant };
+                  // The chart-of-accounts rules classify each transaction; a
+                  // rule that forces a type beats the Plaid heuristic. A
+                  // user's type_override (not written here) beats both, and a
+                  // user-taught category rule beats the built-in chart.
+                  const taught = userCategory(userRules, target) ?? userCategory(userRules, raw);
+                  const cls = classify(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null, taught);
+                  const heuristic = isTransfer(t) ? "transfer" : "normal";
+                  const ut = userType(userRules, target) ?? userType(userRules, raw);
                   return {
                     transaction_id: t.transaction_id,
                     account_id: t.account_id,
                     item_id: item.item_id,
                     date: t.date,
                     name: t.name ?? null,
-                    merchant_name: userVendor(userRules, t.name ?? null, t.merchant_name ?? null) ?? mercuryPayee(t.name) ?? betterVendor(t.name ?? null, t.merchant_name ?? null),
+                    merchant_name: merchant,
                     amount: t.amount,
                     pending: !!t.pending,
                     currency: t.iso_currency_code ?? null,
                     plaid_category: t.personal_finance_category?.primary ?? null,
                     plaid_category_detailed: t.personal_finance_category?.detailed ?? null,
                     payment_channel: t.payment_channel ?? null,
-                    ...(() => {
-                      // The chart-of-accounts rules classify each transaction; a
-                      // rule that forces a type beats the Plaid heuristic. A
-                      // user's type_override (not written here) beats both, and a
-                      // user-taught category rule beats the built-in chart.
-                      const taught = userCategory(userRules, t.name ?? null, t.merchant_name ?? null);
-                      const cls = classify(t.name ?? null, t.merchant_name ?? null, t.personal_finance_category?.primary ?? null, taught);
-                      const heuristic = isTransfer(t) ? "transfer" : "normal";
-                      return {
-                        txn_type: (cls.type === "intercompany" ? "transfer" : (cls.type ?? heuristic)) as "normal" | "transfer",
-                        intercompany: cls.type === "intercompany",
-                        book_category: cls.category,
-                        // A vendor-level type rule rides in as the row's override.
-                        ...(() => {
-                          const ut = userType(userRules, t.name ?? null, t.merchant_name ?? null);
-                          return ut ? { type_override: ut } : {};
-                        })(),
-                      };
-                    })(),
-                    entity_id: pref?.entity_id ?? null,
+                    txn_type: (cls.type === "intercompany" ? "transfer" : (cls.type ?? heuristic)) as "normal" | "transfer",
+                    intercompany: cls.type === "intercompany",
+                    book_category: cls.category,
+                    // A vendor-level type rule rides in as the row's override.
+                    ...(ut ? { type_override: ut } : {}),
+                    entity_id: entityId,
                     entity_name: pref?.entity_name ?? null,
                     hidden: pref?.hidden ?? false,
                     updated_at: now,
                   };
                 });
+              // A posted row that replaces a pending one inherits what a
+              // person decided on the pending row, and its receipts.
+              await carryPending([...data.added, ...data.modified], editedIds);
               // Hand-edited rows keep the fields a person set; everything else
               // gets the full refresh. Each partition keeps uniform keys, which
               // the PostgREST bulk upsert requires.
-              const fresh = rows.filter((r) => !editedIds.has(r.transaction_id));
-              const guarded = rows.filter((r) => editedIds.has(r.transaction_id)).map(({ merchant_name, name, book_category, type_override, ...keep }) => keep);
+              const kept = (r: TxnRow) => editedIds.has(r.transaction_id) || isLocked({ date: r.date, entity_id: r.entity_id }, guard.locks);
+              const fresh = rows.filter((r) => !kept(r));
+              const guarded = rows.filter(kept).map(({ merchant_name, name, book_category, type_override, ...keep }) => keep);
               await upsertChunked(fresh.filter((r) => r.type_override === undefined));
               await upsertChunked(fresh.filter((r) => r.type_override !== undefined));
               await upsertChunked(guarded);
+              await applyPendingCarry();
               added += data.added.length;
               modified += data.modified.length;
 

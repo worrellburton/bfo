@@ -273,14 +273,14 @@ describe("partners (invited entity owners)", () => {
       /GET tree_nodes\?collection=eq\.assets&id=in\./,
       (c) =>
         [
-          { collection: "assets", id: "mine", data: { name: "TallulahMD LLC", notes: "internal", contracts: { c1: {} }, operatingAgreement: { url: "u" } }, updated_at: "t" },
+          { collection: "assets", id: "mine", data: { name: "Birch Clinic LLC", notes: "internal", contracts: { c1: {} }, operatingAgreement: { url: "u" } }, updated_at: "t" },
           { collection: "assets", id: "theirs", data: { name: "Other, LLC" }, updated_at: "t" },
         ].filter((r) => c.path.includes(`"${r.id}"`)),
     ]);
   });
 
   it("read only the entities they were given, without the office's notes and contracts", async () => {
-    expect((await call("GET", { query: { path: "assets" } })).json).toEqual({ value: { mine: { name: "TallulahMD LLC", operatingAgreement: { url: "u" } } }, updated: { mine: "t" } });
+    expect((await call("GET", { query: { path: "assets" } })).json).toEqual({ value: { mine: { name: "Birch Clinic LLC", operatingAgreement: { url: "u" } } }, updated: { mine: "t" } });
     expect((await call("GET", { query: { path: "assets", view: "index" } })).json).toEqual({ rows: [{ id: "mine", updated_at: "t" }] });
     expect((await call("GET", { query: { path: "assets", ids: "mine,theirs" } })).json.rows.map((r: any) => r.id)).toEqual(["mine"]);
     expect((await call("GET", { query: { path: "assets/mine/operatingAgreement/url" } })).json).toEqual({ value: "u" });

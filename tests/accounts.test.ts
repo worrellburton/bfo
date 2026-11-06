@@ -92,18 +92,87 @@ describe("several accounts on one browser", () => {
     expect(auth.otherAccounts()).toEqual([]);
   });
 
-  it("logging out hands over to the next signed-in account, then to nobody", async () => {
+  it("logging out ends only that account and hands the browser to nobody", async () => {
     signInAs("a", "Robert");
     await auth.verifyCode("+15555550100", "123456");
     auth.beginAddAccount();
     signInAs("b", "Office");
     await auth.verifyCode("+15555550101", "123456");
 
-    expect(auth.logout()?.id).toBe("a");
-    expect(auth.getUser()?.id).toBe("a");
-    expect(auth.otherAccounts()).toEqual([]);
-    expect(auth.logout()).toBeNull();
+    // The next person at a shared computer must choose (and sign in), not land in someone else's account.
+    expect(auth.logout().map((u) => u.id)).toEqual(["a"]);
     expect(auth.getUser()).toBeNull();
+    expect(auth.isAuthenticated()).toBe(false);
+    // The one still signed in can be picked again, on purpose.
+    expect(auth.switchAccount("a")).toBe(true);
+    expect(auth.getUser()?.id).toBe("a");
+  });
+
+  it("logs every account out at once", async () => {
+    signInAs("a", "Robert");
+    await auth.verifyCode("+15555550100", "123456");
+    auth.beginAddAccount();
+    signInAs("b", "Office");
+    await auth.verifyCode("+15555550101", "123456");
+    const revoke = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    vi.stubGlobal("fetch", revoke);
+
+    auth.logoutAll();
+    expect(auth.getUser()).toBeNull();
+    expect(auth.otherAccounts()).toEqual([]);
+    // Both sessions are ended on the server, not just forgotten here.
+    expect(revoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for a fresh code to switch to an account that has waited too long", async () => {
+    signInAs("a", "Robert");
+    await auth.verifyCode("+15555550100", "123456");
+    auth.beginAddAccount();
+    signInAs("b", "Office");
+    await auth.verifyCode("+15555550101", "123456");
+
+    const later = Date.now() + auth.SWITCH_IDLE_MS + 1000;
+    expect(auth.switchTo("a", { maxIdleMs: auth.SWITCH_IDLE_MS, now: later })).toBe("stale");
+    // Signed out and dropped from the list; the current account is untouched.
+    expect(auth.otherAccounts()).toEqual([]);
+    expect(auth.getUser()?.id).toBe("b");
+    expect(auth.switchTo("a")).toBe("missing");
+  });
+
+  it("switches at once to an account that has only just stepped aside", async () => {
+    signInAs("a", "Robert");
+    await auth.verifyCode("+15555550100", "123456");
+    auth.beginAddAccount();
+    signInAs("b", "Office");
+    await auth.verifyCode("+15555550101", "123456");
+    expect(auth.switchTo("a", { maxIdleMs: auth.SWITCH_IDLE_MS })).toBe("ok");
+    expect(auth.getUser()?.id).toBe("a");
+  });
+
+  it("never keeps a partner's session waiting for a one-tap switch", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ verified: true, status: "approved", token: "tok-p", expiresAt: "2099-01-01T00:00:00Z", user: { ...user("p", "Partner"), role: "partner" } }),
+      })),
+    );
+    await auth.verifyCode("+15555550102", "123456");
+    expect(auth.getUser()?.id).toBe("p");
+    auth.beginAddAccount();
+    expect(auth.addingAccount()).toBeNull();
+    signInAs("a", "Robert");
+    await auth.verifyCode("+15555550100", "123456");
+    expect(auth.otherAccounts()).toEqual([]);
+  });
+
+  it("forgets the palette's recent places for the account that logs out", async () => {
+    signInAs("a", "Robert");
+    await auth.verifyCode("+15555550100", "123456");
+    localStorage.setItem("bfo-recent:a", "[]");
+    auth.logout();
+    expect(localStorage.getItem("bfo-recent:a")).toBeNull();
   });
 });
 

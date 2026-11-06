@@ -1,8 +1,10 @@
 // The game studio, on the office's preview page: makes Judy's voice, the
 // sound effects and the props on the server (api/game-assets.ts), where the
-// API keys are, and shows what's there. Folded away until opened.
+// API keys are, and shows what's there. Folded away until opened. A dark
+// panel on the tokens, inside the safe area, above the game's covers.
 import { useCallback, useEffect, useState } from "react";
 import { authFetch } from "../../auth";
+import { Button } from "../../ui";
 import type { JudyScript } from "./engine";
 
 type ModelState = { taskId: string; status: "PENDING" | "IN_PROGRESS" | "SUCCEEDED" | "FAILED" | "CANCELED"; progress: number; error?: string | null; imageUrl?: string };
@@ -107,59 +109,64 @@ export function GameStudio({ onChanged }: { onChanged: () => void }) {
 
   if (!open)
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed left-4 top-14 z-[60] h-[32px] rounded-full border border-white/15 bg-black/70 px-3 text-[12px] text-white/80 backdrop-blur hover:bg-white/10 max-sm:bottom-4 max-sm:top-auto"
-      >
-        Game studio
-      </button>
+      <div data-theme="dark" className="ds fixed z-modal" style={{ left: "max(16px, env(safe-area-inset-left))", bottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <Button size="sm" className="bg-overlay" onClick={() => setOpen(true)}>
+          Game studio
+        </Button>
+      </div>
     );
 
   const a = studio?.assets;
   const voiced = Object.keys(a?.voice ?? {}).length;
   const sounds = Object.keys(a?.sounds ?? {}).length;
   const row = "flex items-center justify-between gap-3 py-2";
-  const btn = "h-[32px] shrink-0 rounded-full border border-white/15 px-3 text-[12px] text-white/90 hover:bg-white/10 disabled:opacity-40";
 
   return (
-    <div className="fixed left-4 top-14 z-[60] w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl max-sm:bottom-4 max-sm:top-auto border border-white/10 bg-[#0b0b0f]/95 p-4 text-[13px] text-white shadow-2xl backdrop-blur">
+    <div
+      data-theme="dark"
+      className="ds fixed z-modal w-[360px] max-w-[calc(100vw-32px)] rounded-card border border-line-strong bg-overlay p-4 text-body text-ink shadow-(--elevation-2)"
+      style={{ left: "max(16px, env(safe-area-inset-left))", bottom: "max(16px, env(safe-area-inset-bottom))" }}
+    >
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300">Game studio</p>
-        <button type="button" onClick={() => setOpen(false)} className="text-[12px] text-white/50 hover:text-white">
+        <p className="text-section">Game studio</p>
+        <Button variant="quiet" size="sm" onClick={() => setOpen(false)}>
           Close
-        </button>
+        </Button>
       </div>
-      <p className="mt-1 text-[12px] text-white/55">Made on the server with the keys Vercel holds, stored in the brand bucket. The game picks them up on its next start.</p>
-      {!studio && !error && <p className="mt-3 text-white/60">Loading…</p>}
+      <p className="mt-1 text-small text-ink-2">Made on the server with its own keys, and kept with the brand files. The game picks them up on its next start.</p>
+      {!studio && !error && <p className="mt-3 text-small text-ink-2">Reading what’s there…</p>}
       {studio && (
-        <div className="mt-3 divide-y divide-white/10">
+        <div className="mt-3 divide-y divide-line">
           <div className={row}>
             <div className="min-w-0">
-              <p className="font-medium">Judy's voice</p>
-              <p className="truncate text-[12px] text-white/55">
-                {!studio.configured.elevenlabs ? "ELEVENLABS_API_KEY isn't set on Vercel." : voiced ? `${voiced} lines, voiced by ${a?.judyVoice?.name ?? "ElevenLabs"}.` : "Not voiced yet."}
+              <p className="font-medium">Judy’s voice</p>
+              <p className="truncate text-small text-ink-2">
+                {!studio.configured.elevenlabs
+                  ? "The voice service isn’t set up on the server."
+                  : voiced
+                    ? `${voiced} lines, voiced by ${a?.judyVoice?.name ?? "the voice service"}.`
+                    : "Not voiced yet."}
               </p>
             </div>
-            <div className="flex gap-1.5">
-              <button type="button" disabled={!!busy || !studio.configured.elevenlabs} onClick={() => voiceJudy(false)} className={btn}>
-                {busy === "judy" ? "Voicing…" : voiced ? "Finish" : "Voice Judy"}
-              </button>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={!!busy || !studio.configured.elevenlabs} busy={busy === "judy"} busyLabel="Voicing…" onClick={() => voiceJudy(false)}>
+                {voiced ? "Finish" : "Voice Judy"}
+              </Button>
               {voiced > 0 && (
-                <button type="button" disabled={!!busy} onClick={() => voiceJudy(true)} className={btn} title="Record every line again (after editing judy.json)">
+                <Button size="sm" disabled={!!busy} onClick={() => voiceJudy(true)} title="Record every line again (after editing judy.json)">
                   Redo
-                </button>
+                </Button>
               )}
             </div>
           </div>
           <div className={row}>
             <div className="min-w-0">
               <p className="font-medium">Sound effects</p>
-              <p className="truncate text-[12px] text-white/55">{!studio.configured.elevenlabs ? "ELEVENLABS_API_KEY isn't set on Vercel." : sounds ? `${sounds} of 6 made.` : "None yet."}</p>
+              <p className="truncate text-small text-ink-2">{!studio.configured.elevenlabs ? "The voice service isn’t set up on the server." : sounds ? `${sounds} of 6 made.` : "None yet."}</p>
             </div>
-            <button type="button" disabled={!!busy || !studio.configured.elevenlabs} onClick={() => makeSounds(sounds >= 6)} className={btn}>
-              {busy === "sounds" ? "Making…" : sounds >= 6 ? "Redo" : sounds ? "Finish" : "Make them"}
-            </button>
+            <Button size="sm" disabled={!!busy || !studio.configured.elevenlabs} busy={busy === "sounds"} busyLabel="Making…" onClick={() => makeSounds(sounds >= 6)}>
+              {sounds >= 6 ? "Redo" : sounds ? "Finish" : "Make them"}
+            </Button>
           </div>
           {studio.props.map((name) => {
             const p = a?.props[name];
@@ -169,34 +176,34 @@ export function GameStudio({ onChanged }: { onChanged: () => void }) {
               <div key={name} className={row}>
                 <div className="min-w-0">
                   <p className="font-medium">{PROP_LABEL[name] ?? name}</p>
-                  <p className="truncate text-[12px] text-white/55">
+                  <p className="truncate text-small text-ink-2">
                     {!studio.configured.openai || !studio.configured.meshy
-                      ? `${!studio.configured.openai ? "OPENAI_API_KEY" : "MESHY_API_KEY"} isn't set on Vercel.`
+                      ? "The model services aren’t set up on the server."
                       : done
                         ? "Model in use."
                         : building
-                          ? `Meshy: ${p.progress}%…`
+                          ? `Building: ${p.progress}%`
                           : p?.status === "FAILED"
-                            ? `Failed: ${p.error ?? "Meshy couldn't build it."}`
+                            ? `Failed: ${p.error ?? "the model couldn’t be built."}`
                             : "Blocky placeholder."}
                   </p>
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex gap-2">
                   {building && (
-                    <button type="button" disabled={!!busy} onClick={() => checkProp(name)} className={btn}>
+                    <Button size="sm" disabled={!!busy} onClick={() => checkProp(name)}>
                       Check
-                    </button>
+                    </Button>
                   )}
-                  <button type="button" disabled={!!busy || !studio.configured.openai || !studio.configured.meshy || !!building} onClick={() => makeProp(name)} className={btn}>
-                    {busy === name ? "Drawing…" : done ? "Redo" : "Make it"}
-                  </button>
+                  <Button size="sm" disabled={!!busy || !studio.configured.openai || !studio.configured.meshy || !!building} busy={busy === name} busyLabel="Drawing…" onClick={() => makeProp(name)}>
+                    {done ? "Redo" : "Make it"}
+                  </Button>
                 </div>
               </div>
             );
           })}
         </div>
       )}
-      {(note || error) && <p className={`mt-3 text-[12px] ${error ? "text-red-300" : "text-emerald-300"}`}>{error || note}</p>}
+      {(note || error) && <p className={`mt-3 text-small ${error ? "text-negative" : "text-ink-2"}`}>{error || note}</p>}
     </div>
   );
 }

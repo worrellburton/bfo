@@ -98,7 +98,28 @@ export function annualized(c: Pick<ContractTerms, "amount" | "fee" | "frequency"
   return Math.round(n * PER[f].perYear! * 100) / 100;
 }
 
-const ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const ONES = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+];
 const TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
 
 function under1000(n: number): string {
@@ -198,7 +219,10 @@ export function renewal(c: Pick<ContractTerms, "term" | "effectiveDate">, today:
  * signing now would make due for time already passed. Null when the
  * effective date isn't past or the fee is one-time.
  */
-export function periodsElapsed(c: Pick<ContractTerms, "effectiveDate" | "frequency" | "amount" | "fee">, today: string = todayLocal()): { periods: number; amount: number | null; unit: string } | null {
+export function periodsElapsed(
+  c: Pick<ContractTerms, "effectiveDate" | "frequency" | "amount" | "fee">,
+  today: string = todayLocal(),
+): { periods: number; amount: number | null; unit: string } | null {
   const eff = c.effectiveDate ?? "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(eff) || eff >= today) return null;
   const f = frequencyOf(c.frequency) ?? "Monthly";

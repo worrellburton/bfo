@@ -1,14 +1,23 @@
 import { sbFetch as db } from "../auth.js";
 import { anticipateInflows, type InflowRow, type PlannedInflow } from "../books-inflows.js";
-import { flowMonths, flowSummary } from "../books-report.js";
 import { fetchAll } from "../db-pages.js";
 import { getPrefs, scopeFilter } from "./prefs.js";
+import { flowMonths, flowSummary, scopeOf } from "./statements.js";
 import { ok, type BookTxn, type Reply } from "./types.js";
 
 /**
  * ?report=home — one round trip for the dashboard: treasury trend, 30-day
  * money in/out, the review backlog and anticipated inflows. Each part fails
  * soft to null so one bad query never blanks the whole page.
+ *
+ * The 30-day revenue and expenses are the P&L's receipts and disbursements
+ * (lib/books/statements.ts flowSummary): the same placement, refunds netted
+ * inside their account, uncategorized rows beside each window rather than in
+ * it, intercompany legs eliminated only when both sides are in Books.
+ *
+ * HTTP surface: none; api/books/data.ts serves it as GET ?report=home.
+ * Who may call it: staff with a login (the endpoint's role check).
+ * Env: SUPABASE_URL and SUPABASE_SERVICE_KEY (through sbFetch and fetchAll).
  */
 export async function homeReport(): Promise<Reply> {
   const now = new Date();
@@ -36,12 +45,12 @@ export async function homeReport(): Promise<Reply> {
       // Six calendar months, for the revenue and expense cards' bars.
       const since = `${flowMonths(now)[0]}-01`;
       const rows = await fetchAll<BookTxn>(
-        "book_transactions?select=transaction_id,date,amount,book_category,plaid_category,type_override,txn_type,intercompany,loan_id,account_id,merchant_name,name,entity_name" +
+        "book_transactions?select=transaction_id,date,amount,book_category,plaid_category,type_override,txn_type,intercompany,counterparty_account_id,loan_id,account_id,merchant_name,name,entity_name" +
           `&pending=eq.false&date=gte.${since < priorFrom ? since : priorFrom}` +
           scopeFilter(prefs, null) +
           "&order=transaction_id.asc",
       );
-      return flowSummary(rows, now, (id) => prefs.get(id)?.entity_name);
+      return flowSummary(rows, now, (id) => prefs.get(id)?.entity_name, 40, scopeOf(prefs, null));
     } catch (err: any) {
       console.error("home flow failed:", err?.message ?? err);
       return null;

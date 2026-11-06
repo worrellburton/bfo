@@ -1,5 +1,16 @@
+/**
+ * Load older Mercury history into Books from Mercury's own API, which keeps
+ * an account's whole history where Plaid serves about 90 days.
+ *
+ * POST → { backfilled, accounts: [...] }
+ *
+ * Who may call it: owners, admins and members (canWrite). Partners get 403.
+ * Env: MERCURY_API_TOKEN (lib/mercury.ts); SUPABASE_URL, SUPABASE_SERVICE_KEY.
+ * Each run is written to the audit log (books.mercury_backfill).
+ */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { canWrite, currentUser, handleError, sbFetch as db, type AppUser } from "../../lib/auth.js";
+import { audit } from "../../lib/audit.js";
 import { classify } from "../../lib/books-rules.js";
 import { mercuryConfigured, mercuryAccounts, mercuryTransactions, mercuryDownload, mask4 } from "../../lib/mercury.js";
 import { storageUpload } from "../../lib/storage.js";
@@ -46,7 +57,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Mercury accounts ↔ Plaid accounts, matched on the last four digits.
     const prefsRes = await db("plaid_account_prefs?select=*&archived_at=is.null");
     const prefs = prefsRes.ok ? ((await prefsRes.json()) as any[]) : [];
-    const mercuryPrefs = prefs.filter((p) => /mercury/i.test(p.institution_name ?? ""));
+    // Only accounts still syncing: one that stopped keeps its history as it
+    // is, and a reconnected twin with the same last four is the one to fill.
+    const mercuryPrefs = prefs.filter((p) => /mercury/i.test(p.institution_name ?? "") && !p.disconnected_at);
 
     const rulesRes = await db("book_rules?select=match,book_category");
     const userRules: UserRule[] = rulesRes.ok
@@ -179,6 +192,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    await audit({
+      actor: user,
+      action: "books.mercury_backfill",
+      summary: `Loaded ${totalInserted} older Mercury transaction${totalInserted === 1 ? "" : "s"} into Books`,
+      count: totalInserted,
+      detail: { accounts: summary.map((a) => ({ last4: a.last4, matched: a.matched, backfilled: a.backfilled ?? 0, before: a.before ?? null })) },
+    });
     return res.status(200).json({ backfilled: totalInserted, accounts: summary });
   } catch (err: any) {
     // The detail (raw Mercury or database text) stays in the log.

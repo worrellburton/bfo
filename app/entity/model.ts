@@ -97,7 +97,40 @@ export interface Asset {
   /** What the entity is, read from its governing documents. */
   profile?: EntityProfile;
   verification?: Verification;
+  /**
+   * Archived: hidden from the lists, read-only, everything kept (it still
+   * exists with the state). Set and cleared through api/entity-archive.ts.
+   */
+  archived?: Archived | null;
+  /** Documents taken out of the library: kept, restorable, purged only by an admin after the hold. */
+  removedDocuments?: Record<string, RemovedDoc>;
+  /** A legal hold: nothing of this entity's may be purged while it's set. */
+  legalHold?: { at: number; by: string | null; note?: string | null } | null;
+  /**
+   * Facts read by AI from a document, waiting for a person to accept them
+   * (docs/DESIGN.md §11.6): nothing read goes on the record as fact first.
+   */
+  proposed?: Record<string, Proposal | null>;
+  /** The tax class over time: each change with its effective date and why. */
+  llcTypeHistory?: TaxClassChange[];
+  /** The month (1–12) its tax year ends; blank is a calendar year. */
+  taxYearEnd?: string;
+  accountingMethod?: "Cash" | "Accrual" | "";
+  /** How each address-change step was reported: the mailing date and a tracking or confirmation number. */
+  addressUpdateRefs?: Partial<Record<"state" | "irs" | "banks", { on: string; ref?: string | null; by?: string | null; at: number } | null>>;
+  /** Why the last change to a key fact (name, form, tax class, EIN, status) was made: shown in Activity. */
+  changeNote?: { fields: string[]; kind: "correction" | "change"; reason: string; effective?: string | null; by?: string | null; at: number } | null;
 }
+
+export type Archived = { at: number; by: string | null; byId?: string | null; reason: string };
+
+/** A document taken out of the library, with who did it and why. */
+export type RemovedDoc = Omit<AssetDoc, "id"> & { removedAt: number; removedBy: string | null; reason?: string | null; filedAs?: string | null };
+
+/** A value read by AI from a document, proposed for the record. */
+export type Proposal = { value: string | Member[]; source: string; docName?: string | null; at: number };
+
+export type TaxClassChange = { value: string; from: string | null; kind: "correction" | "election"; effective?: string | null; reason?: string | null; by?: string | null; at: number };
 
 /** An owner or manager. `address` is theirs (Exhibit A of the operating agreement lists it). */
 export type Member = { name: string; percent: number | null; role: string | null; address?: string | null };
@@ -162,6 +195,8 @@ export interface UploadedFile {
   uploadedAt: number;
   storagePath: string; // "" when the slot points at a Documents entry
   docId?: string; // set when filed from the Documents library (no separate copy)
+  /** Who put it here. */
+  uploadedBy?: string | null;
 }
 
 export interface CorpData {
@@ -199,6 +234,15 @@ export interface AssetDoc {
   factsCheckedAt?: number; // key facts already read from this document
   classReadAt?: number; // tax classification already read from this document
   autoFileSkip?: boolean; // removed from a filing slot by hand — don't auto-file again
+  /** Who added it (absent on older uploads; Palm's and Stable's imports name the service). */
+  addedBy?: string | null;
+  /** A draft BFO generated (a filled-in form, a drafted agreement): unsigned until a signed copy replaces it. */
+  draft?: boolean;
+  /** Taken off a row it was used for, when another copy replaced it: an earlier version. */
+  replacedAt?: number | null;
+  /** Mail Palm received as registered agent (service of process, notices). */
+  palmDocumentId?: string;
+  palmType?: string;
 }
 
 export interface OperatingContract {
@@ -436,6 +480,7 @@ export function fromDatabase(raw: Asset): Asset {
   }
   if (a.stateRecord) a.stateRecord = { ...a.stateRecord, managers: list(a.stateRecord.managers), people: list(a.stateRecord.people) };
   if (a.members) a.members = list(a.members);
+  if (a.llcTypeHistory) a.llcTypeHistory = list(a.llcTypeHistory);
   if (a.verification) {
     const v = a.verification;
     a.verification = { ...v, fields: list(v.fields), owners: list(v.owners), issues: list(v.issues), documentsRead: list(v.documentsRead) };
@@ -458,4 +503,66 @@ export function splitNames(s?: string | null): string[] {
     .split(/\s*(?:,|;|\n|\band\b|&)\s*/i)
     .map((n) => n.trim())
     .filter(Boolean);
+}
+
+// ── Editing the record ───────────────────────────────────────────────────
+
+/** The record's fields as the edit form names them (the discard question and the key-change check). */
+export const FIELD_LABEL: Record<string, string> = {
+  name: "legal name",
+  type: "legal form",
+  status: "status",
+  state: "state",
+  ein: "EIN",
+  address: "principal office",
+  mailingAddress: "mailing address",
+  registeredAgent: "registered agent",
+  registeredAgentAddress: "agent's address",
+  foreign: "registrations in other states",
+  formationDate: "formation date",
+  llcType: "tax classification",
+  taxYearEnd: "tax year end",
+  accountingMethod: "accounting method",
+  trustees: "trustees",
+  grantors: "grantors",
+  beneficiaries: "beneficiaries",
+  fileNumber: "state file number",
+  stateLink: "state filing link",
+  operatingAgreementDate: "operating agreement date",
+  articlesOfOrgDate: "articles filing date",
+  notes: "notes",
+};
+
+/** What the form changed from where it started: field, label, before and after (as text). */
+export function changedFields(base: Record<string, unknown>, form: Record<string, unknown>): { key: string; label: string; from: string; to: string }[] {
+  const show = (v: unknown) => (v === null || v === undefined ? "" : typeof v === "string" ? v.trim() : JSON.stringify(v));
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
+  return Object.keys(FIELD_LABEL)
+    .filter((k) => !same(form[k], base[k]) && !(show(form[k]) === "" && show(base[k]) === ""))
+    .map((k) => ({ key: k, label: FIELD_LABEL[k], from: show(base[k]), to: show(form[k]) }));
+}
+
+/** Fields whose change can be a legal or tax event, not just a typo: each asks whether it's a correction or a real change. */
+export const KEY_FIELDS = ["name", "type", "llcType", "ein"] as const;
+
+/** "the EIN and the registered agent", for a sentence. */
+export function fieldList(labels: string[]): string {
+  const l = labels.map((x) => `the ${x}`);
+  return l.length <= 1 ? (l[0] ?? "") : `${l.slice(0, -1).join(", ")} and ${l[l.length - 1]}`;
+}
+
+/** The date the document itself carries (filed, signed, dated), as the record has it: not when it was uploaded. */
+export function documentDate(kind: FileKind, a: Pick<Asset, "articlesOfOrgDate" | "operatingAgreementDate" | "formationDate" | "annualReportYear">): { label: string; date: string } | null {
+  if (kind === "articles" && (a.articlesOfOrgDate || a.formationDate)) return { label: "Filed", date: (a.articlesOfOrgDate || a.formationDate)! };
+  if (kind === "operatingAgreement" && a.operatingAgreementDate) return { label: "Dated", date: a.operatingAgreementDate };
+  if ((kind === "trustAgreement" || kind === "trustCertificate") && a.formationDate) return { label: "Dated", date: a.formationDate };
+  return null;
+}
+
+/** A document's name without the entity's name in front ("Northwind, LLC - Articles of Organization" → "Articles of Organization"). */
+export function withoutEntityName(docName: string, entityName?: string | null): string {
+  const n = normEntityName(entityName);
+  if (!n) return docName;
+  const m = /^(.+?)\s+[-–—:|]\s+(.+)$/.exec(docName);
+  return m && normEntityName(m[1]) === n && m[2].trim() ? m[2].trim() : docName;
 }

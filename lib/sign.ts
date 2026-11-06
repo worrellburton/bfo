@@ -242,7 +242,10 @@ export function deriveStatus(parties: Party[], current: RequestStatus): RequestS
 
 /** A name that reads as a company, trust or other organisation rather than a person. */
 export function looksLikeEntity(name: string): boolean {
-  return /\b(l\.?l\.?c|l\.?l\.?p|l\.?p|inc|incorporated|corp|corporation|company|co|ltd|limited|trust|foundation|partners(hip)?|holdings|pllc|pc|p\.c)\b\.?,?\s*$/i.test(name.trim()) || /,\s*(llc|inc|lp|ltd)\b/i.test(name);
+  return (
+    /\b(l\.?l\.?c|l\.?l\.?p|l\.?p|inc|incorporated|corp|corporation|company|co|ltd|limited|trust|foundation|partners(hip)?|holdings|pllc|pc|p\.c)\b\.?,?\s*$/i.test(name.trim()) ||
+    /,\s*(llc|inc|lp|ltd)\b/i.test(name)
+  );
 }
 
 /** "Northwind Holdings, LLC, by Alex Rivera, Manager", or the person's name alone. */
@@ -310,7 +313,10 @@ export function cleanTimeZone(raw: unknown): string | undefined {
 /** A user agent, clipped and stripped to what's worth keeping as evidence. */
 export function cleanDevice(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
-  const s = raw.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  const s = [...raw]
+    .filter((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)
+    .join("")
+    .trim();
   return s ? s.slice(0, 300) : undefined;
 }
 
@@ -332,17 +338,7 @@ export function deviceSummary(ua: string | undefined): string {
               : /Linux/.test(ua)
                 ? "Linux"
                 : "";
-  const browser = /Edg\//.test(ua)
-    ? "Edge"
-    : /OPR\/|Opera/.test(ua)
-      ? "Opera"
-      : /Firefox\/|FxiOS/.test(ua)
-        ? "Firefox"
-        : /CriOS|Chrome\//.test(ua)
-          ? "Chrome"
-          : /Safari\//.test(ua)
-            ? "Safari"
-            : "";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /Firefox\/|FxiOS/.test(ua) ? "Firefox" : /CriOS|Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "";
   if (browser && os) return `${browser} on ${os}`;
   return browser || os || "a browser";
 }
@@ -407,7 +403,7 @@ export function officeDate(d: Date = new Date(), timeZone = "America/Phoenix"): 
 export function officeDateTime(iso: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "America/Phoenix", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
     .format(new Date(iso))
-    .replace(/[  ]/g, " ");
+    .replace(/[\u202f\u00a0]/g, " ");
 }
 
 /** A date for an email: "January 5, 2027". */
@@ -723,9 +719,11 @@ const button = (href: string, label: string) =>
   `<a href="${href}" style="display:inline-block;margin-top:26px;padding:12px 26px;border-radius:12px;background:#ffffff;color:#000;font-size:14px;font-weight:600;text-decoration:none;">${esc(label)}</a>`;
 
 /** The line that tells a theater-mode signer what comes first. Signing never needs a computer: a phone signs on the page. */
-export const GAME_NOTE = "This one is a little different: on a computer, a short film plays before the signing page (about three minutes, sound on). On a phone or tablet, or if you'd rather skip it, you can read and sign straight away.";
+export const GAME_NOTE =
+  "This one is a little different: on a computer, a short film plays before the signing page (about three minutes, sound on). On a phone or tablet, or if you'd rather skip it, you can read and sign straight away.";
 /** The same for the racetrack game. */
-export const RACE_NOTE = "This one is a little different: on a computer, you race two laps around a track before the signing page (about three minutes, sound on). On a phone or tablet, or if you'd rather skip it, you can read and sign straight away.";
+export const RACE_NOTE =
+  "This one is a little different: on a computer, you race two laps around a track before the signing page (about three minutes, sound on). On a phone or tablet, or if you'd rather skip it, you can read and sign straight away.";
 
 /** "You're signing as Alex Rivera, Member." or "You're signing for Northwind Holdings, LLC as its Manager." */
 function signingAs(party: Party): string {

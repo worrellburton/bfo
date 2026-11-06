@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsReading, readingFailed, readingKey, toReading } from "../lib/paper-read";
+import { needsReading, readingFailed, readingKey, toReading, urgencyFor } from "../lib/paper-read";
 
 describe("paper mail reading", () => {
   it("is read once per envelope, and again when a scan arrives", () => {
@@ -38,7 +38,7 @@ describe("paper mail reading", () => {
         dates: [],
         references: [{ label: "Account", value: "••1234" }],
         contents: "Should be dropped without a scan.",
-        envelopeText: ["STABLE", "", 7, "LEDGER LOUISE, LLC"],
+        envelopeText: ["STABLE", "", 7, "NORTHWIND HOLDINGS, LLC"],
       },
       false,
     );
@@ -51,12 +51,27 @@ describe("paper mail reading", () => {
     expect(r.dueDate).toBeNull();
     expect(r.amounts).toEqual([{ label: "Amount due", amount: "$1,240.00" }]);
     expect(r.contents).toBeNull();
-    expect(r.envelopeText).toEqual(["STABLE", "LEDGER LOUISE, LLC"]);
+    expect(r.envelopeText).toEqual(["STABLE", "NORTHWIND HOLDINGS, LLC"]);
     expect(r.fromScan).toBe(false);
   });
 
   it("keeps the contents and a real due date when the scan was read", () => {
     const r = toReading({ headline: "A bill", kind: "bill", urgency: "action", dueDate: "2026-11-14", contents: "Pay it." }, true);
     expect(r).toMatchObject({ kind: "bill", urgency: "action", dueDate: "2026-11-14", contents: "Pay it.", fromScan: true });
+  });
+
+  it("never calls legal, government or tax mail junk: it always needs action", () => {
+    for (const kind of ["legal", "government", "tax"]) {
+      expect(urgencyFor(kind, "junk")).toBe("action");
+      expect(toReading({ headline: "A notice", kind, urgency: "fyi" }, true).urgency).toBe("action");
+    }
+    expect(urgencyFor("marketing", "junk")).toBe("junk");
+    expect(urgencyFor("bill", "whatever")).toBe("fyi");
+  });
+
+  it("keeps the tax form and year for tax mail only", () => {
+    expect(toReading({ headline: "A 1099", kind: "tax", taxForm: "1099-DIV", taxYear: "2025" }, true)).toMatchObject({ taxForm: "1099-DIV", taxYear: "2025" });
+    expect(toReading({ headline: "A 1099", kind: "tax", taxForm: "1099-DIV", taxYear: "last year" }, true).taxYear).toBeNull();
+    expect(toReading({ headline: "A bill", kind: "bill", taxForm: "1099-DIV", taxYear: "2025" }, true)).toMatchObject({ taxForm: null, taxYear: null });
   });
 });

@@ -1,92 +1,116 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { createPortal } from "react-dom";
-import { authFetch, isAdmin } from "../auth";
-import { confirmDialog } from "../confirm-dialog";
+import { isAdmin } from "../auth";
 import { InviteDialog } from "../entity/people";
 import {
   blankTab,
+  capacity,
+  deviceWords,
   FIELD_LABEL,
-  isOpen,
-  MODE_LABEL,
-  newField,
-  PARTY_LABEL,
   isGameMode,
+  isOpen,
+  looksLikeEntity,
+  MODE_LABEL,
+  MODES,
+  newField,
+  OFFICE_ZONE,
+  shortSha,
   signApi,
+  stamp,
   when,
+  whenShort,
   type FieldType,
   type Party,
   type PartyKey,
-  type SignField,
+  type RelatedRequest,
   type SignatureRequest,
+  type SignEvent,
+  type SignField,
   type SignMode,
 } from "../sign/api";
+import { ArchiveDialog, confirmDeleteDraft, confirmSendCopy, Fact, PartyStatusText, requestDetail, StatusChip, VoidDialog } from "../sign/parts";
 import { PdfPages, useFitWidth } from "../sign/pdf-pages";
 import { usePoll } from "../sign/use-poll";
-import { useTheme } from "../theme";
-import { PartyDot, Small, StatusChip } from "./tools-signatures";
+import {
+  Banner,
+  Button,
+  Card,
+  CardSection,
+  Checkbox,
+  ChoiceTiles,
+  Dialog,
+  Disclosure,
+  ErrorPage,
+  Field,
+  Input,
+  Menu,
+  Page,
+  PageHeader,
+  Textarea,
+  TextLink,
+  confirm,
+  cx,
+  format,
+  toast,
+  usePhone,
+  useDocumentTitle,
+  type MenuItem,
+} from "../ui";
 
 export function meta() {
-  return [{ title: "Signature · BFO" }];
+  return [{ title: "Signature request · Signatures · BFO" }];
+}
+
+/** Each signer party's identity colour (§2.4: chart-1, then chart-2), never a status hue. */
+const PARTY_COLOUR: Record<PartyKey, string> = { a: "var(--color-chart-1)", b: "var(--color-chart-2)" };
+const PARTY_NUMBER: Record<PartyKey, string> = { a: "1", b: "2" };
+
+/** Why a draft can't go out yet, said where it's fixed; null when it can. Mirrors the server's sendBlocker. */
+function partyProblem(p: Party, fields: SignField[]): string | null {
+  if (!p.name.trim()) return p.entity ? `Name the person who signs for ${p.entity}.` : "Needs a name.";
+  if (!p.entity && looksLikeEntity(p.name)) return `${p.name} is a company. Name the person who signs for it, and their title.`;
+  if (p.entity && !p.title?.trim()) return `Add their title at ${p.entity}.`;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email.trim())) return "Needs an email address.";
+  if (!fields.some((f) => f.party === p.key && f.type === "signature")) return "Place a signature field on the document.";
+  return null;
 }
 
 /**
  * One signature request: the document with its fields drawn over it (drag to
- * move, corner to resize, while it's still a draft), the two parties, and
- * the buttons that send it, remind, void, or hand out the signed copy.
+ * move, corner to resize, while it's still a draft), the parties, the record
+ * (fingerprints, where the signed copy is filed, other versions) and the
+ * history. A sent request is never deleted: it is voided while open, and
+ * archived once closed (owners and admins). Times are Arizona time, as on
+ * the certificate.
  */
 export default function SignatureDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const phone = usePhone();
+  const admin = isAdmin();
   const [req, setReq] = useState<SignatureRequest | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
-  const [note, setNote] = useState("");
-  // A game-mode reminder written like a normal request: nothing about the game in the email, the link still opens it.
-  const [plainRemind, setPlainRemind] = useState(false);
   const [busy, setBusy] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [placing, setPlacing] = useState<{ party: PartyKey; type: FieldType } | null>(null);
   const [frameRef, width] = useFitWidth(880);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docRef = useRef<HTMLElement | null>(null);
   // A party being invited to BFO as a user of the request's entity (app/entity/people.tsx).
   const [inviting, setInviting] = useState<Party | null>(null);
   const [entityName, setEntityName] = useState<string | null>(null);
-  const [invited, setInvited] = useState<Set<string>>(new Set());
+  const [accounts, setAccounts] = useState<Partial<Record<PartyKey, string>>>({});
+  const [people, setPeople] = useState<Record<string, string>>({});
+  const [related, setRelated] = useState<RelatedRequest[]>([]);
   /** The server's word on whether this draft may go out as the game: only TallulahMD LLC's (lib/game-entity). */
   const [gameOk, setGameOk] = useState(false);
-  // Whether this entity may have a game at all (the resend dialog offers one).
   const [gameEntity, setGameEntity] = useState(false);
-  // The resend dialog, for a request that has run its course.
   const [resending, setResending] = useState(false);
-  const assetId = req?.asset_id ?? null;
-
-  // The entity's name and who already has it, for "Invite to BFO" on each party.
-  useEffect(() => {
-    // Another request: nothing of the last one's entity sticks to it.
-    setEntityName(null);
-    setInvited(new Set());
-    if (!assetId || !isAdmin()) return;
-    let live = true;
-    authFetch(`/api/tree?path=assets&ids=${encodeURIComponent(assetId)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => live && setEntityName((j?.rows?.[0]?.data as { name?: string } | undefined)?.name ?? null))
-      .catch(() => {});
-    authFetch(`/api/members?assetId=${encodeURIComponent(assetId)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => live && setInvited(new Set(((j?.people ?? []) as Array<{ email: string | null }>).map((p) => (p.email ?? "").toLowerCase()).filter(Boolean))))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [assetId]);
-
-  const t2 = isDark ? "text-gray-400" : "text-gray-600";
-  const t3 = isDark ? "text-gray-500" : "text-gray-400";
-  const card = `rounded-2xl border ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white glass-card"}`;
-  const input = `h-9 w-full rounded-lg border px-2.5 text-[13px] focus:outline-none max-sm:h-[44px] max-sm:text-[16px] pointer-coarse:h-[44px] pointer-coarse:text-[16px] ${isDark ? "border-white/10 bg-white/[0.03] text-white focus:border-white/30" : "border-gray-200 bg-white text-gray-900 focus:border-gray-400"}`;
+  const [voiding, setVoiding] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  useDocumentTitle(req?.title ?? "Signature request", "Signatures");
 
   const shownKey = useRef<string | null>(null);
   const load = useCallback(async () => {
@@ -95,13 +119,17 @@ export default function SignatureDetail() {
       setReq(r.request);
       setGameOk(!!r.gameAllowed);
       setGameEntity(!!r.gameEntity);
+      setEntityName(r.entityName ?? null);
+      setAccounts(r.accounts ?? {});
+      setPeople(r.people ?? {});
+      setRelated(r.related ?? []);
       // Only a new version replaces the pages on screen (each signature stamps a new one).
       if (r.pdfUrl) {
         setPdfUrl(r.pdfUrl);
         shownKey.current = r.pdfKey;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't load it.");
+      setLoadError(err instanceof Error ? err.message : "Couldn’t open this request.");
     }
   }, [id]);
   useEffect(() => {
@@ -110,31 +138,51 @@ export default function SignatureDetail() {
   // While it's out for signature, signatures show up here as they land.
   usePoll(load, 8000, isOpen(req?.status));
 
+  // Escape stops placing a field.
+  useEffect(() => {
+    if (!placing) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setPlacing(null);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [placing]);
+
   const editable = req?.status === "draft";
   const parties = useMemo<Party[]>(() => {
     const got = req?.parties ?? [];
     return (["a", "b"] as PartyKey[]).map((key, i) => got.find((p) => p.key === key) ?? { key, role: i === 0 ? "Party A" : "Party B", name: "", email: "", status: "pending" });
   }, [req]);
+  const fields = req?.fields ?? [];
+  const nameOf = (k?: PartyKey) => {
+    const p = parties.find((x) => x.key === k);
+    return p ? p.name || p.entity || p.role : "";
+  };
+  const blocker = editable ? (!req?.original_path ? "Add the document first." : (parties.map((p) => partyProblem(p, fields)).find(Boolean) ?? null)) : null;
 
   /** Saves fields and parties a moment after the last change. */
   function queueSave(next: SignatureRequest) {
     setReq(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
       signApi
         .act("update", { id: next.id, title: next.title, fields: next.fields, parties: next.parties, mode: next.mode ?? "normal" })
-        .catch((err) => setError(err instanceof Error ? err.message : "Couldn't save."));
+        .catch((err) => setError(err instanceof Error ? err.message : "Couldn’t save the change."));
     }, 500);
+  }
+  async function flush() {
+    if (!saveTimer.current || !req) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    await signApi.act("update", { id: req.id, title: req.title, fields: req.fields, parties: req.parties, mode: req.mode ?? "normal" });
   }
 
   function setParty(key: PartyKey, patch: Partial<Party>) {
     if (!req) return;
-    const next = parties.map((p) => (p.key === key ? { ...p, ...patch } : p));
-    queueSave({ ...req, parties: next });
+    queueSave({ ...req, parties: parties.map((p) => (p.key === key ? { ...p, ...patch } : p)) });
   }
-  function setFields(fields: SignField[]) {
+  function setFields(next: SignField[]) {
     if (!req) return;
-    queueSave({ ...req, fields });
+    queueSave({ ...req, fields: next });
   }
   function addField(party: PartyKey, type: FieldType, page: number, at?: { x: number; y: number }) {
     if (!req) return;
@@ -142,405 +190,648 @@ export default function SignatureDetail() {
     setFields([...req.fields, f]);
     setSelected(f.id);
   }
+  function startPlacing(party: PartyKey, type: FieldType) {
+    setPlacing({ party, type });
+    // On a phone the document is above the parties: bring it into view.
+    if (phone) docRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
-  async function run(action: "send" | "remind" | "send-copy" | "void" | "delete" | "download") {
+  async function run(action: "send" | "remind" | "send-copy" | "delete" | "download" | "file" | "unarchive", extra: Record<string, unknown> = {}) {
     if (!req) return;
     // The tab opens inside the click, before the save and the link are awaited.
     const tab = action === "download" ? blankTab() : null;
-    setBusy(action);
     setError("");
-    setNote("");
     try {
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-        saveTimer.current = null;
-        await signApi.act("update", { id: req.id, title: req.title, fields: req.fields, parties: req.parties, mode: req.mode ?? "normal" });
-      }
+      await flush();
       if (tab) {
         tab.go(await signApi.download(req.id));
-      } else if (action === "delete") {
-        if (!(await confirmDialog({ title: `Delete "${req.title}"?`, message: "The document and its signatures are removed for good.", tone: "danger", confirmLabel: "Delete" }))) return;
+        return;
+      }
+      if (action === "delete") {
+        if (!(await confirmDeleteDraft(req))) return;
+        setBusy(action);
         await signApi.remove(req.id);
+        toast({ message: "Deleted the draft" });
         navigate("/tools/signatures");
         return;
-      } else if (action === "void") {
-        if (!(await confirmDialog({ title: "Void this request?", message: "The signing links stop working. Nobody is told.", tone: "danger", confirmLabel: "Void" }))) return;
-        setReq(await signApi.act("void", { id: req.id }));
-      } else {
-        const next = await signApi.act(action, action === "remind" ? { id: req.id, plain: plainRemind } : { id: req.id });
-        setReq(next);
-        setNote(
-          action === "send"
-            ? `Sent to ${next.parties.map((p) => `${p.name} (${p.email})`).join(" and ")}.`
-            : action === "remind"
-              ? `Reminded ${next.parties
-                  .filter((p) => p.status !== "signed")
-                  .map((p) => p.name)
-                  .join(" and ")}${plainRemind && isGameMode(req.mode) ? " as a normal request" : ""}.`
-              : `Sent the signed copy to ${next.parties.map((p) => p.email).join(" and ")}.`,
-        );
       }
+      if (action === "send") {
+        const ok = await confirm({
+          title: "Send for signature?",
+          object: { name: req.title, detail: `${format.count(req.pages.length, "page")}${req.original_sha256 ? ` · document ID ${shortSha(req.original_sha256)}` : ""}` },
+          details: [
+            ...parties.map((p) => `${capacity(p)} · ${p.email}`),
+            isGameMode(req.mode) ? `${MODE_LABEL[req.mode ?? "normal"]} first on a computer; a phone signs straight away` : "Normal e-signature",
+          ],
+          message: "Each party gets a private link by email. It works for 60 days; a reminder sends a fresh one. Once sent, the document, the parties and the fields can’t change.",
+          confirmLabel: "Send for signature",
+          tone: "commit",
+        });
+        if (ok === false) return;
+      }
+      if (action === "send-copy" && !(await confirmSendCopy(req))) return;
+      setBusy(action);
+      const next = await signApi.act(action, { id: req.id, ...extra });
+      setReq(next);
+      toast({
+        message:
+          action === "send"
+            ? `Sent to ${format.list(next.parties.map((p) => p.name || p.role))}`
+            : action === "remind"
+              ? `Reminded ${format.list(next.parties.filter((p) => p.status !== "signed" && p.status !== "declined" && (!extra.party || p.key === extra.party)).map((p) => p.name || p.role))}${extra.plain ? " as a normal request" : ""}`
+              : action === "send-copy"
+                ? `Emailed the signed copy to ${format.list(next.parties.map((p) => p.name || p.role))}`
+                : action === "file"
+                  ? `Filed the signed copy with ${entityName ?? "the entity"}`
+                  : "Restored to the list",
+      });
     } catch (err) {
       tab?.close();
-      setError(err instanceof Error ? err.message : "That didn't work.");
+      setError(err instanceof Error ? err.message : "That didn’t work. Try again.");
     } finally {
       setBusy("");
     }
   }
 
-  if (error && !req) {
-    return (
-      <div className="mx-auto max-w-[1400px]">
-        <Link to="/tools/signatures" className={`text-[12.5px] ${t2} hover:underline`}>
-          ← Signatures
-        </Link>
-        <p className="mt-6 text-red-400">{error}</p>
-      </div>
-    );
-  }
+  if (loadError && !req) return <ErrorPage kind="not-found" detail={loadError} home="/tools/signatures" />;
 
-  const partyTone = (k: PartyKey) =>
-    k === "a" ? { bg: "rgba(99,102,241,0.18)", border: "#818cf8", text: isDark ? "#c7d2fe" : "#3730a3" } : { bg: "rgba(245,158,11,0.18)", border: "#f59e0b", text: isDark ? "#fde68a" : "#92400e" };
+  const r = req;
+  const open = isOpen(r?.status);
+  const completed = r?.status === "completed";
+  const supersededBy =
+    r && open ? related.filter((v) => v.status === "completed" && v.created_at > r.created_at).sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))[0] : undefined;
+
+  const menu: MenuItem[] = !r
+    ? []
+    : [
+        ...(r.original_path ? [{ label: completed ? "Download signed copy" : "Download", onSelect: () => run("download") }] : []),
+        ...(completed && r.copy_sent_at ? [{ label: "Email signed copy again", onSelect: () => run("send-copy") }] : []),
+        ...(completed && r.asset_id && !r.filed_path ? [{ label: `File with ${entityName ?? "the entity"}`, onSelect: () => run("file") }] : []),
+        ...(open && isGameMode(r.mode) ? [{ label: "Remind as a normal request", hint: "Nothing about the game in the email", onSelect: () => run("remind", { plain: true }) }] : []),
+        ...(r.status !== "draft" && r.original_path && !r.archived_at
+          ? [{ label: completed ? "Send a new version for signature…" : "Send again as a new request…", onSelect: () => setResending(true) }]
+          : []),
+        ...(open ? [{ divider: true } as const, { label: "Void…", danger: true, onSelect: () => setVoiding(true) }] : []),
+        ...(!r.archived_at && (completed || r.status === "declined" || r.status === "voided")
+          ? [{ divider: true } as const, { label: "Archive…", onSelect: () => setArchiving(true), disabled: !admin, disabledReason: "Owners and admins" }]
+          : []),
+        ...(r.archived_at ? [{ label: "Restore to the list", onSelect: () => run("unarchive"), disabled: !admin, disabledReason: "Owners and admins" }] : []),
+        ...(r.status === "draft" && !r.sent_at ? [{ divider: true } as const, { label: "Delete draft…", danger: true, onSelect: () => run("delete") }] : []),
+      ];
+
+  const primary = !r ? null : editable ? (
+    <Button variant="primary" disabled={!!blocker || !!busy} disabledReason={blocker ?? undefined} busy={busy === "send"} busyLabel="Sending…" onClick={() => run("send")}>
+      Send for signature
+    </Button>
+  ) : open ? (
+    <Button variant="primary" busy={busy === "remind"} busyLabel="Reminding…" onClick={() => run("remind")}>
+      Remind
+    </Button>
+  ) : completed ? (
+    <Button variant="primary" icon="download" onClick={() => run("download")}>
+      Download signed copy
+    </Button>
+  ) : null;
+  const secondary =
+    r && completed && !r.copy_sent_at ? (
+      <Button busy={busy === "send-copy"} busyLabel="Sending…" onClick={() => run("send-copy")}>
+        Email signed copy
+      </Button>
+    ) : undefined;
+
+  const context = r ? (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <StatusChip status={r.status} />
+      {isGameMode(r.mode) && <span>{MODE_LABEL[r.mode ?? "normal"]}</span>}
+      {r.completed_at ? <span>Completed {when(r.completed_at)}</span> : r.sent_at ? <span>Sent {when(r.sent_at)}</span> : <span>Created {when(r.created_at)}</span>}
+      {completed && <span>{r.copy_sent_at ? `Copy sent ${whenShort(r.copy_sent_at)}` : "Copy not sent yet"}</span>}
+      {r.pages.length > 0 && <span>{format.count(r.pages.length, "page")}</span>}
+      {entityName && r.asset_id && (
+        <Link to={`/assets/${r.asset_id}/agreements`} className="text-accent hover:underline">
+          {entityName}
+        </Link>
+      )}
+    </span>
+  ) : undefined;
+
+  const placingParty = placing ? parties.find((p) => p.key === placing.party) : null;
+  const placingBar = placing && placingParty && (
+    <div
+      data-floating
+      className={cx(
+        "ds z-sticky flex items-center gap-3 border-line bg-raised px-4 py-3",
+        phone ? "fixed inset-x-0 bottom-0 border-t" : "sticky top-0 -mx-4 -mt-4 mb-4 rounded-t-card border-b sm:-mx-6 sm:-mt-6",
+      )}
+      style={phone ? { paddingBottom: "max(12px, env(safe-area-inset-bottom))" } : undefined}
+    >
+      <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: PARTY_COLOUR[placingParty.key] }} />
+      <p className="min-w-0 flex-1 text-body">
+        Choose where {placingParty.name || placingParty.entity || placingParty.role}’s {FIELD_LABEL[placing.type].toLowerCase()} goes on the document.
+      </p>
+      <Button variant="quiet" size="sm" onClick={() => setPlacing(null)}>
+        Cancel
+      </Button>
+    </div>
+  );
 
   return (
-    <div className="mx-auto max-w-[1400px] pb-16">
-      <header className="flex flex-col gap-3 pt-1 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <Link to="/tools/signatures" className={`block text-[11px] font-medium uppercase tracking-[0.18em] ${t3} hover:underline`}>
-            Tools · Signatures
-          </Link>
-          {req && editable ? (
-            // Still the page's heading while the title is editable.
-            <h1 className="mt-1">
-              <input
-                value={req.title}
-                onChange={(e) => queueSave({ ...req, title: e.target.value })}
-                aria-label="Document title"
-                className={`h-auto w-full max-w-[640px] border-0 bg-transparent p-0 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] focus:outline-none sm:text-[22px] ${isDark ? "text-white" : "text-gray-900"}`}
-              />
-            </h1>
-          ) : (
-            <h1 className="mt-1 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px]">{req?.title ?? "…"}</h1>
-          )}
-          {req && (
-            <p className={`mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] ${t2}`}>
-              <StatusChip status={req.status} isDark={isDark} />
-              {req.mode === "game" && !editable && <span className={isDark ? "text-amber-300" : "text-amber-700"}>{MODE_LABEL.game}</span>}
-              {req.sent_at && <span>Sent {when(req.sent_at)}</span>}
-              {req.completed_at && <span>Signed {when(req.completed_at)}</span>}
-              {req.copy_sent_at && <span>Copy sent {when(req.copy_sent_at)}</span>}
-              {req.pages.length > 0 && (
-                <span>
-                  {req.pages.length} page{req.pages.length === 1 ? "" : "s"}
-                </span>
-              )}
-            </p>
-          )}
-        </div>
-        {req && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {editable && (
-              <Small isDark={isDark} primary disabled={!!busy} onClick={() => run("send")}>
-                {busy === "send" ? "Sending…" : "Send for signature"}
-              </Small>
-            )}
-            {(req.status === "sent" || req.status === "partial") && (
-              <Small isDark={isDark} disabled={!!busy} onClick={() => run("remind")}>
-                Remind
-              </Small>
-            )}
-            {(req.status === "sent" || req.status === "partial") && isGameMode(req.mode) && (
-              <label className={`flex items-center gap-2 text-[12px] cursor-pointer max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${t2}`}>
-                <input type="checkbox" className="h-4 w-4" checked={plainRemind} onChange={(e) => setPlainRemind(e.target.checked)} />
-                Remind as a normal request: nothing about the game in the email
-              </label>
-            )}
-            {req.status === "completed" && (
-              <Small isDark={isDark} primary disabled={!!busy} onClick={() => run("send-copy")}>
-                {busy === "send-copy" ? "Sending…" : "Send to both parties"}
-              </Small>
-            )}
-            {req.status !== "draft" && req.original_path && (
-              <Small isDark={isDark} disabled={!!busy} onClick={() => setResending(true)}>
-                Resend for signature
-              </Small>
-            )}
-            {req.original_path && (
-              <Small isDark={isDark} disabled={!!busy} onClick={() => run("download")}>
-                {req.status === "completed" ? "Download signed copy" : "Download"}
-              </Small>
-            )}
-            {(req.status === "sent" || req.status === "partial" || req.status === "declined") && (
-              <Small isDark={isDark} disabled={!!busy} onClick={() => run("void")}>
-                Void
-              </Small>
-            )}
-            <Small isDark={isDark} danger disabled={!!busy} onClick={() => run("delete")}>
-              Delete
-            </Small>
-          </div>
-        )}
-      </header>
-
-      {(error || note) && (
-        <p role="status" className={`mt-3 text-[12.5px] ${error ? "text-red-400" : isDark ? "text-emerald-300" : "text-emerald-700"}`}>
-          {error || note}
-        </p>
+    <Page
+      width="workspace"
+      header={
+        <PageHeader
+          title={r?.title ?? "Signature request"}
+          back={{ to: "/tools/signatures", label: "Signatures" }}
+          context={context}
+          primary={primary ?? undefined}
+          secondary={secondary}
+          menu={menu.length ? menu : undefined}
+        />
+      }
+    >
+      {blocker && <p className="-mt-4 text-small text-ink-2">{blocker}</p>}
+      {error && (
+        <Banner tone="negative" onDismiss={() => setError("")}>
+          {error}
+        </Banner>
+      )}
+      {r?.archived_at && (
+        <Banner tone="info" title="Archived.">
+          {`${r.archived_by_name ?? "Someone"} archived it on ${when(r.archived_at)}${r.archived_reason ? `: ${r.archived_reason}` : ""}. It’s kept whole and out of the list.`}
+        </Banner>
+      )}
+      {supersededBy && (
+        <Banner
+          tone="warning"
+          title="A later version was signed."
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setVoiding(true)}>
+              Void this one
+            </Button>
+          }
+        >
+          {`Another request for this document was signed by everyone on ${when(supersededBy.completed_at)}, and this one is still open. Void it so a second copy can’t be signed.`}
+        </Banner>
       )}
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* The document */}
-        <div ref={frameRef} className={`min-w-0 overflow-auto p-4 sm:p-6 ${card} ${isDark ? "bg-black/40" : "bg-gray-100"}`} style={{ maxHeight: "calc(100dvh - 12rem)" }}>
-          {placing && (
-            <p className={`mb-3 text-center text-[12.5px] ${isDark ? "text-amber-300" : "text-amber-700"}`}>
-              Click where the {FIELD_LABEL[placing.type].toLowerCase()} for {parties.find((p) => p.key === placing.party)?.name || parties.find((p) => p.key === placing.party)?.role} goes.{" "}
-              <button type="button" className="underline" onClick={() => setPlacing(null)}>
-                Cancel
-              </button>
-            </p>
-          )}
+        <section
+          ref={(el) => ((docRef.current = el), frameRef(el as HTMLDivElement | null))}
+          aria-label="The document"
+          className="order-2 min-w-0 scroll-mt-4 rounded-card bg-sunken p-4 sm:p-6 lg:order-1"
+        >
+          {!phone && placingBar}
           {width > 0 && (
             <PdfPages
               src={pdfUrl}
-              width={width - 8}
+              pages={r?.pages}
+              width={width - 4}
               overlay={(page, size) => (
                 <div
-                  className={`absolute inset-0 ${placing ? "cursor-crosshair" : ""}`}
+                  className={cx("absolute inset-0", placing && "cursor-crosshair")}
                   onClick={(e) => {
                     if (!placing) return;
-                    const r = e.currentTarget.getBoundingClientRect();
-                    addField(placing.party, placing.type, page, { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    addField(placing.party, placing.type, page, { x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height });
                     setPlacing(null);
                   }}
                 >
-                  {(req?.fields ?? [])
+                  {fields
                     .filter((f) => f.page === page)
                     .map((f) => (
                       <FieldBox
                         key={f.id}
                         field={f}
                         size={size}
-                        tone={partyTone(f.party)}
-                        label={`${parties.find((p) => p.key === f.party)?.name?.split(" ")[0] || parties.find((p) => p.key === f.party)?.role} · ${FIELD_LABEL[f.type]}`}
+                        colour={PARTY_COLOUR[f.party]}
+                        label={`${(nameOf(f.party).split(" ")[0] || PARTY_NUMBER[f.party]).slice(0, 18)} · ${FIELD_LABEL[f.type]}`}
                         editable={!!editable}
                         selected={selected === f.id}
                         onSelect={() => setSelected(f.id)}
-                        onChange={(nf) => setFields((req?.fields ?? []).map((x) => (x.id === nf.id ? nf : x)))}
-                        onRemove={() => setFields((req?.fields ?? []).filter((x) => x.id !== f.id))}
+                        onChange={(nf) => setFields(fields.map((x) => (x.id === nf.id ? nf : x)))}
+                        onRemove={() => setFields(fields.filter((x) => x.id !== f.id))}
                       />
                     ))}
                 </div>
               )}
             />
           )}
-        </div>
+        </section>
 
-        {/* How they sign (only TallulahMD LLC's requests may go out as the game), the parties and their fields */}
-        <aside className="space-y-4">
-          {req && editable && (gameOk || isGameMode(req.mode)) && (
-            <section className={`${card} p-4`}>
-              <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>How they sign</p>
-              <div className="mt-3 space-y-2" role="radiogroup" aria-label="How they sign">
-                {(
-                  [
-                    { mode: "normal", blurb: "They open the link, read the document, and sign." },
-                    { mode: "game", blurb: "They walk into a theater, watch the clip, and the door to the signing room opens when it ends. Computer only." },
-                    { mode: "race", blurb: "They race Judy around a track, two laps, and the signing page opens at the finish. Computer only." },
-                  ] as Array<{ mode: SignMode; blurb: string }>
-                ).map(({ mode, blurb }) => {
-                  const on = (req.mode ?? "normal") === mode;
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      onClick={() => queueSave({ ...req, mode })}
-                      className={`block w-full rounded-xl border p-3 text-left transition-colors ${
-                        on ? (isDark ? "border-white/40 bg-white/[0.06]" : "border-gray-900 bg-gray-50") : isDark ? "border-white/10 hover:border-white/25" : "border-gray-200 hover:border-gray-400"
-                      }`}
-                    >
-                      <span className="flex items-center gap-2 text-[13px] font-medium">
-                        <span aria-hidden className={`h-2 w-2 rounded-full ${on ? (isDark ? "bg-white" : "bg-gray-900") : isDark ? "bg-white/20" : "bg-gray-300"}`} />
-                        {MODE_LABEL[mode]}
-                      </span>
-                      <span className={`mt-1 block text-[11.5px] leading-snug ${t2}`}>{blurb}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-          {parties.map((p) => {
-            const tone = partyTone(p.key);
-            const mine = (req?.fields ?? []).filter((f) => f.party === p.key);
-            return (
-              <section key={p.key} className={`${card} p-4`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em]" style={{ color: tone.text }}>
-                    <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: tone.border }} />
-                    {p.key === "a" ? "First party" : "Second party"}
-                  </span>
-                  {!editable && (
-                    <span className={`inline-flex items-center gap-1.5 text-[11.5px] ${t2}`}>
-                      <PartyDot status={p.status} />
-                      {PARTY_LABEL[p.status]}
-                      {p.signedAt ? ` ${when(p.signedAt)}` : ""}
-                    </span>
-                  )}
-                </div>
-                {editable ? (
-                  <div className="mt-3 space-y-2">
-                    <input
-                      value={p.role}
-                      onChange={(e) => setParty(p.key, { role: e.target.value })}
-                      placeholder="Role (Manager, Client…)"
-                      aria-label={`${p.key === "a" ? "First" : "Second"} party role`}
-                      className={input}
-                    />
-                    <input
-                      value={p.name}
-                      onChange={(e) => setParty(p.key, { name: e.target.value })}
-                      placeholder="Full name"
-                      aria-label={`${p.key === "a" ? "First" : "Second"} party name`}
-                      className={input}
-                    />
-                    <input
-                      type="email"
-                      value={p.email}
-                      onChange={(e) => setParty(p.key, { email: e.target.value })}
-                      placeholder="Email"
-                      aria-label={`${p.key === "a" ? "First" : "Second"} party email`}
-                      className={input}
-                    />
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {(["signature", "initials", "name", "date", "address"] as FieldType[]).map((type) => (
-                        <Small key={type} isDark={isDark} onClick={() => setPlacing({ party: p.key, type })} aria-pressed={placing?.party === p.key && placing.type === type}>
-                          + {FIELD_LABEL[type]}
-                        </Small>
-                      ))}
-                    </div>
-                    <p className={`text-[11.5px] ${t3}`}>
-                      {mine.length === 0
-                        ? "No fields yet. Add a signature and click the page where it goes."
-                        : `${mine.length} field${mine.length === 1 ? "" : "s"}: ${mine.map((f) => `${FIELD_LABEL[f.type].toLowerCase()} p.${f.page}`).join(", ")}`}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="mt-2 text-[13px]">
-                    <p className="font-medium">{p.name || p.role}</p>
-                    <p className={t2}>
-                      {p.role}
-                      {p.email ? ` · ${p.email}` : ""}
-                    </p>
-                    {p.signedAs && p.signedAs !== p.name && <p className={`text-[12px] ${t3}`}>Signed as {p.signedAs}</p>}
-                    {p.declinedReason && <p className="mt-1 text-[12px] text-red-400">Declined: {p.declinedReason}</p>}
-                    {assetId &&
-                      isAdmin() &&
-                      p.email &&
-                      (invited.has(p.email.toLowerCase()) ? (
-                        <p className={`mt-2 text-[12px] ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>Can sign in to BFO and see {entityName ?? "the entity"}.</p>
-                      ) : (
-                        <Small isDark={isDark} className="mt-2" disabled={!!busy} onClick={() => setInviting(p)}>
-                          Invite to BFO
-                        </Small>
-                      ))}
-                    {(req?.status === "sent" || req?.status === "partial") && p.status !== "signed" && (
-                      <Small
-                        isDark={isDark}
-                        className="mt-2"
-                        disabled={!!busy}
-                        onClick={() =>
-                          signApi
-                            .act("remind", { id: req.id, party: p.key, plain: plainRemind })
-                            .then(setReq)
-                            .catch((e) => setError(e.message))
-                        }
-                      >
-                        Remind {p.name.split(" ")[0] || p.role}
-                      </Small>
-                    )}
-                  </div>
+        {/* Status and parties first on a phone; beside the document on a computer. */}
+        <aside className="order-1 flex flex-col gap-4 lg:order-2">
+          {r && editable && (
+            <Card title="Request">
+              <div className="flex flex-col gap-4">
+                <Field label="Title" hint="As the parties see it in their email and on the certificate.">
+                  <Input value={r.title} onChange={(e) => queueSave({ ...r, title: e.target.value })} />
+                </Field>
+                {(gameOk || isGameMode(r.mode)) && (
+                  <ChoiceTiles<SignMode>
+                    label="How they sign"
+                    stacked
+                    value={r.mode ?? "normal"}
+                    onChange={(mode) => queueSave({ ...r, mode })}
+                    options={MODES.map((m) => ({ value: m.mode, title: m.label, description: m.blurb }))}
+                  />
                 )}
-              </section>
-            );
-          })}
-
-          {req && req.events.length > 0 && (
-            <section className={`${card} p-4`}>
-              <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${t3}`}>History</p>
-              <ul className="mt-2 space-y-1 text-[12px]">
-                {[...req.events].reverse().map((e, i) => (
-                  <li key={i} className={`flex justify-between gap-3 ${t2}`}>
-                    <span>
-                      {describe(e.kind)}
-                      {e.party ? ` · ${parties.find((p) => p.key === e.party)?.name || parties.find((p) => p.key === e.party)?.role}` : ""}
-                      {e.note ? ` · ${e.note}` : ""}
-                    </span>
-                    <span className={`shrink-0 tabular-nums ${t3}`}>{new Date(e.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+                <p className="text-small text-ink-2">
+                  {r.source === "contract" ? "From an MSA" : "Uploaded"} · created {when(r.created_at)}
+                  {r.original_sha256 ? ` · document ID ${shortSha(r.original_sha256)}` : ""}
+                </p>
+              </div>
+            </Card>
           )}
+
+          {parties.map((p) => (
+            <PartyCard
+              key={p.key}
+              party={p}
+              request={r}
+              editable={!!editable}
+              fields={fields.filter((f) => f.party === p.key)}
+              account={accounts[p.key]}
+              entityName={entityName}
+              busy={busy}
+              onChange={(patch) => setParty(p.key, patch)}
+              onPlace={(type) => startPlacing(p.key, type)}
+              placing={placing?.party === p.key ? placing.type : null}
+              onRemind={() => run("remind", { party: p.key })}
+              onInvite={() => setInviting(p)}
+            />
+          ))}
+
+          {r && !editable && <RecordCard request={r} entityName={entityName} related={related} />}
+          {r && r.events.length > 0 && <HistoryCard events={r.events} parties={parties} people={people} />}
         </aside>
       </div>
 
-      {resending && req && (
+      {phone && placingBar}
+
+      {r && resending && (
         <ResendDialog
-          isDark={isDark}
+          request={r}
           gameEntity={gameEntity}
-          pending={req.status === "sent" || req.status === "partial"}
-          parties={req.parties.map((p) => p.name || p.role)}
           onClose={() => setResending(false)}
-          onSend={async (mode, plain) => {
-            const next = await signApi.act("resend", { id: req.id, mode, plain });
+          onSend={async (body) => {
+            const next = await signApi.act("resend", { id: r.id, ...body });
             setResending(false);
+            toast({ message: `Sent the new request to ${format.list(next.parties.map((p) => p.name || p.role))}` });
             navigate(`/tools/signatures/${next.id}`);
           }}
         />
       )}
-      {inviting &&
-        assetId &&
-        createPortal(
-          <InviteDialog
-            entity={entityName ?? req?.title ?? "the entity"}
-            memberName={inviting.name || inviting.role}
-            assetId={assetId}
-            initial={{ name: inviting.name, email: inviting.email }}
-            onClose={() => setInviting(null)}
-            onDone={(people) => setInvited(new Set(people.map((p) => (p.email ?? "").toLowerCase()).filter(Boolean)))}
-          />,
-          document.body,
-        )}
-    </div>
+      {r && voiding && (
+        <VoidDialog
+          request={r}
+          open
+          onClose={() => setVoiding(false)}
+          onVoid={async (reason, notify) => {
+            setReq(await signApi.act("void", { id: r.id, reason, notify }));
+            setVoiding(false);
+            toast({ message: notify ? "Voided, and the parties were told" : "Voided. Its links stop working" });
+          }}
+        />
+      )}
+      {r && archiving && (
+        <ArchiveDialog
+          request={r}
+          open
+          onClose={() => setArchiving(false)}
+          onArchive={async (reason) => {
+            setReq(await signApi.act("archive", { id: r.id, reason }));
+            setArchiving(false);
+            toast({ message: `Archived ${r.title}`, action: { label: "Undo", run: () => void run("unarchive") } });
+          }}
+        />
+      )}
+      {inviting && r?.asset_id && (
+        <InviteDialog
+          entity={entityName ?? r.title}
+          memberName={inviting.entity || inviting.name || inviting.role}
+          assetId={r.asset_id}
+          initial={{ name: inviting.name, email: inviting.email }}
+          onClose={() => setInviting(null)}
+          onDone={() => {
+            setInviting(null);
+            void load();
+          }}
+        />
+      )}
+    </Page>
   );
 }
 
-function describe(kind: string): string {
+/** One party: who signs (and for whom), their email, their fields while a draft; their status, evidence and actions once sent. */
+function PartyCard({
+  party: p,
+  request: r,
+  editable,
+  fields,
+  account,
+  entityName,
+  busy,
+  placing,
+  onChange,
+  onPlace,
+  onRemind,
+  onInvite,
+}: {
+  party: Party;
+  request: SignatureRequest | null;
+  editable: boolean;
+  fields: SignField[];
+  account?: string;
+  entityName: string | null;
+  busy: string;
+  placing: FieldType | null;
+  onChange: (patch: Partial<Party>) => void;
+  onPlace: (type: FieldType) => void;
+  onRemind: () => void;
+  onInvite: () => void;
+}) {
+  const [company, setCompany] = useState(!!p.entity);
+  const problem = editable ? partyProblem(p, r?.fields ?? []) : null;
+  const title = (
+    <span className="flex items-center gap-2">
+      <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: PARTY_COLOUR[p.key] }} />
+      <span>{p.key === "a" ? "First party" : "Second party"}</span>
+    </span>
+  );
+
+  if (editable) {
+    return (
+      <Card title={title}>
+        <div className="flex flex-col gap-4">
+          <Field label="Role" hint="As it reads on the certificate: Member, Manager, Client.">
+            <Input value={p.role} onChange={(e) => onChange({ role: e.target.value })} />
+          </Field>
+          <Checkbox
+            checked={company}
+            onChange={(v) => {
+              setCompany(v);
+              if (!v) onChange({ entity: undefined, title: undefined });
+            }}
+            label="Signs for a company or trust"
+          />
+          {company && (
+            <Field label="Company or trust">
+              <Input value={p.entity ?? ""} onChange={(e) => onChange({ entity: e.target.value })} placeholder="Northwind Holdings, LLC" />
+            </Field>
+          )}
+          <Field label={company ? "Person who signs for it" : "Name"}>
+            <Input value={p.name} onChange={(e) => onChange({ name: e.target.value })} autoComplete="off" />
+          </Field>
+          {company && (
+            <Field label="Their title">
+              <Input value={p.title ?? ""} onChange={(e) => onChange({ title: e.target.value })} placeholder="Manager" />
+            </Field>
+          )}
+          <Field label="Email" hint="Their own address: the link signs as them.">
+            <Input type="email" value={p.email} onChange={(e) => onChange({ email: e.target.value })} autoComplete="off" />
+          </Field>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-small font-medium">Fields</span>
+              <Menu
+                label={`Add a field for ${p.name || p.role}`}
+                align="end"
+                items={(["signature", "initials", "name", "date", "address"] as FieldType[]).map((type) => ({
+                  label: FIELD_LABEL[type],
+                  onSelect: () => onPlace(type),
+                  checked: placing === type ? true : undefined,
+                }))}
+                trigger={
+                  <Button size="sm" icon="plus" aria-pressed={!!placing}>
+                    Add field
+                  </Button>
+                }
+              />
+            </div>
+            <p className="text-small text-ink-2">
+              {fields.length === 0
+                ? "No fields yet. Add a signature, then choose where it goes on the document."
+                : format.list(fields.map((f) => `${FIELD_LABEL[f.type].toLowerCase()} on page ${f.page}`))}
+              {fields.some((f) => f.type === "date") ? ". The date is stamped in the signer’s own time zone." : ""}
+            </p>
+          </div>
+          {problem && <p className="text-small text-warning">{problem}</p>}
+        </div>
+      </Card>
+    );
+  }
+
+  const evidence = p.signedAt || p.declinedAt || p.viewedAt || p.consent;
   return (
-    {
-      created: "Created",
-      attached: "Document added",
-      sent: "Sent for signature",
-      emailed: "Emailed",
-      reminded: "Reminded",
-      viewed: "Opened",
-      signed: "Signed",
-      declined: "Declined",
-      completed: "Signed by everyone",
-      copy_sent: "Signed copy sent",
-      resent: "Sent again as a new request",
-      voided: "Voided",
-    }[kind] ?? kind
+    <Card title={title} action={<PartyStatusText status={p.status} />}>
+      <div className="flex flex-col gap-3">
+        <div>
+          <p className="text-body font-medium break-words">{p.entity ?? (p.name || p.role)}</p>
+          {p.entity && (
+            <p className="text-small text-ink-2">
+              by {p.name || "someone not named"}
+              {p.title ? `, ${p.title}` : ""}
+            </p>
+          )}
+          <p className="text-small text-ink-2">{p.role}</p>
+          <p className="text-small break-all text-ink-2">{p.email}</p>
+        </div>
+        {p.signedAt && <p className="text-small">Signed {stamp(p.signedAt)}</p>}
+        {p.signedAs && p.signedAs !== p.name && <p className="text-small text-ink-2">Typed their name as “{p.signedAs}”</p>}
+        {p.declinedAt && (
+          <p className="text-small">
+            Declined {stamp(p.declinedAt)}
+            {p.declinedReason ? `: “${p.declinedReason}”` : ""}
+          </p>
+        )}
+        {evidence && (
+          <Disclosure label="Signature evidence">
+            <dl className="mt-2 flex flex-col gap-2">
+              {p.consent && (
+                <Fact label="Agreed to electronic records and signatures">
+                  {stamp(p.consent.at)}
+                  {p.consent.ip ? ` from ${p.consent.ip}` : ""} · disclosure of {p.consent.version}
+                </Fact>
+              )}
+              {p.signedAt && (
+                <Fact label="Signed">
+                  {stamp(p.signedAt)}
+                  {p.ip ? ` from ${p.ip}` : ""}
+                  {p.device ? ` · ${deviceWords(p.device)}` : ""}
+                </Fact>
+              )}
+              {p.method && (
+                <Fact label="Signature">
+                  {p.method === "typed" ? "Typed" : "Drawn"}
+                  {r && isGameMode(r.mode) ? (p.via === "game" ? `, after the ${MODE_LABEL[r.mode ?? "normal"]}` : ", the game skipped") : ""}
+                </Fact>
+              )}
+              {p.timeZone && <Fact label="Date stamped in">{p.timeZone.replace(/_/g, " ")}</Fact>}
+              {p.viewedAt && (
+                <Fact label="First opened">
+                  {stamp(p.viewedAt)}
+                  {p.viewIp ? ` from ${p.viewIp}` : ""}
+                  {p.viewDevice ? ` · ${deviceWords(p.viewDevice)}` : ""}
+                </Fact>
+              )}
+              {p.declinedAt && (
+                <Fact label="Declined">
+                  {stamp(p.declinedAt)}
+                  {p.declineIp ? ` from ${p.declineIp}` : ""}
+                  {p.declineDevice ? ` · ${deviceWords(p.declineDevice)}` : ""}
+                </Fact>
+              )}
+              {p.address && <Fact label="Address they gave">{p.address}</Fact>}
+              {p.expiresAt && p.status !== "signed" && <Fact label="Link works until">{when(p.expiresAt)}</Fact>}
+            </dl>
+          </Disclosure>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {r && isOpen(r.status) && p.status !== "signed" && p.status !== "declined" && (
+            <Button size="sm" disabled={!!busy} onClick={onRemind}>
+              Remind {(p.name || p.role).split(" ")[0]}
+            </Button>
+          )}
+          {r?.asset_id &&
+            isAdmin() &&
+            p.email &&
+            (account ? (
+              <p className="text-small text-ink-2">Has a BFO account ({account}).</p>
+            ) : (
+              <Button size="sm" variant="quiet" disabled={!!busy} onClick={onInvite}>
+                Give access to {entityName ?? "the entity"}…
+              </Button>
+            ))}
+        </div>
+      </div>
+    </Card>
   );
 }
 
-/** A field on the page: dragged by its body, resized by its corner. */
+/** What the record holds: fingerprints, where the signed copy is filed, the request it replaced or was replaced by, other versions. */
+function RecordCard({ request: r, entityName, related }: { request: SignatureRequest; entityName: string | null; related: RelatedRequest[] }) {
+  return (
+    <Card title="Record" staffOnly>
+      <dl className="flex flex-col gap-3">
+        <Fact label="How they sign">{MODE_LABEL[r.mode ?? "normal"]}</Fact>
+        {r.original_sha256 && (
+          <Fact label="Original SHA-256">
+            <span className="tabular-nums" title={r.original_sha256}>
+              {r.original_sha256}
+            </span>
+          </Fact>
+        )}
+        {r.signed_sha256 && (
+          <Fact label="Signed copy SHA-256">
+            <span className="tabular-nums" title={r.signed_sha256}>
+              {r.signed_sha256}
+            </span>
+          </Fact>
+        )}
+        {r.status === "completed" && r.asset_id && (
+          <Fact label="Filed">
+            {r.filed_path ? (
+              <TextLink to={`/assets/${r.asset_id}/documents`} inline>
+                {`In ${entityName ?? "the entity"} › Documents`}
+              </TextLink>
+            ) : (
+              "Not filed with the entity yet (More › File)"
+            )}
+          </Fact>
+        )}
+        {r.replaces && (
+          <Fact label="Replaces">
+            <TextLink to={`/tools/signatures/${r.replaces}`} inline>
+              The earlier request
+            </TextLink>
+          </Fact>
+        )}
+        {r.replaced_by && (
+          <Fact label="Replaced by">
+            <TextLink to={`/tools/signatures/${r.replaced_by}`} inline>
+              A newer request
+            </TextLink>
+          </Fact>
+        )}
+      </dl>
+      {related.length > 0 && (
+        <CardSection title="Other versions of this document">
+          <ul className="flex flex-col gap-1 text-small">
+            {related.map((v) => (
+              <li key={v.id}>
+                <TextLink to={`/tools/signatures/${v.id}`}>
+                  {`${requestDetail({ ...r, ...v, sent_at: v.sent_at, completed_at: v.completed_at, created_at: v.created_at, status: v.status })}${v.archived ? " · archived" : ""}`}
+                </TextLink>
+              </li>
+            ))}
+          </ul>
+        </CardSection>
+      )}
+      <p className="mt-3 text-caption text-ink-2">Times are Arizona time ({OFFICE_ZONE.replace("_", " ")}), as on the certificate.</p>
+    </Card>
+  );
+}
+
+const KIND: Record<string, string> = {
+  created: "Created",
+  attached: "Document added",
+  sent: "Sent for signature",
+  emailed: "Emailed the link",
+  reminded: "Reminded",
+  viewed: "Opened",
+  consented: "Agreed to electronic records and signatures",
+  signed: "Signed",
+  declined: "Declined",
+  completed: "Signed by everyone",
+  copy_sent: "Signed copy emailed",
+  filed: "Filed with the entity",
+  resent: "Sent again as a new request",
+  voided: "Voided",
+  withdrawn_sent: "Told it was withdrawn",
+  archived: "Archived",
+  unarchived: "Restored from the archive",
+};
+
+/** The history, newest first: what happened, who did it, when (with the zone), and from where for a signer's steps. */
+function HistoryCard({ events, parties, people }: { events: SignEvent[]; parties: Party[]; people: Record<string, string> }) {
+  const shown = [...events].reverse();
+  const first = shown.slice(0, 12);
+  const rest = shown.slice(12);
+  const item = (e: SignEvent, i: number) => {
+    const party = e.party ? parties.find((p) => p.key === e.party) : null;
+    const who = party ? party.name || party.entity || party.role : e.byName || (e.by ? people[e.by] : undefined);
+    return (
+      <li key={i} className="flex flex-col">
+        <span className="text-small text-ink">
+          {KIND[e.kind] ?? e.kind}
+          {who ? ` · ${who}` : ""}
+          {e.note ? ` · ${e.note}` : ""}
+        </span>
+        <span className="text-caption text-ink-2 tabular-nums">
+          {stamp(e.at)}
+          {e.ip ? ` · from ${e.ip}` : ""}
+          {e.device ? ` · ${deviceWords(e.device)}` : ""}
+        </span>
+      </li>
+    );
+  };
+  return (
+    <Card title="History" count={events.length}>
+      <ul className="flex flex-col gap-3">{first.map(item)}</ul>
+      {rest.length > 0 && (
+        <Disclosure label="Earlier" count={rest.length} className="mt-3">
+          <ul className="mt-2 flex flex-col gap-3">{rest.map((e, i) => item(e, i + 12))}</ul>
+        </Disclosure>
+      )}
+    </Card>
+  );
+}
+
+/** A field on the page: dragged by its body, resized by its corner, in its party's colour. */
 function FieldBox({
   field,
   size,
-  tone,
+  colour,
   label,
   editable,
   selected,
@@ -550,7 +841,7 @@ function FieldBox({
 }: {
   field: SignField;
   size: { w: number; h: number };
-  tone: { bg: string; border: string; text: string };
+  colour: string;
   label: string;
   editable: boolean;
   selected: boolean;
@@ -575,11 +866,8 @@ function FieldBox({
     if (!d) return;
     const dx = (e.clientX - d.sx) / size.w;
     const dy = (e.clientY - d.sy) / size.h;
-    if (d.kind === "move") {
-      onChange({ ...d.f, x: Math.min(1 - d.f.w, Math.max(0, d.f.x + dx)), y: Math.min(1 - d.f.h, Math.max(0, d.f.y + dy)) });
-    } else {
-      onChange({ ...d.f, w: Math.min(1 - d.f.x, Math.max(0.03, d.f.w + dx)), h: Math.min(1 - d.f.y, Math.max(0.012, d.f.h + dy)) });
-    }
+    if (d.kind === "move") onChange({ ...d.f, x: Math.min(1 - d.f.w, Math.max(0, d.f.x + dx)), y: Math.min(1 - d.f.h, Math.max(0, d.f.y + dy)) });
+    else onChange({ ...d.f, w: Math.min(1 - d.f.x, Math.max(0.03, d.f.w + dx)), h: Math.min(1 - d.f.y, Math.max(0.012, d.f.h + dy)) });
   }
   function end() {
     drag.current = null;
@@ -602,18 +890,17 @@ function FieldBox({
           onRemove();
         }
       }}
-      className={`absolute select-none rounded-[3px] text-[10px] font-medium leading-none ${editable ? "cursor-move touch-none" : ""}`}
+      className={cx("absolute rounded-mark select-none", editable && "cursor-move touch-none")}
       style={{
         left: `${field.x * 100}%`,
         top: `${field.y * 100}%`,
         width: `${field.w * 100}%`,
         height: `${field.h * 100}%`,
-        background: tone.bg,
-        border: `${selected ? 2 : 1}px ${selected ? "solid" : "dashed"} ${tone.border}`,
-        color: tone.text,
+        background: `color-mix(in srgb, ${colour} 16%, transparent)`,
+        border: `${selected ? 2 : 1}px ${selected ? "solid" : "dashed"} ${colour}`,
       }}
     >
-      <span className="absolute -top-[14px] left-0 whitespace-nowrap rounded-sm px-1 py-[1px]" style={{ background: tone.border, color: "#000" }}>
+      <span className="absolute bottom-full left-0 mb-[2px] rounded-mark px-1 text-caption font-medium whitespace-nowrap text-ink-inverse" style={{ background: colour }}>
         {label}
       </span>
       {editable && selected && (
@@ -627,18 +914,20 @@ function FieldBox({
               e.stopPropagation();
               onRemove();
             }}
-            className="absolute -right-[9px] -top-[9px] flex h-[18px] w-[18px] cursor-pointer items-center justify-center pointer-coarse:-right-[22px] pointer-coarse:-top-[22px] pointer-coarse:h-[44px] pointer-coarse:w-[44px]"
+            className="absolute -top-[10px] -right-[10px] flex size-[20px] cursor-pointer items-center justify-center touch:-top-[22px] touch:-right-[22px] touch:size-[44px]"
           >
-            <span aria-hidden className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-black text-[11px] text-white shadow">
-              ×
+            <span aria-hidden className="flex size-[20px] items-center justify-center rounded-full bg-ink text-ink-inverse">
+              <svg viewBox="0 0 16 16" className="size-[12px]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
             </span>
           </button>
           <span
             aria-hidden
             onPointerDown={start("resize")}
-            className="absolute -bottom-[10px] -right-[10px] grid h-[20px] w-[20px] cursor-nwse-resize place-items-center pointer-coarse:-bottom-[22px] pointer-coarse:-right-[22px] pointer-coarse:h-[44px] pointer-coarse:w-[44px]"
+            className="absolute -right-[10px] -bottom-[10px] grid size-[20px] cursor-nwse-resize place-items-center touch:-right-[22px] touch:-bottom-[22px] touch:size-[44px]"
           >
-            <span className="h-3 w-3 rounded-sm bg-white" style={{ border: `2px solid ${tone.border}` }} />
+            <span className="size-3 rounded-mark bg-paper" style={{ border: `2px solid ${colour}` }} />
           </span>
         </>
       )}
@@ -647,110 +936,95 @@ function FieldBox({
 }
 
 /**
- * Sending a finished request again: how they sign this time (the theater
- * game, the racetrack, or the plain page), whether the email says anything
- * about it, and a note that an Address box goes under each signature.
+ * Sending a request again as a new one: how they sign (the request's own mode
+ * first), whether the email mentions the game, Address boxes for the parties
+ * who should give one, and, for a signed agreement, why.
  */
 function ResendDialog({
-  isDark,
+  request: r,
   gameEntity,
-  pending,
-  parties,
   onClose,
   onSend,
 }: {
-  isDark: boolean;
+  request: SignatureRequest;
   gameEntity: boolean;
-  /** The request is still out: resending voids it, and its links stop working. */
-  pending: boolean;
-  parties: string[];
   onClose: () => void;
-  onSend: (mode: SignMode, plain: boolean) => Promise<void>;
+  onSend: (body: { mode: SignMode; plain: boolean; address: PartyKey[]; reason?: string }) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<SignMode>(gameEntity ? "race" : "normal");
-  const [plain, setPlain] = useState(true);
+  const [mode, setMode] = useState<SignMode>(gameEntity ? (r.mode ?? "normal") : "normal");
+  const [mention, setMention] = useState(true);
+  const [address, setAddress] = useState<PartyKey[]>([]);
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [busy, onClose]);
-  const choices: Array<{ mode: SignMode; label: string; blurb: string }> = [
-    ...(gameEntity
-      ? [
-          { mode: "game" as SignMode, label: "Movie theater", blurb: "They walk into the theater, watch the clip, and sign on the other side of the door." },
-          { mode: "race" as SignMode, label: "Racetrack", blurb: "They race Judy around a track, two laps, and sign at the finish." },
-        ]
-      : []),
-    { mode: "normal" as SignMode, label: "Normal e-signature", blurb: "They open the link, read the document, and sign." },
-  ];
-  const panel = isDark ? "bg-[#15151b] text-white border-white/10" : "bg-white text-gray-900 border-gray-200";
-  const sub = isDark ? "text-gray-400" : "text-gray-500";
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center" role="presentation" onClick={() => !busy && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="resend-title" className={`w-full max-w-[440px] rounded-2xl border p-5 shadow-xl ${panel}`} onClick={(e) => e.stopPropagation()}>
-        <h2 id="resend-title" className="text-[16px] font-semibold">
-          Resend for signature
-        </h2>
-        <p className={`mt-1 text-[12.5px] ${sub}`}>
-          A new request with the same document, to {parties.join(" and ")}. An Address box goes under each signature so it's filled in this time.
-          {pending ? " This one is voided: its links stop working, and everyone signs the new one." : ""}
-        </p>
-        <div className="mt-4 space-y-2" role="radiogroup" aria-label="How they sign">
-          {choices.map((c) => {
-            const on = mode === c.mode;
-            return (
-              <button
-                key={c.mode}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => setMode(c.mode)}
-                className={`block w-full rounded-xl border p-3 text-left transition-colors ${
-                  on ? (isDark ? "border-white/40 bg-white/[0.06]" : "border-gray-900 bg-gray-50") : isDark ? "border-white/10 hover:border-white/25" : "border-gray-200 hover:border-gray-400"
-                }`}
-              >
-                <span className="flex items-center gap-2 text-[13px] font-medium">
-                  <span aria-hidden className={`h-2 w-2 rounded-full ${on ? (isDark ? "bg-white" : "bg-gray-900") : isDark ? "bg-white/20" : "bg-gray-300"}`} />
-                  {c.label}
-                </span>
-                <span className={`mt-1 block text-[12px] ${sub}`}>{c.blurb}</span>
-              </button>
-            );
-          })}
-        </div>
-        {mode !== "normal" && (
-          <label className={`mt-4 flex min-h-[44px] cursor-pointer items-center gap-2 text-[12.5px] ${sub}`}>
-            <input type="checkbox" className="h-4 w-4" checked={plain} onChange={(e) => setPlain(e.target.checked)} />
-            Say nothing about the game in the email
-          </label>
-        )}
-        {error && <p className="mt-3 text-[12.5px] text-red-500">{error}</p>}
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <Small isDark={isDark} disabled={busy} onClick={onClose}>
+  const pending = isOpen(r.status);
+  const completed = r.status === "completed";
+  const signed = r.parties.filter((p) => p.status === "signed");
+  const modes = MODES.filter((m) => m.mode === "normal" || gameEntity);
+  const ready = !completed || !!reason.trim();
+  return (
+    <Dialog
+      open
+      onClose={() => !busy && onClose()}
+      title={completed ? "Send a new version for signature?" : "Send a new request?"}
+      description={`The same document, to ${format.list(r.parties.map((p) => capacity(p)))}.`}
+      dirty={!!reason.trim()}
+      footer={
+        <>
+          <Button disabled={busy} onClick={onClose}>
             Cancel
-          </Small>
-          <Small
-            isDark={isDark}
-            primary
-            disabled={busy}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!ready}
+            disabledReason={!ready ? "Say why it’s going out again" : undefined}
+            busy={busy}
+            busyLabel="Sending…"
             onClick={async () => {
               setBusy(true);
               setError("");
               try {
-                await onSend(mode, plain);
+                await onSend({ mode, plain: mode !== "normal" && !mention, address, ...(reason.trim() ? { reason: reason.trim() } : {}) });
               } catch (err) {
-                setError(err instanceof Error ? err.message : "That didn't work.");
+                setError(err instanceof Error ? err.message : "That didn’t work. Try again.");
                 setBusy(false);
               }
             }}
           >
-            {busy ? "Sending…" : "Send"}
-          </Small>
+            Send new request
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4 text-pretty">
+        <ul className="flex flex-col gap-1 text-body text-ink-2">
+          {pending && <li>This request is voided: its links stop working.</li>}
+          {pending && signed.length > 0 && <li>{`${format.list(signed.map((p) => p.name))}’s signature on this one is cancelled; they sign again.`}</li>}
+          {completed && <li>{`The copy signed ${when(r.completed_at)} stays on file and in force, unless the new one is meant to replace it. Both records link to each other.`}</li>}
+          <li>{`${format.count(r.pages.length, "page")}${r.original_sha256 ? ` · document ID ${shortSha(r.original_sha256)}` : ""}`}</li>
+        </ul>
+        {modes.length > 1 && (
+          <ChoiceTiles<SignMode> label="How they sign" stacked value={mode} onChange={setMode} options={modes.map((m) => ({ value: m.mode, title: m.label, description: m.blurb }))} />
+        )}
+        {mode !== "normal" && <Checkbox checked={mention} onChange={setMention} label="Mention the game in the email" hint="Off: the email reads as a normal request; the link still opens it." />}
+        <div className="flex flex-col gap-1">
+          <span className="text-small font-medium">Address boxes</span>
+          {r.parties.map((p) => (
+            <Checkbox
+              key={p.key}
+              checked={address.includes(p.key)}
+              onChange={(v) => setAddress((a) => (v ? [...a, p.key] : a.filter((k) => k !== p.key)))}
+              label={`Ask ${p.name || p.role} for an address under their signature`}
+            />
+          ))}
         </div>
+        {completed && (
+          <Field label="Why it’s going out again" hint="Kept with both requests.">
+            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
+          </Field>
+        )}
+        {error && <p className="text-small text-negative">{error}</p>}
       </div>
-    </div>,
-    document.body,
+    </Dialog>
   );
 }

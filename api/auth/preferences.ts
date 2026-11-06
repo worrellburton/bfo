@@ -2,9 +2,13 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { currentUser, fail, guard, handleError, isPartner, sb } from "../../lib/auth.js";
 
 /**
- * The signed-in user's own notification settings. No admin rights needed.
- * A partner keeps only their phone notices (`push`): the Treasury report is
- * the whole office's, so it is staff-only.
+ * The signed-in user's own notification settings.
+ *
+ * HTTP: GET → { preferences }; PUT { preferences } → { preferences }.
+ * Who may call it: any signed-in person except Email-only members; no admin
+ * rights needed. A partner keeps only their phone notices (`push`): the
+ * Treasury report is the whole office's, so it is staff-only.
+ * Env: SUPABASE_URL, SUPABASE_SERVICE_KEY.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!guard(req, res, ["GET", "PUT"])) return;

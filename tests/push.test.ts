@@ -1,7 +1,7 @@
 import { generateKeyPairSync, verify } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { apnsConfig, apnsJwt, deadToken, pemOf } from "../lib/apns";
-import { TOKEN_RE, mailPayload, notifyNewMail, paperMailPayload } from "../lib/push";
+import { TOKEN_RE, mailPayload, notifyNewMail, paperMailPayload, pushPrefsOf, textPayload } from "../lib/push";
 
 const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const P8 = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -45,14 +45,29 @@ describe("apns", () => {
 });
 
 describe("new-mail notices", () => {
-  it("say who, what, and open the message", () => {
-    const p = mailPayload({ id: "m1", user_id: "u", from_email: "elena@park.example", from_name: "Elena Park", subject: "Closing documents", snippet: "Everything is   signed.", thread_key: "t1" });
-    expect(p.aps.alert).toEqual({ title: "Elena Park", subtitle: "Closing documents", body: "Everything is signed." });
+  it("say who it's from by default, and open the message", () => {
+    const m = { id: "m1", user_id: "u", from_email: "elena@park.example", from_name: "Elena Park", subject: "Closing documents", snippet: "Everything is   signed. Code 482913", thread_key: "t1" };
+    const p = mailPayload(m);
+    expect(p.aps.alert).toEqual({ title: "Elena Park", body: "New email" });
+    expect(mailPayload(m, "full").aps.alert).toEqual({ title: "Elena Park", subtitle: "Closing documents", body: "Everything is signed. Code ••••••" });
+    expect(mailPayload(m, "none").aps.alert).toEqual({ title: "BFO", body: "New email" });
     expect(p.aps["thread-id"]).toBe("t1");
     expect(p.url).toBe("/inbox?m=m1");
     const bare = mailPayload({ id: "m2", user_id: "u", from_email: "a@b.example", from_name: null, subject: null, snippet: null });
     expect(bare.aps.alert.title).toBe("a@b.example");
-    expect(bare.aps.alert.subtitle).toBe("(no subject)");
+    expect(mailPayload({ id: "m2", user_id: "u", from_email: "a@b.example", from_name: null, subject: null, snippet: null }, "full").aps.alert).toMatchObject({ subtitle: "(no subject)" });
+  });
+
+  it("never put a verification code on a lock screen", () => {
+    const t = { id: "t1", from_number: "+15550100142", body: "Your code is 123456", code: "123456" };
+    expect(JSON.stringify(textPayload(t))).not.toContain("123456");
+    expect(JSON.stringify(textPayload(t, "full"))).not.toContain("123456");
+    expect(textPayload(t).aps.alert.title).toBe("A verification code arrived");
+  });
+
+  it("default to sender-only previews", () => {
+    expect(pushPrefsOf({}).previews).toBe("sender");
+    expect(pushPrefsOf({ push: { previews: "full" } }).previews).toBe("full");
   });
 
   it("for paper mail open that piece", () => {

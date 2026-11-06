@@ -3,9 +3,19 @@ import { sb } from "./auth.js";
 /**
  * Each entity's activity (public.entity_activity): what changed, who changed
  * it, and when. Writes to the tree are compared before and after
- * (describeChange) and told as a few plain lines; Palm, Stable and invites
- * add their own. The pure pieces are exported so they're tested without a
- * network.
+ * (describeChange) and told as a few plain lines; Palm, Stable, invites and
+ * shared links add their own. The pure pieces are exported so they're tested
+ * without a network.
+ *
+ * The log is append-only: every write is its own row, never edited or
+ * deleted afterwards (the migration 20261108_entity_activity_append_only.sql
+ * makes the table refuse it). A run of one person's edits is grouped when
+ * it's shown (app/entity/activity.tsx), not by rewriting rows.
+ *
+ * HTTP surface: none; a library for api/tree.ts (through lib/tree.ts),
+ * api/documents/url.ts, the Palm and Stable webhooks.
+ * Who may call it: server code, after its own role check.
+ * Env: SUPABASE_URL and SUPABASE_SERVICE_KEY (through sb() in lib/auth.ts).
  */
 
 export type Actor = { id: string | null; name: string | null; source: "user" | "palm" | "stable" | "system" };
@@ -48,9 +58,11 @@ const FIELDS: Record<string, string> = {
   operatingAgreementDate: "Operating agreement date",
   articlesOfOrgDate: "Articles filing date",
   annualReportYear: "Annual report year",
+  taxYearEnd: "Tax year end",
+  accountingMethod: "Accounting method",
 };
-/** Changed without showing the before and after. */
-const QUIET = new Set(["notes"]);
+/** Changed without showing the before and after (none: notes show both, cut to 160 characters). */
+const QUIET = new Set<string>();
 
 /** Filing slots (app/entity/model.ts FALLBACK_TITLE). */
 const SLOTS: Record<string, string> = {
@@ -97,7 +109,7 @@ const quote = (s: string) => `“${s}”`;
 export function editSummary(fields: FieldChange[]): string {
   if (fields.length === 1) {
     const f = fields[0];
-    if (QUIET.has(f.key)) return `Edited the ${f.label.toLowerCase()}`;
+    if (QUIET.has(f.key) || f.key === "notes") return `Edited the ${f.label.toLowerCase()}`;
     if (f.to === null) return `Cleared the ${lower(f.label)}`;
     return `${f.from === null ? "Set" : "Changed"} the ${lower(f.label)} to ${f.to}`;
   }
@@ -136,7 +148,12 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
       if (!same(b[k], a[k])) fields.push({ key: `foreign.${code}.${k}`, label: `${code} ${label}`, from: text(b[k]), to: text(a[k]) });
     }
   }
-  if (fields.length) out.push({ kind: "edit", summary: editSummary(fields), detail: { fields } });
+  // Why a key fact changed (the edit form asks: a correction, or a real change with its effective date).
+  const note = after.changeNote && after.changeNote.at !== before.changeNote?.at ? (after.changeNote as Rec) : null;
+  const why = note
+    ? `${note.kind === "change" ? `A real change${note.effective ? `, effective ${note.effective}` : ""}` : "A correction"}${note.reason ? `: ${String(note.reason)}` : ""}`
+    : null;
+  if (fields.length) out.push({ kind: "edit", summary: editSummary(fields), detail: { fields, ...(why ? { reason: why } : {}) } });
 
   // Owners
   const owners = (r: Rec) => (Array.isArray(r.members) ? (r.members as Rec[]) : []).filter((m) => m && m.name);
@@ -155,7 +172,7 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
   const docs = (r: Rec): Record<string, Rec> => (r.documents && typeof r.documents === "object" ? r.documents : {});
   const db = docs(before);
   const da = docs(after);
-  const uploaded = Object.keys(da).filter((k) => !db[k] && da[k]?.name);
+  const uploaded = Object.keys(da).filter((k) => !db[k] && da[k]?.name && !(before.removedDocuments && (before.removedDocuments as Rec)[k]));
   const deleted = Object.keys(db).filter((k) => !da[k] && db[k]?.name);
   if (uploaded.length)
     out.push({
@@ -163,8 +180,26 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
       summary: uploaded.length === 1 ? `Uploaded ${quote(da[uploaded[0]].name)}` : `Uploaded ${uploaded.length} documents`,
       detail: { names: uploaded.map((k) => da[k].name) },
     });
-  if (deleted.length)
-    out.push({ kind: "delete", summary: deleted.length === 1 ? `Deleted ${quote(db[deleted[0]].name)}` : `Deleted ${deleted.length} documents`, detail: { names: deleted.map((k) => db[k].name) } });
+  // Taken out of the library into Removed (kept), back again, or deleted for good from Removed.
+  const removedOf = (r: Rec): Record<string, Rec> => (r.removedDocuments && typeof r.removedDocuments === "object" ? r.removedDocuments : {});
+  const rb = removedOf(before);
+  const ra = removedOf(after);
+  const removed = deleted.filter((k) => ra[k]);
+  const gone = deleted.filter((k) => !ra[k]);
+  if (removed.length) {
+    const reason = removed.map((k) => ra[k]?.reason).find((r) => typeof r === "string" && r.trim());
+    out.push({
+      kind: "delete",
+      summary: removed.length === 1 ? `Removed ${quote(db[removed[0]].name)} from the library (kept in Removed)` : `Removed ${removed.length} documents from the library (kept in Removed)`,
+      detail: { names: removed.map((k) => db[k].name), ...(reason ? { reason } : {}) },
+    });
+  }
+  if (gone.length) out.push({ kind: "delete", summary: gone.length === 1 ? `Deleted ${quote(db[gone[0]].name)}` : `Deleted ${gone.length} documents`, detail: { names: gone.map((k) => db[k].name) } });
+  for (const k of Object.keys(rb)) {
+    if (ra[k]) continue;
+    if (da[k]) out.push({ kind: "upload", summary: `Restored ${quote(String(rb[k]?.name ?? "a document"))} to the library` });
+    else out.push({ kind: "delete", summary: `Deleted ${quote(String(rb[k]?.name ?? "a document"))} for good`, detail: rb[k]?.purgeReason ? { reason: String(rb[k].purgeReason) } : null });
+  }
   for (const k of Object.keys(da)) {
     if (db[k]?.name && da[k]?.name && db[k].name !== da[k].name) out.push({ kind: "rename", summary: `Renamed ${quote(db[k].name)} to ${quote(da[k].name)}` });
   }
@@ -185,7 +220,12 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
     const b = steps(before)[step];
     const a = steps(after)[step];
     if (same(b, a)) continue;
-    out.push({ kind: "address", summary: a ? `Marked the new address as reported to ${who}` : `Unmarked the new address as reported to ${who}` });
+    const proof = (after.addressUpdateRefs ?? {})[step] as Rec | undefined;
+    out.push({
+      kind: "address",
+      summary: a ? `Marked the new address as reported to ${who}${proof?.on ? `, sent ${proof.on}` : ""}` : `Unmarked the new address as reported to ${who}`,
+      detail: a && proof?.ref ? { reason: `Tracking or confirmation number ${String(proof.ref)}` } : null,
+    });
   }
 
   // Palm
@@ -216,7 +256,8 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
   // The state's record, as read through Palm
   const sb0 = before.stateRecord as Rec | undefined;
   const sa = after.stateRecord as Rec | undefined;
-  if (sa && !sb0) out.push({ kind: "state", summary: "Read the state's record through Palm" });
+  const stateWho = typeof after.state === "string" && after.state.trim() ? `${after.state.trim()}'s record` : "The state's record";
+  if (sa && !sb0) out.push({ kind: "state", summary: `Read ${stateWho.replace(/^The/, "the")} through Palm` });
   else if (sa && sb0) {
     // Only a value that was there and is now different: a field read for the first time isn't a change.
     const moved = (["status", "standing", "address", "agent"] as const).filter((k) => sb0[k] != null && sa[k] != null && !same(sb0[k], sa[k]));
@@ -230,14 +271,54 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
           : k === "agent"
             ? `agent ${v}`
             : `address ${v}`;
-    if (moved.length) out.push({ kind: "state", summary: `The state's record changed: ${moved.map((k) => say(k, sa[k])).join("; ")}` });
+    if (moved.length) out.push({ kind: "state", summary: `${stateWho}, read through Palm: ${moved.map((k) => say(k, sa[k]).replace(/^(status|standing|agent|address) /, "$1 now ")).join("; ")}` });
   }
 
-  // Foreign registrations: reading another state's record
+  // Foreign registrations: reading another state's record, and deciding whether it does business there
   const fb = (before.foreign ?? {}) as Record<string, Rec>;
   const fa = (after.foreign ?? {}) as Record<string, Rec>;
   for (const code of Object.keys(fa)) {
     if (fa[code]?.record && fa[code].record.checkedAt !== fb[code]?.record?.checkedAt) out.push({ kind: "state", summary: `Read ${code}'s record through Palm` });
+  }
+  for (const code of new Set([...Object.keys(fb), ...Object.keys(fa)])) {
+    const b = fb[code] ?? {};
+    const a = fa[code] ?? {};
+    const reason = typeof a.decisionReason === "string" && a.decisionReason !== b.decisionReason ? { reason: a.decisionReason } : null;
+    if (a.confirmed && !b.confirmed) out.push({ kind: "decision", summary: `Decided it does business in ${code}: it must register there`, detail: reason });
+    else if (a.notNeeded && !b.notNeeded) out.push({ kind: "decision", summary: `Decided it doesn't do business in ${code}: only its mail goes there`, detail: reason });
+    else if ((b.confirmed && !a.confirmed) || (b.notNeeded && !a.notNeeded)) out.push({ kind: "decision", summary: `Reopened whether it does business in ${code}` });
+  }
+
+  // The state's site seen to say active over Palm's copy
+  if (after.stateConfirmed?.at && after.stateConfirmed.at !== before.stateConfirmed?.at)
+    out.push({ kind: "state", summary: "Confirmed on the state's own site that it's active and in good standing", detail: after.stateConfirmed.note ? { reason: String(after.stateConfirmed.note) } : null });
+  else if (before.stateConfirmed?.at && !after.stateConfirmed) out.push({ kind: "state", summary: "Withdrew the confirmation from the state's own site" });
+
+  // Archive
+  if (after.archived?.at && after.archived.at !== before.archived?.at)
+    out.push({ kind: "archive", summary: "Archived it: hidden from the lists, everything kept", detail: after.archived.reason ? { reason: String(after.archived.reason) } : null });
+  else if (before.archived?.at && !after.archived) out.push({ kind: "archive", summary: "Restored it from the archive" });
+
+  // A legal hold
+  if (after.legalHold?.at && after.legalHold.at !== before.legalHold?.at) out.push({ kind: "hold", summary: "Put its documents on legal hold", detail: after.legalHold.note ? { reason: String(after.legalHold.note) } : null });
+  else if (before.legalHold?.at && !after.legalHold) out.push({ kind: "hold", summary: "Lifted the legal hold" });
+
+  // Facts read by AI, proposed and then accepted or dismissed by a person
+  const pb = (before.proposed ?? {}) as Record<string, Rec | null>;
+  const pa = (after.proposed ?? {}) as Record<string, Rec | null>;
+  for (const key of new Set([...Object.keys(pb), ...Object.keys(pa)])) {
+    const label = lower(FIELDS[key] ?? (key === "members" ? "Owners" : key));
+    const was = pb[key];
+    const now = pa[key];
+    if (now && (!was || was.at !== now.at)) out.push({ kind: "ai", summary: `AI read the ${label} from ${now.docName ? quote(String(now.docName)) : "a document"}: proposed, not on the record yet` });
+    else if (was && !now) {
+      const accepted = same(after[key], was.value);
+      out.push({ kind: "ai", summary: accepted ? `Accepted the ${label} read by AI from ${was.docName ? quote(String(was.docName)) : "a document"}` : `Dismissed the ${label} read by AI` });
+    }
+  }
+  if (after.profile?.checkedAt && after.profile.checkedAt !== before.profile?.checkedAt) {
+    const from = Array.isArray(after.profile.sources) && after.profile.sources.length ? ` from ${list(after.profile.sources.map((x: unknown) => quote(String(x))))}` : "";
+    out.push({ kind: "ai", summary: `Summary by AI${from}` });
   }
 
   // Closing it down
@@ -270,6 +351,37 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
     else if (cb[k].status !== c.status && c.status) out.push({ kind: "agreement", summary: `The agreement with ${c.counterparty || "a counterparty"} is now ${c.status}` });
   }
   for (const [k, c] of Object.entries(cb)) if (!ca[k]) out.push({ kind: "agreement", summary: `Removed the agreement with ${c.counterparty || "a counterparty"}` });
+  const TERMS: Record<string, string> = { fee: "Fee", frequency: "Frequency", effectiveDate: "Effective date", term: "Term", services: "Services", counterparty: "Counterparty", letterhead: "Letterhead" };
+  for (const [k, c] of Object.entries(ca)) {
+    const b = cb[k];
+    if (!b) continue;
+    const changed: FieldChange[] = Object.entries(TERMS)
+      .filter(([f]) => !same(b[f], c[f]))
+      .map(([f, label]) => ({ key: `contract.${f}`, label, from: text(Array.isArray(b[f]) ? b[f].join(", ") : b[f]), to: text(Array.isArray(c[f]) ? c[f].join(", ") : c[f]) }));
+    if (changed.length) out.push({ kind: "agreement", summary: `Changed the agreement with ${c.counterparty || "a counterparty"}: ${list(changed.map((f) => lower(f.label)))}`, detail: { fields: changed } });
+  }
+
+  // Governance (a corporation's board, officers, shareholders and stock)
+  const corpOf = (r: Rec): Rec => (r.corp && typeof r.corp === "object" ? r.corp : {});
+  const kb = corpOf(before);
+  const ka = corpOf(after);
+  for (const [group, word] of [
+    ["directors", "director"],
+    ["officers", "officer"],
+    ["shareholders", "shareholder"],
+  ] as const) {
+    const gb = (kb[group] ?? {}) as Record<string, Rec>;
+    const ga = (ka[group] ?? {}) as Record<string, Rec>;
+    for (const [k, v] of Object.entries(ga)) if (!gb[k]) out.push({ kind: "governance", summary: `Added ${v?.name ? quote(String(v.name)) : `a ${word}`} as ${word}${v?.title ? ` (${String(v.title)})` : ""}` });
+    for (const [k, v] of Object.entries(gb)) if (!ga[k]) out.push({ kind: "governance", summary: `Removed ${v?.name ? quote(String(v.name)) : `a ${word}`} as ${word}` });
+  }
+  const corpFields = Object.keys({ ...kb, ...ka }).filter((k) => !["directors", "officers", "shareholders"].includes(k) && !same(kb[k], ka[k]));
+  if (corpFields.length)
+    out.push({
+      kind: "governance",
+      summary: `Changed the corporate records: ${list(corpFields.map((k) => k.replace(/([A-Z])/g, " $1").toLowerCase()))}`,
+      detail: { fields: corpFields.map((k) => ({ key: `corp.${k}`, label: k.replace(/([A-Z])/g, " $1").replace(/^./, (m) => m.toUpperCase()), from: text(kb[k]), to: text(ka[k]) })) },
+    });
 
   return out;
 }
@@ -278,6 +390,7 @@ export function describeChange(before: Rec | null, after: Rec | null, names: (id
 function stepWords(key: string): string {
   if (key.startsWith("state:")) return `the state filing (${key.slice(6)})`;
   if (key.startsWith("withdraw:")) return `the withdrawal in ${key.slice(9)}`;
+  if (key.startsWith("transfer:")) return "transferring an interest it owns";
   return (
     (
       {
@@ -288,18 +401,18 @@ function stepWords(key: string): string {
         ein: "closing the EIN account",
         agent: "ending the registered agent",
         mail: "stopping the mail",
+        payroll: "the final payroll returns and 1099s",
+        books: "closing its books",
       } as Record<string, string>
     )[key] ?? key
   );
 }
 
 /**
- * Edits by the same person within this window read as one entry: the record
- * is saved field by field, and nobody wants a line per keystroke-save.
+ * Two edits' fields as one: each field's first "from" and last "to"; any that
+ * went back where it started drop out. For showing a run of edits together;
+ * the rows themselves are never merged.
  */
-const MERGE_MS = 15 * 60 * 1000;
-
-/** Two edits' fields as one: each field's first "from" and last "to"; any that went back where it started drop out. */
 export function mergeFields(older: FieldChange[], newer: FieldChange[]): FieldChange[] {
   const out = new Map(older.map((f) => [f.key, { ...f }]));
   for (const f of newer) {
@@ -309,37 +422,33 @@ export function mergeFields(older: FieldChange[], newer: FieldChange[]): FieldCh
   return [...out.values()].filter((f) => QUIET.has(f.key) || f.from !== f.to);
 }
 
+/** The rows one write adds: every entry its own row, newest last. Pure, so it's tested. */
+export function activityRows(assetId: string, actor: Actor, entries: ActivityEntry[]) {
+  return entries.map((e) => ({ asset_id: assetId, actor_id: actor.id, actor_name: actor.name, source: actor.source, kind: e.kind, summary: e.summary.slice(0, 500), detail: e.detail ?? null }));
+}
+
 // ── Supabase ─────────────────────────────────────────────────────────────
 
 const enc = encodeURIComponent;
 
-/** Record entries for one entity. Never throws: activity is never worth failing a write. */
-export async function logActivity(assetId: string, actor: Actor, entries: ActivityEntry[], now = Date.now()): Promise<void> {
-  if (!entries.length) return;
-  try {
-    const rest = [...entries];
-    const edit = rest.findIndex((e) => e.kind === "edit");
-    if (edit >= 0 && actor.id) {
-      const [last] = await sb<ActivityRow[]>(`entity_activity?asset_id=eq.${enc(assetId)}&select=*&order=at.desc&limit=1`);
-      if (last && last.kind === "edit" && last.actor_id === actor.id && now - Date.parse(last.at) < MERGE_MS) {
-        const fields = mergeFields((last.detail?.fields ?? []) as FieldChange[], (rest[edit].detail?.fields ?? []) as FieldChange[]);
-        rest.splice(edit, 1);
-        if (fields.length) {
-          await sb(`entity_activity?id=eq.${last.id}`, { method: "PATCH", body: { summary: editSummary(fields), detail: { fields }, at: new Date(now).toISOString() }, prefer: "return=minimal" });
-        } else {
-          await sb(`entity_activity?id=eq.${last.id}`, { method: "DELETE", prefer: "return=minimal" });
-        }
-      }
+/**
+ * Record entries for one entity: appended, never edited. Tries twice. It
+ * doesn't throw into the write it describes; a row it couldn't add is logged
+ * as a warning (booleans only) so ops can see the gap.
+ */
+export async function logActivity(assetId: string, actor: Actor, entries: ActivityEntry[], _now = Date.now()): Promise<boolean> {
+  if (!entries.length) return true;
+  const body = activityRows(assetId, actor, entries);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await sb("entity_activity", { method: "POST", body, prefer: "return=minimal" });
+      return true;
+    } catch {
+      // try once more
     }
-    if (!rest.length) return;
-    await sb("entity_activity", {
-      method: "POST",
-      body: rest.map((e) => ({ asset_id: assetId, actor_id: actor.id, actor_name: actor.name, source: actor.source, kind: e.kind, summary: e.summary.slice(0, 500), detail: e.detail ?? null })),
-      prefer: "return=minimal",
-    });
-  } catch (err) {
-    console.error("activity: couldn't record", assetId, err);
   }
+  console.warn("activity: couldn't record", { rows: body.length, hasActor: !!actor.id, retried: true });
+  return false;
 }
 
 export async function readActivity(assetId: string, before?: string, limit = 50): Promise<ActivityRow[]> {

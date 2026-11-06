@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { clampInt, einLastFour, entityDetail, entitySummary, looseName, maskDigits, matchEntity, provenance, systemPrompt, thirtyDaysBefore, titleFrom, toolLabel, toolsFor, transcript, txnKind, type Scope } from "./ask";
+import {
+  clampInt,
+  einLastFour,
+  entityDetail,
+  entitySummary,
+  looseName,
+  maskDigits,
+  matchEntity,
+  provenance,
+  systemPrompt,
+  thirtyDaysBefore,
+  titleFrom,
+  toolLabel,
+  toolsFor,
+  transcript,
+  txnKind,
+  type Scope,
+} from "./ask";
 
 const staff: Scope = { user: { id: "u1", name: "Robert Burton", role: "owner", email: null, mail_address: null }, admin: true, staff: true, assetIds: null };
 const partner: Scope = { user: { id: "u2", name: "Sam", role: "partner", email: null, mail_address: null }, admin: false, staff: false, assetIds: new Set(["a1"]) };

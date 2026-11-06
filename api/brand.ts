@@ -1,8 +1,30 @@
+/**
+ * The BFO logo and the front door's backdrop (lib/brand.ts).
+ *
+ *   GET  /api/brand                → { logo, homeAnimation }: the logo in use and which home-page backdrop
+ *                                    (app/home-animations) the front door shows, for anyone (the page is public)
+ *   GET  /api/brand?studio=1       → owner/admin: the style sheet, each style's model, what's configured,
+ *                                    what a drawing and a model cost (about), and the last change
+ *   POST /api/brand { action }     → owner/admin:
+ *     generate     { styleId, tweak? }  OpenAI draws that style (≈30–60 s); replaces the sheet's entry
+ *     model        { styleId }          Meshy starts turning the picture into a model
+ *     model-status { styleId }          Meshy's progress; on success the GLB is copied into the bucket
+ *     use          { styleId | null, as? }  the site shows this style: as "lockup" (default) its
+ *                                         type in the paired font, as "3d" its model; null: back to the wordmark
+ *     home-animation { id | null }      the front door shows this backdrop (an id from app/home-animations); null: the default
+ * Who may call it: the GET without `studio` is public; everything else is
+ * owners and admins (partners are refused with 403). Every paid call and
+ * every change to what the public sees is written to the audit trail
+ * (lib/audit.ts) with who, when, the before and after, and the cost.
+ * Env: OPENAI_API_KEY, MESHY_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY.
+ */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { currentUser, handleError, isAdmin, type AppUser } from "../lib/auth.js";
+import { audit } from "../lib/audit.js";
+import { currentUser, handleError, isAdmin, sb, type AppUser } from "../lib/auth.js";
 import {
   BRAND_BUCKET,
   copyIn,
+  COST_CENTS,
   generateImage,
   getTask,
   LOGO_STYLES,
@@ -20,20 +42,19 @@ import {
 } from "../lib/brand.js";
 import { storageUpload } from "../lib/storage.js";
 
-/**
- * The BFO logo (lib/brand.ts).
- *
- *   GET  /api/brand                → { logo, homeAnimation }: the logo in use and which home-page backdrop
- *                                    (app/home-animations) the front door shows, for anyone (the page is public)
- *   GET  /api/brand?studio=1       → owner/admin: the style sheet, each style's model, what's configured
- *   POST /api/brand { action }     → owner/admin:
- *     generate     { styleId, tweak? }  OpenAI draws that style (≈30–60 s); replaces the sheet's entry
- *     model        { styleId }          Meshy starts turning the picture into a model
- *     model-status { styleId }          Meshy's progress; on success the GLB is copied into the bucket
- *     use          { styleId | null, as? }  the site shows this style: as "lockup" (default) its
- *                                         type in the paired font, as "3d" its model; null: back to the wordmark
- *     home-animation { id | null }      the front door shows this backdrop (an id from app/home-animations); null: the default
- */
+/** The last change to the logo or the front door, from the audit trail; null when there is none (or no trail yet). */
+async function lastChange(): Promise<{ at: string; by: string | null; summary: string } | null> {
+  try {
+    const rows = await sb<Array<{ at: string; actor_name: string | null; summary: string }>>("audit_log?action=in.(brand.use,brand.backdrop)&select=at,actor_name,summary&order=at.desc&limit=1");
+    const r = rows?.[0];
+    return r ? { at: r.at, by: r.actor_name, summary: r.summary } : null;
+  } catch {
+    return null;
+  }
+}
+
+const describeLogo = (logo: Logo | null | undefined): string => (!logo ? "the wordmark" : `${styleById(logo.styleId)?.name ?? logo.styleId}${logo.kind === "3d" ? " in 3D" : ""}`);
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
@@ -61,6 +82,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sheet: (all.sheet as Sheet | undefined) ?? { styles: {}, generatedAt: 0 },
       models: Object.fromEntries(LOGO_STYLES.map((s) => [s.id, (all[`model:${s.id}`] as ModelState | undefined) ?? null])),
       logo: (all.logo as Logo | undefined) ?? null,
+      costCents: COST_CENTS,
+      lastChange: await lastChange(),
     });
   }
 
@@ -92,6 +115,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await writeSetting("sheet", next);
         // A new picture means the old model no longer matches it.
         await writeSetting(`model:${style.id}`, null);
+        await audit({
+          actor: user,
+          action: "brand.draw",
+          target: { type: "logo_style", id: style.id, label: style.name },
+          summary: `Drew the ${style.name} logo (about ${COST_CENTS.draw}¢)`,
+          detail: { provider: "openai", model, cents: COST_CENTS.draw, estimate: true, note: typeof body.tweak === "string" && body.tweak ? body.tweak.slice(0, 200) : null },
+        });
         return res.status(200).json({ entry: next.styles[style.id] });
       }
 
@@ -104,6 +134,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const taskId = await startModel(entry.imageUrl);
         const state: ModelState = { taskId, status: "PENDING", progress: 0, createdAt: Date.now(), updatedAt: Date.now() };
         await writeSetting(`model:${style.id}`, state);
+        await audit({
+          actor: user,
+          action: "brand.model",
+          target: { type: "logo_style", id: style.id, label: style.name },
+          summary: `Started a 3D model of the ${style.name} logo (about ${COST_CENTS.model}¢)`,
+          detail: { provider: "meshy", cents: COST_CENTS.model, estimate: true },
+        });
         return res.status(200).json({ model: state });
       }
 
@@ -132,12 +169,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "home-animation": {
         const id = body.id === null || body.id === undefined || body.id === "" ? null : String(body.id);
         if (id !== null && !/^[a-z][a-z0-9-]{1,30}$/.test(id)) return res.status(400).json({ error: "bad_id" });
+        const before = (await readSettings(["home-animation"]))["home-animation"];
         await writeSetting("home-animation", id);
+        await audit({
+          actor: user,
+          action: "brand.backdrop",
+          target: { type: "brand_setting", id: "home-animation", label: "Front door backdrop" },
+          summary: `Changed the front door's backdrop to ${id ?? "the default"}`,
+          detail: { from: typeof before === "string" ? before : null, to: id },
+        });
         return res.status(200).json({ homeAnimation: id });
       }
       case "use": {
+        const was = (await readSettings(["logo"])).logo as Logo | undefined;
         if (body.styleId === null || body.styleId === undefined || body.styleId === "") {
           await writeSetting("logo", null);
+          await audit({
+            actor: user,
+            action: "brand.use",
+            target: { type: "brand_setting", id: "logo", label: "Logo" },
+            summary: `Changed the logo from ${describeLogo(was)} back to the wordmark`,
+            detail: { from: was?.styleId ?? null, to: null },
+          });
           return res.status(200).json({ logo: null });
         }
         const style = styleById(body.styleId);
@@ -155,6 +208,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           logo = { ...base, kind: "lockup" };
         }
         await writeSetting("logo", logo);
+        await audit({
+          actor: user,
+          action: "brand.use",
+          target: { type: "brand_setting", id: "logo", label: "Logo" },
+          summary: `Changed the logo from ${describeLogo(was)} to ${describeLogo(logo)}`,
+          detail: { from: was?.styleId ?? null, to: logo.styleId, kind: logo.kind },
+        });
         return res.status(200).json({ logo });
       }
 
@@ -167,6 +227,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(status).json({ error: err.provider, message: err.message });
     }
     console.error("brand:", err);
-    return res.status(500).json({ error: "failed", message: err instanceof Error ? err.message : "Something went wrong." });
+    return res.status(500).json({ error: "failed", message: "Something went wrong. Try again." });
   }
 }

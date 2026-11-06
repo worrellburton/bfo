@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { logActivity } from "../lib/activity.js";
+import { audit } from "../lib/audit.js";
 import { canWrite, currentUser, handleError, isAdmin, sb, type AppUser } from "../lib/auth.js";
 import { buildFormationRequest, einPatch, extraFields, formationPatch, stateRules, summarizeFiling, type FormationDraft, type PalmFiling } from "../lib/palm-formation.js";
 import { applyOps, readRows } from "../lib/tree.js";
@@ -9,6 +10,7 @@ import { ownerName, ownerPercent, parentOwnerId } from "../lib/formation-owners.
 import { checkEin, einCheckText, einName, MonitorError, monitorsFor, refreshMonitors, registrationsOf, startMonitor, stopMonitor } from "../lib/palm-monitor.js";
 import {
   isJurisdiction,
+  linkFacts,
   normalizeEin,
   normalizeLegalName,
   businessDifferences,
@@ -34,11 +36,13 @@ const PALM = { id: null, name: "Palm", source: "palm" } as const;
  *   usage             → what Palm has billed: this month and last, by product, the latest calls
  *   registry-search   { name | palmId, jurisdiction? } → matches on the state registries
  *   registry-detail   { jurisdiction, number }         → the state's record: status, standing, agent, people
- *   link              { assetId, entity }              → the entity's Palm business (found or added)
+ *   link              { assetId, entity }              → the entity's Palm business (found or added; a new one takes the
+ *                                                        state's formation date and address where its record has been read)
  *   business          { businessId, assetId, entity }  → Palm's copy of the business against ours: its name kept in step
  *                                                        (the one thing Palm lets us change), the rest as differences
  *   ra                { businessId }                   → Palm's registered agent service for it
- *   ra-change         { businessId, assetId }          → move the registered agent to Palm (files with the state)
+ *   ra-change         { businessId, assetId, attested?, version? } → move the registered agent to Palm (files with the state);
+ *                                                        recorded in Activity and the audit log with who asked and whether they said they may
  *   ra-end            { businessId, assetId }          → Palm stops being the agent (the entity is dissolved); owner/admin
  *   documents         { businessId }                   → mail and filings Palm holds for it (every page; truncated past 10,000)
  *   document          { documentId }                   → one document's file
@@ -228,21 +232,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (byName.length > 1)
           return res.status(409).json({ error: "ambiguous", message: "Palm has more than one unlinked business with this name in this state. Sort it out in Palm Console first." });
 
+        // Palm can't change these once the business is added: send the state's own, where its record has been read.
+        const stored = (await readRows("assets", [assetId]).catch(() => []))[0]?.data as { stateRecord?: Parameters<typeof linkFacts>[1] } | undefined;
+        const facts = linkFacts(e, stored?.stateRecord);
         const vault: Record<string, string> = {
           "business.legal_name": e.name,
           "business.entity_type": palmEntityType(e.type),
           "business.formation_jurisdiction": e.jurisdiction,
           "business.registration_jurisdiction": e.jurisdiction,
-          ...(e.formationDate && /^\d{4}-\d{2}-\d{2}$/.test(e.formationDate) ? { "business.formation_date": e.formationDate } : {}),
+          ...(facts.formationDate ? { "business.formation_date": facts.formationDate } : {}),
           ...(e.fileNumber ? { "business.registration_number": e.fileNumber.trim() } : {}),
           ...(ein ? { "business.ein": ein } : {}),
-          ...vaultAddress(e.address),
+          ...vaultAddress(facts.address),
         };
         const created = await palm<Business>("/v1/business", {
           method: "POST",
           body: { display_name: e.name, metadata: { bfo_asset_id: assetId }, vault },
         });
-        return res.status(200).json({ mode, businessId: created.id, palmId: created.palm_id, created: true });
+        await logActivity(assetId, { id: user.id, name: user.name || user.email, source: "user" }, [
+          { kind: "palm", summary: `Added to Palm${mode === "test" ? " (test)" : ""}, with the ${facts.from.formationDate === "state" ? "state's" : "record's"} formation date and the ${facts.from.address === "state" ? "state's" : "record's"} address` },
+        ]);
+        return res.status(200).json({ mode, businessId: created.id, palmId: created.palm_id, created: true, from: facts.from });
       }
 
       case "business": {
@@ -342,6 +352,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const ra = await palm<RegisteredAgentService>(`/v1/business/${id}/registered-agent`, {
           method: "PATCH",
           body: { status: "change_requested", metadata: { source: "bfo", bfo_asset_id: assetId, requested_by: user.id } },
+        });
+        // Who asked for a state filing on the entity's behalf, and that they said they may (the confirm's wording, by version).
+        const attested = body.attested === true;
+        const live = mode === "live";
+        await logActivity(assetId, { id: user.id, name: user.name || user.email, source: "user" }, [
+          { kind: "palm", summary: live ? "Asked Palm to arrange its registered agent and file the change with the state (live filing)" : "Tried the agent change in Palm's test mode" },
+        ]);
+        await audit({
+          actor: user,
+          action: "palm.agent_change",
+          target: { type: "entity", id: assetId, label: business?.display_name ?? null },
+          summary: live ? "Asked Palm to file a change of registered agent with the state" : "Tried a change of registered agent in Palm's test mode",
+          detail: { mode, businessId: id, status: ra?.status ?? null, attested, version: typeof body.version === "string" ? body.version.slice(0, 40) : null },
         });
         return res.status(200).json({ mode, service: ra });
       }

@@ -1,5 +1,7 @@
 import { haptic } from "../native";
+import { format } from "../ui";
 import type { MailAddress } from "../mail-client";
+import { tidySnippet } from "../../lib/mail-snippet";
 
 // ── Small helpers ────────────────────────────────────────────────────────
 
@@ -11,7 +13,7 @@ const PERSONAL_MAIL = /^(gmail|googlemail|yahoo|ymail|outlook|hotmail|live|msn|i
 /**
  * Who a message is from, as a person would say it: the display name, else the
  * person's handle for personal mailboxes, else the company from the domain
- * ("no-reply-3ksj…@mail.anthropic.com" → "Anthropic"). The full address is
+ * ("no-reply-3ksj…@mail.example.com" → "Example"). The full address is
  * always one tap away in the reader.
  */
 export function senderLabel(a: MailAddress): string {
@@ -28,44 +30,31 @@ export function senderLabel(a: MailAddress): string {
   return brand.charAt(0).toUpperCase() + brand.slice(1);
 }
 
-/** A steady hue per sender, so the same person always gets the same colour. */
-export function hueOf(key: string): number {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h % 360;
-}
-
-/** The company's domain for a logo ("mail.anthropic.com" → "anthropic.com"), or null for a person. */
-export function brandDomain(a: MailAddress): string | null {
-  const domain = a.email.toLowerCase().split("@")[1] ?? "";
-  if (!domain || PERSONAL_MAIL.test(domain)) return null;
-  const parts = domain.split(".").filter(Boolean);
-  if (parts.length < 2) return null;
-  // Keep a country second level (co.uk); otherwise the last two labels.
-  const keep = parts.length > 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
-  return parts.slice(-keep).join(".");
+/**
+ * A recipient as a line names them: "me" for any of my addresses, a person's
+ * name when the mail gave one, the local part for the office's own addresses
+ * ("office@"), else the sender-style label.
+ */
+export function recipientLabel(a: MailAddress, mine: string[]): string {
+  if (mine.some((m) => same(m, a.email))) return "me";
+  if (a.name?.trim()) return a.name.trim();
+  const officeDomain = (mine[0] ?? "").split("@")[1]?.toLowerCase();
+  const [local, domain] = a.email.toLowerCase().split("@");
+  if (officeDomain && domain === officeDomain) return `${local}@`;
+  return senderLabel(a);
 }
 
 export const fullAddress = (a: MailAddress) => (a.name?.trim() ? `${a.name.trim()} <${a.email}>` : a.email);
 export const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+export const domainOf = (email: string) => (email.split("@")[1] ?? "").toLowerCase();
 
-/** Time today, "Oct 3" this year, else "3/4/25". */
-/** A snippet stored before the server learned to leave out a help desk's wrapping: the same tidy, on the way in. */
-export function cleanSnippet(snippet: string): string {
-  let out = snippet;
-  for (let i = 0; i < 4; i++) {
-    const next = out.replace(/^\s*(#+-?\s*please type your reply above this line\s*-?#+|[-_=*]{4,}|\[[A-Z0-9]{3,}(?:-[A-Z0-9]{3,})+\])\s*/i, "");
-    if (next === out) break;
-    out = next;
-  }
-  return out.replace(/\s*(this (?:email|message) is a service from\b.*|delivered by zendesk.*|sent from my (?:iphone|ipad|android|galaxy|phone).*)$/i, "").trim();
-}
+/** A stored preview, tidied the way the server now writes them (entities, Markdown, padding, help-desk wrapping). */
+export const cleanSnippet = (snippet: string) => tidySnippet(snippet);
 
-/** "Today", "Yesterday", a weekday within the week, else the date: the phone list's separators. */
-export function dayGroup(iso: string): string {
+/** "Today", "Yesterday", a weekday within the week, else the date: the phone list's day groups. */
+export function dayGroup(iso: string, now = new Date()): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
   const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((start(now) - start(d)) / 86400000);
   if (days <= 0) return "Today";
@@ -75,30 +64,51 @@ export function dayGroup(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-export function listDate(iso: string): string {
+/** A row's date (§10.5 short): the time today, "Nov 5" this year, "Nov 5, 2025" before. */
+export function listDate(iso: string, now = new Date()): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return d.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return format.time(d);
+  return format.date(d, "short", { now });
 }
 
-export function fullDate(iso: string): string {
+const stampFormat = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", o);
+
+/**
+ * The full record of when (§10.5 audit): "Fri, Nov 6, 2026, 5:21 AM MST",
+ * always with the year and the zone. For the reader's details and every
+ * hover title on a date.
+ */
+export function fullStamp(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const thisYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    ...(thisYear ? {} : { year: "numeric" }),
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return stampFormat({ weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
+    .format(d)
+    .replace(/[  ]/g, " ");
 }
 
-/** A tick of haptics on phones that have it (Android; iOS Safari ignores it). */
+/**
+ * The date in a reply's or forward's header, which the recipient keeps for
+ * good: "Fri, Nov 6, 2026 at 5:21 AM MST".
+ */
+export function quoteStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const day = stampFormat({ weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(d);
+  const at = stampFormat({ hour: "numeric", minute: "2-digit", timeZoneName: "short" })
+    .format(d)
+    .replace(/[  ]/g, " ");
+  return `${day} at ${at}`;
+}
+
+/** A file size: "820 KB", "1.4 MB". */
+export function bytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
 /** A light tap: native haptics in the iPhone app (app/native.ts). */
 export function tap() {
   haptic();

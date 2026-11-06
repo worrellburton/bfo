@@ -1,18 +1,30 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useRef, useState } from "react";
-import { authFetch, getUser, homePath, isAuthenticated, isEmailOnly, profileComplete, revalidate, safeNext } from "../auth";
-import { ParticleCanvas } from "../particles";
-import { lockupOf, useBrandLogo } from "../brand";
-import { BrandLockup } from "../brand-lockup";
+import { authFetch, getUser, homePath, isAuthenticated, isEmailOnly, isPartner, logout, profileComplete, revalidate, safeNext, type User } from "../auth";
+import { CodeEntry, DoorButton, DoorError, DoorField, DoorHeading, DoorLink, DoorScreen } from "../sign-in-door";
+import { resendLabel } from "../sign-in-style";
+import { LegalLinks } from "../ui";
+import { isFullName } from "../../lib/people";
+import { needsTerms, SMS_CONSENT_VERSION, TERMS_VERSION } from "../../lib/terms";
 
 export function meta() {
-  return [{ title: "Finish setup — BFO" }];
+  return [{ title: "Finish setup · BFO" }];
 }
 
-// Same always-dark styling as /login (literal rgba so the light-mode rescue
-// layer can't wash it out).
-const CARD = "auth-card";
-const FIELD = "auth-field";
+/**
+ * Finish setup, on the door: what an account still needs after sign-in, one
+ * step at a time, each step counted ("Finish setup · 2 of 3").
+ *   1. The Terms, when the person hasn't agreed to the current version: a
+ *      two-line summary, both links, and "Agree and continue" (recorded by
+ *      api/auth/terms.ts with the version, time and address). An outside
+ *      partner also agrees to keep what they see confidential.
+ *   2. Their full name, once (after that only an admin changes it).
+ *   3. The email (or, for Email-only members, the phone) the account lacks,
+ *      confirmed with a code before it attaches.
+ * A way out on every step: Sign out.
+ */
+
+type StepId = "terms" | "name" | "collect" | "code";
 
 function formatPhoneInput(raw: string): string {
   if (raw.trim().startsWith("+")) return `+${raw.replace(/\D/g, "")}`;
@@ -24,21 +36,30 @@ function formatPhoneInput(raw: string): string {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
+/** The steps this person still needs, in order. */
+function stepsFor(user: User): Array<Exclude<StepId, "code">> {
+  const out: Array<Exclude<StepId, "code">> = [];
+  if (needsTerms(user as User & { termsVersion?: string | null })) out.push("terms");
+  if (!user.name) out.push("name");
+  if ((!user.email && !isEmailOnly(user) && !isPartner(user)) || !user.phone) out.push("collect");
+  return out;
+}
+
 export default function CompleteProfile() {
   const navigate = useNavigate();
   // Where sign-in was headed (login's `next`), once the profile is done.
   const next = safeNext(useSearchParams()[0].get("next"));
-  const [missing, setMissing] = useState<"email" | "phone" | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [plan, setPlan] = useState<Array<Exclude<StepId, "code">>>([]);
+  const [step, setStep] = useState<StepId | null>(null);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [code, setCode] = useState("");
-  const [step, setStep] = useState<"name" | "collect" | "code">("collect");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [shake, setShake] = useState(false);
-  const lockup = lockupOf(useBrandLogo());
   const [success, setSuccess] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const codeInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,69 +67,98 @@ export default function CompleteProfile() {
       navigate("/login", { replace: true });
       return;
     }
-    const user = getUser();
-    if (!user) return;
-    // Name comes first, then whichever identifier is missing ("Email only"
-    // members don't need a personal email).
-    if (!user.email && !isEmailOnly(user)) setMissing("email");
-    else if (!user.phone) setMissing("phone");
-    if (!user.name) setStep("name");
-    else if (profileComplete(user)) navigate(next ?? homePath(user), { replace: true }); // nothing to collect
+    const u = getUser();
+    if (!u) return;
+    const steps = stepsFor(u);
+    if (steps.length === 0 && profileComplete(u)) {
+      navigate(next ?? homePath(u), { replace: true });
+      return;
+    }
+    setUser(u);
+    setPlan(steps);
+    setStep(steps[0] ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   useEffect(() => {
     if (step === "code") codeInput.current?.focus();
   }, [step]);
 
-  function shakeOut(message: string) {
-    setError(message);
-    setShake(true);
-    setTimeout(() => setShake(false), 450);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  // What the account lacks: an email for most people, a phone for Email-only members.
+  const missing: "email" | "phone" = user && !user.phone ? "phone" : "email";
+  const isEmail = missing === "email";
+
+  /** On to the next step in the plan, or into the app. */
+  async function advance(from: Exclude<StepId, "code">) {
+    const at = plan.indexOf(from);
+    const following = plan[at + 1];
+    setError("");
+    if (following) {
+      setStep(following);
+      return;
+    }
+    setSuccess(true);
+    await revalidate();
+    setTimeout(() => navigate(next ?? homePath(getUser()), { replace: true }), 600);
   }
 
-  async function call(body: Record<string, string>) {
-    const res = await authFetch("/api/auth/complete-profile", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+  async function call(path: string, body: Record<string, string>) {
+    const res = await authFetch(path, { method: "POST", body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message ?? "That didn't work. Try again.");
+    if (!res.ok) throw new Error(res.status >= 500 ? "That didn’t go through. Try again in a moment." : (data?.message ?? "That didn’t work. Try again."));
     return data;
   }
 
-  async function saveName() {
-    const trimmed = name.trim();
-    if (trimmed.length < 2) {
-      shakeOut("Enter your full name.");
-      return;
-    }
+  async function agree() {
     setBusy(true);
     setError("");
     try {
-      await call({ name: trimmed });
+      await call("/api/auth/terms", { version: TERMS_VERSION });
       await revalidate();
-      if (missing) setStep("collect");
-      else {
-        setSuccess(true);
-        setTimeout(() => navigate(next ?? homePath(), { replace: true }), 700);
-      }
+      await advance("terms");
     } catch (err) {
-      shakeOut(err instanceof Error ? err.message : "Couldn't save your name.");
+      setError(err instanceof Error ? err.message : "Couldn’t record that. Try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function send() {
+  async function saveName() {
+    const trimmed = name.trim().replace(/\s+/g, " ");
+    if (!isFullName(trimmed)) {
+      setError("Enter your full name, first and last.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await call({ identifier: value });
-      setSentTo(value);
+      await call("/api/auth/complete-profile", { name: trimmed });
+      await revalidate();
+      await advance("name");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn’t save your name.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function send(to: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await call("/api/auth/complete-profile", isEmail ? { identifier: to } : { identifier: to, consent: SMS_CONSENT_VERSION });
+      setSentTo(to);
       setCode("");
+      setCooldown(45);
       setStep("code");
     } catch (err) {
-      shakeOut(err instanceof Error ? err.message : "Couldn't send a code.");
+      setError(err instanceof Error ? err.message : "Couldn’t send a code.");
     } finally {
       setBusy(false);
     }
@@ -119,150 +169,184 @@ export default function CompleteProfile() {
     setBusy(true);
     setError("");
     try {
-      await call({ identifier: sentTo, code: submitted });
-      setSuccess(true);
-      await revalidate(); // pull the updated user into the stored session
-      setTimeout(() => navigate(next ?? homePath(), { replace: true }), 700);
+      await call("/api/auth/complete-profile", { identifier: sentTo, code: submitted });
+      await advance("collect");
     } catch (err) {
       setCode("");
-      shakeOut(err instanceof Error ? err.message : "Couldn't verify that code.");
+      setError(err instanceof Error ? err.message : "Couldn’t check that code.");
       codeInput.current?.focus();
     } finally {
       setBusy(false);
     }
   }
 
-  if (!missing && step !== "name") return null;
-  const isEmail = missing === "email";
+  function signOut() {
+    logout();
+    window.location.assign("/login");
+  }
+
+  if (!user || !step) return null;
+  const position = step === "code" ? plan.indexOf("collect") : plan.indexOf(step);
+  const stepLine = plan.length > 1 ? `Finish setup · ${position + 1} of ${plan.length}` : "Finish setup";
+  const last = position === plan.length - 1;
+  const partner = isPartner(user);
 
   return (
-    <div className="min-h-dvh bg-black relative overflow-hidden flex items-center justify-center">
-      <div aria-hidden className="absolute inset-0">
-        <div className="landing-orb landing-orb-1" />
-        <div className="landing-orb landing-orb-2" />
-        <div className="landing-orb landing-orb-3" />
-      </div>
-      <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />
-
-      <div className={`relative z-10 w-full max-w-sm px-6 text-center ${shake ? "landing-shake" : ""}`}>
-        <h1 className="m-0 select-none">
-          <BrandLockup font={lockup.font} finish={lockup.finish} size="compact" />
-        </h1>
-        <p className="landing-sub landing-sub-sm uppercase mt-3">Ledger Louise, LLC</p>
-
-        <div className={`mt-10 p-6 text-left ${CARD}`}>
-          {step === "name" ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void saveName();
-              }}
-            >
-              <label htmlFor="name" className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1">
-                Your name
-              </label>
-              <p className="text-white/50 text-xs mb-3">So everyone knows who's who — this is how you'll appear across BFO.</p>
-              <input
-                id="name"
-                type="text"
-                autoComplete="name"
-                autoFocus
-                required
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  setError("");
-                }}
-                placeholder="First and last name"
-                className={`${FIELD} auth-delay-1 text-[16px] ${success ? "auth-field-success" : ""}`}
-              />
-              <button type="submit" disabled={busy || name.trim().length < 2} className="auth-btn auth-in auth-delay-2 mt-4">
-                {success ? "All set" : busy ? "Saving…" : missing ? "Continue" : "Finish"}
-              </button>
-            </form>
-          ) : step === "collect" ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void send();
-              }}
-            >
-              <label htmlFor="value" className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1">
-                {isEmail ? "Add your email" : "Add your phone"}
-              </label>
-              <p className="text-white/50 text-xs mb-3">{isEmailOnly() ? "One more step and you're in." : "Every account needs both a phone number and an email. One more step and you're in."}</p>
-              <input
-                id="value"
-                type="text"
-                inputMode={isEmail ? "email" : "tel"}
-                autoComplete={isEmail ? "email" : "tel"}
-                autoFocus
-                required
-                value={value}
-                onChange={(e) => {
-                  setValue(isEmail ? e.target.value : formatPhoneInput(e.target.value));
-                  setError("");
-                }}
-                placeholder={isEmail ? "you@example.com" : "(555) 123-4567"}
-                className={`${FIELD} auth-delay-1 text-[16px]`}
-              />
-              <button type="submit" disabled={busy || !value.trim()} className="auth-btn auth-in auth-delay-2 mt-4">
-                {busy ? "Sending…" : "Send code"}
-              </button>
-            </form>
-          ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void check(code);
-              }}
-            >
-              <label htmlFor="code" className="block text-[11px] uppercase tracking-[0.2em] text-white/40 mb-1">
-                Enter code
-              </label>
-              <p className="text-white/50 text-xs mb-3">Sent to {sentTo}</p>
-              <input
-                ref={codeInput}
-                id="code"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                required
-                value={code}
-                onChange={(e) => {
-                  const next = e.target.value.replace(/\D/g, "").slice(0, 6);
-                  setCode(next);
-                  setError("");
-                  if (next.length === 6) void check(next);
-                }}
-                placeholder="······"
-                className={`${FIELD} auth-delay-1 text-center text-[22px] tracking-[0.5em] pl-[calc(1rem+0.5em)] ${success ? "auth-field-success" : error ? "auth-field-error" : ""}`}
-              />
-              <button type="submit" disabled={busy || code.length !== 6} className="auth-btn auth-in auth-delay-2 mt-4">
-                {success ? "All set" : busy ? "Verifying…" : "Finish"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setStep("collect");
-                  setCode("");
-                  setError("");
-                }}
-                className="mt-2 min-h-[40px] text-xs text-white/50 hover:text-white/80 transition-colors cursor-pointer"
-              >
-                ← Change
-              </button>
-            </form>
-          )}
-
-          {error && (
-            <p role="alert" className="text-red-400/90 text-sm mt-4 text-center">
-              {error}
-            </p>
-          )}
+    <DoorScreen legalInFooter={!(step === "terms" || (step === "collect" && !isEmail))}>
+      {step === "terms" && (
+        <div key="terms" className="ds-reveal">
+          <DoorHeading step={stepLine} title="Before you go in.">
+            <ul className="mt-1 flex flex-col gap-2 text-left">
+              <li>BFO is the Burton Family Office’s private system. Use it only for the office’s work, keep your sign-in to yourself, and keep what you see confidential.</li>
+              <li>
+                We keep what BFO needs to run and share it only with the services that run it and the people the office lets in. Answers and drafts made by AI can be wrong; check them before you rely
+                on them.
+              </li>
+            </ul>
+            <LegalLinks tone="door" className="mt-3 text-small touch:[&_a]:inline-flex touch:[&_a]:min-h-[44px] touch:[&_a]:items-center" />
+          </DoorHeading>
+          <p className="mt-6 text-small text-pretty text-door-ink-2">
+            Choosing Agree and continue means you agree to the Terms of use and have read the Privacy notice
+            {partner ? ", and that you’ll keep what you see in BFO confidential and use it only for the work you were invited for." : "."}
+          </p>
+          <DoorButton type="button" className="mt-4" onClick={() => void agree()} busy={busy} busyLabel="Saving…" success={success && "You’re in"}>
+            Agree and continue
+          </DoorButton>
+          <DoorError>{error}</DoorError>
         </div>
-      </div>
-    </div>
+      )}
+
+      {step === "name" && (
+        <form
+          key="name"
+          className="ds-reveal"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveName();
+          }}
+        >
+          <DoorHeading step={stepLine} title="Your name.">
+            Your full name, as it should appear on documents you send and in the record of changes.
+          </DoorHeading>
+          <div className="mt-8">
+            <DoorField
+              label="Your full name"
+              words
+              id="name"
+              type="text"
+              autoComplete="name"
+              autoFocus
+              required
+              invalid={!!error}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setError("");
+              }}
+              placeholder="First and last name"
+            />
+          </div>
+          <DoorButton type="submit" className="mt-6" disabled={busy || !isFullName(name)} busy={busy} busyLabel="Saving…" success={success && "You’re in"}>
+            {last ? "Finish" : "Continue"}
+          </DoorButton>
+          <DoorError>{error}</DoorError>
+        </form>
+      )}
+
+      {step === "collect" && (
+        <form
+          key="collect"
+          className="ds-reveal"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (value.trim()) void send(value.trim());
+          }}
+        >
+          <DoorHeading step={stepLine} title={isEmail ? "Your email." : "Your mobile number."}>
+            {isEmail
+              ? "Where BFO sends your copies of documents, replies to documents you send for signature, and the Treasury report if you turn it on. It isn’t used to sign in."
+              : "We’ll text a 6-digit code to confirm it, from BFO. Message and data rates may apply. Sending the code confirms the number is yours."}
+          </DoorHeading>
+          <div className="mt-8">
+            <DoorField
+              label={isEmail ? "Email" : "Mobile number"}
+              words={isEmail}
+              id="value"
+              type={isEmail ? "email" : "tel"}
+              inputMode={isEmail ? "email" : "tel"}
+              autoComplete={isEmail ? "email" : "tel"}
+              autoFocus
+              required
+              invalid={!!error}
+              value={value}
+              onChange={(e) => {
+                setValue(isEmail ? e.target.value : formatPhoneInput(e.target.value));
+                setError("");
+              }}
+              placeholder={isEmail ? "you@example.com" : "(555) 123-4567"}
+            />
+          </div>
+          {isEmail && user.mailAddress && value.trim().toLowerCase() !== user.mailAddress && (
+            <DoorLink className="mt-2" onClick={() => setValue(user.mailAddress ?? "")}>
+              Use {user.mailAddress}
+            </DoorLink>
+          )}
+          {!isEmail && <LegalLinks tone="door" className="mt-3 text-small touch:[&_a]:inline-flex touch:[&_a]:min-h-[44px] touch:[&_a]:items-center" />}
+          <DoorButton type="submit" className="mt-6" disabled={busy || !value.trim()} busy={busy} busyLabel="Sending…">
+            Send code
+          </DoorButton>
+          <DoorError>{error}</DoorError>
+        </form>
+      )}
+
+      {step === "code" && (
+        <form
+          key="code"
+          className="ds-reveal"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void check(code);
+          }}
+        >
+          <DoorHeading step={stepLine} title={isEmail ? "Check your email." : "Check your phone."}>
+            We sent a 6-digit code to <span className="break-all text-door-ink">{sentTo}</span>. It works for 10 minutes.
+          </DoorHeading>
+          <div className="mt-6">
+            <CodeEntry
+              value={code}
+              inputRef={codeInput}
+              state={success ? "success" : error ? "error" : "idle"}
+              onChange={(v) => {
+                setCode(v);
+                setError("");
+              }}
+              onComplete={(v) => void check(v)}
+            />
+          </div>
+          <DoorButton type="submit" className="mt-6" disabled={busy || code.length !== 6} busy={busy && !success} busyLabel="Checking…" success={success && "You’re in"}>
+            {last ? "Finish" : "Continue"}
+          </DoorButton>
+          <DoorError>{error}</DoorError>
+          <div className="mt-4 flex items-center justify-between">
+            <DoorLink
+              onClick={() => {
+                setStep("collect");
+                setCode("");
+                setError("");
+              }}
+            >
+              {isEmail ? "Change email" : "Change number"}
+            </DoorLink>
+            <DoorLink disabled={cooldown > 0 || busy} onClick={() => void send(sentTo)} aria-live="polite">
+              {resendLabel(cooldown)}
+            </DoorLink>
+          </div>
+        </form>
+      )}
+
+      <DoorLink className="mt-6" onClick={signOut}>
+        Sign out
+      </DoorLink>
+    </DoorScreen>
   );
 }

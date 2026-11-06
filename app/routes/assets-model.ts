@@ -273,9 +273,30 @@ export function taxLine(a: EntityRec, byId: Map<string, EntityRec>): TaxLine {
   else if (value === "S Corporation") files = "Form 1120-S and K-1s";
   else if (value === "C Corporation") files = "Form 1120";
   else if (value === "Non-grantor trust") files = "Form 1041";
-  else if (value === "Grantor trust") files = "No return: on the grantors' Form 1040";
-  else if (value === "Disregarded Entity") files = parent ? `No return: disregarded into ${parent.name}` : "No return: disregarded into its owner";
+  else if (value === "Grantor trust") files = "On the grantors' Form 1040";
+  else if (value === "Disregarded Entity") files = parent ? whereReported(parent, byId) : "On its owner's return";
   return { value, isDefault, files, source: !isDefault ? a.llcTypeSource : undefined };
+}
+
+/**
+ * Where a disregarded entity's income is reported: up the chain of owners
+ * past every disregarded one, to the first that files.
+ */
+function whereReported(owner: EntityRec, byId: Map<string, EntityRec>): string {
+  const seen = new Set<string>();
+  let cur: EntityRec | undefined = owner;
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    const v = taxClassOf(paperOf(cur, byId)).value;
+    if (v === "Partnership") return `On ${cur.name}'s Form 1065`;
+    if (v === "S Corporation") return `On ${cur.name}'s Form 1120-S`;
+    if (v === "C Corporation") return `On ${cur.name}'s Form 1120`;
+    if (v === "Non-grantor trust") return `On ${cur.name}'s Form 1041`;
+    if (v === "Grantor trust") return `On the grantors' Form 1040, through ${cur.name}`;
+    if (v !== "Disregarded Entity") return `Through ${cur.name}, whose tax class isn't on record`;
+    cur = cur.ownerId && cur.ownerId !== cur.id ? byId.get(cur.ownerId) : undefined;
+  }
+  return `Into ${owner.name}`;
 }
 
 /** "Disregarded entity", as a label (sentence case). */

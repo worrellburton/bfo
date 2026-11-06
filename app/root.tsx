@@ -2,8 +2,9 @@ import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration }
 
 import type { Route } from "./+types/root";
 import "./app.css";
-import { homePath } from "./auth";
-import { ThemeProvider } from "./theme";
+import { ErrorPage } from "./ui";
+import { useLayoutEffect } from "react";
+import { applySavedTheme, ThemeProvider } from "./theme";
 import { SIDEBAR_BOOT_SCRIPT } from "./sidebar";
 import { startPwa } from "./pwa";
 
@@ -26,16 +27,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        {/* Phone browser chrome matches the app instead of flashing white. */}
-        {/* Browser chrome colour — follows the app's theme (set before paint
-            by the boot script and on every toggle), not the phone's. */}
+        {/* The browser chrome's colour follows the app's theme; the boot script sets it before paint. */}
         <meta name="theme-color" content="#0b0b0c" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="BFO" />
         <Meta />
         <Links />
-        {/* Applies the saved sidebar width before first paint. */}
+        {/* The theme and the content inset, before first paint (app/sidebar.ts). */}
         <script dangerouslySetInnerHTML={{ __html: SIDEBAR_BOOT_SCRIPT }} />
       </head>
       <body>
@@ -55,42 +54,20 @@ export default function App() {
   );
 }
 
+/**
+ * A page that can't render at all, or an address no route knows, outside the
+ * shell (docs/DESIGN.md §8.18): the same ErrorPage the in-app not-found
+ * uses, in the theme the boot script already applied. The message (and in
+ * development the stack) sits behind "Technical details".
+ */
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   const notFound = isRouteErrorResponse(error) && error.status === 404;
-  const title = notFound ? "This page isn't here" : "Something went wrong";
-  const details = notFound
-    ? "The address doesn't match any page."
-    : isRouteErrorResponse(error)
-      ? error.statusText || "The page failed to load."
-      : "The page hit an unexpected error. Reloading usually fixes it — if it keeps happening, tell us what you were doing.";
-  // What went wrong, for whoever is told about it: the message always, the stack in development.
-  const detail = error instanceof Error ? (import.meta.env.DEV ? error.stack || error.message : error.message) : undefined;
-
+  // The app (and its theme) is gone; put the saved theme back on the document.
+  useLayoutEffect(() => applySavedTheme(), []);
+  const detail = error instanceof Error ? (import.meta.env.DEV ? error.stack || error.message : error.message) : isRouteErrorResponse(error) ? `${error.status} ${error.statusText}`.trim() : undefined;
   return (
-    <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
-      <div className="w-full max-w-md text-center">
-        <p className="font-brand text-[24px] font-semibold tracking-[0.08em] text-[#f4ede0]">BFO</p>
-        <h1 className="mt-8 text-[20px] font-semibold">{title}</h1>
-        <p className="mt-2 text-sm text-gray-400">{details}</p>
-        <div className="mt-6 flex justify-center gap-2">
-          {!notFound && (
-            <button onClick={() => window.location.reload()} className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black hover:bg-gray-200">
-              Reload
-            </button>
-          )}
-          <a href={homePath()} className="rounded-full border border-white/15 px-5 py-2 text-sm text-gray-200 hover:bg-white/10">
-            Go home
-          </a>
-        </div>
-        {detail && (
-          <details className="mt-8 text-left">
-            <summary className="cursor-pointer text-center text-xs text-gray-500 hover:text-gray-300">Technical details</summary>
-            <pre className="mt-3 max-h-64 overflow-auto rounded-xl bg-white/5 p-4 text-xs text-gray-400">
-              <code>{detail}</code>
-            </pre>
-          </details>
-        )}
-      </div>
+    <main className="min-h-dvh bg-page px-(--gutter)">
+      <ErrorPage kind={notFound ? "not-found" : "error"} detail={detail} />
     </main>
   );
 }

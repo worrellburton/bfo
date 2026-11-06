@@ -12,7 +12,7 @@ import type { BookTxn, Pref } from "./types.js";
  * transaction at sync time — remapping an account takes effect at once.
  */
 export async function getPrefs(): Promise<Map<string, Pref>> {
-  const rows = await fetchAll<Pref>("plaid_account_prefs?select=account_id,entity_id,entity_name,hidden,nickname,account_name,mask,institution_name&archived_at=is.null");
+  const rows = await fetchAll<Pref>("plaid_account_prefs?select=account_id,entity_id,entity_name,hidden,nickname,account_name,mask,institution_name,subtype&archived_at=is.null&order=account_id.asc");
   return new Map(rows.map((p) => [p.account_id, p]));
 }
 

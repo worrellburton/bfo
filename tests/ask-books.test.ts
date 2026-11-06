@@ -133,7 +133,12 @@ describe("Ask's books totals tie to the P&L", () => {
 describe("placing a row", () => {
   const none = () => undefined;
   it("files uncategorized rows by sign, and says so", () => {
-    expect(pnlPlace({ ...base, account_id: "x", amount: -10, book_category: null } as LedgerRow, null, none)).toEqual({ kind: "statement", section: "revenue", account: "Uncategorized", uncategorized: true });
+    expect(pnlPlace({ ...base, account_id: "x", amount: -10, book_category: null } as LedgerRow, null, none)).toEqual({
+      kind: "statement",
+      section: "revenue",
+      account: "Uncategorized",
+      uncategorized: true,
+    });
     expect(pnlPlace({ ...base, account_id: "x", amount: 10, book_category: "6100 Professional Fees" } as LedgerRow, null, none)).toEqual({
       kind: "statement",
       section: "operating",

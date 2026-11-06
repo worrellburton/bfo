@@ -109,7 +109,9 @@ describe("/api/auth/verify-code", () => {
     expect([a.status, b.status].sort()).toEqual([401, 429]);
     expect(row.attempts).toBe(MAX_CODE_ATTEMPTS);
     expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(2);
-    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    // Nothing is created: no session, no account. (The audit trail records both refusals.)
+    expect(calls.filter((c) => c.method === "POST" && !c.path.startsWith("audit_log"))).toHaveLength(0);
+    expect(calls.filter((c) => c.method === "POST" && c.path.startsWith("audit_log")).map((c) => c.body.action)).toEqual(expect.arrayContaining(["auth.locked_out"]));
   });
 
   it("lets only one of two racing right guesses sign in (one-time use)", async () => {

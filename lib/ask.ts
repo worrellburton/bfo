@@ -847,7 +847,11 @@ export function provenance(name: string, input: Rec, output: string): Source {
         .join(" · ");
       break;
     case "books_transactions":
-      detail = [input.from || input.to ? `Books, ${input.from ? shortDate(String(input.from)) : "start"} – ${input.to ? shortDate(String(input.to)) : "today"}` : "Books", "posted", rows("count", "transaction", "transactions")]
+      detail = [
+        input.from || input.to ? `Books, ${input.from ? shortDate(String(input.from)) : "start"} – ${input.to ? shortDate(String(input.to)) : "today"}` : "Books",
+        "posted",
+        rows("count", "transaction", "transactions"),
+      ]
         .filter(Boolean)
         .join(" · ");
       break;

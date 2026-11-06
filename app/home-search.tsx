@@ -2,49 +2,65 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router";
 import { authFetch } from "./auth";
 import { rememberRecent, useEntities, usePaletteResults, type Command, type PageLink } from "./command-palette";
+import { cx, format, Icon, Keycap, Skeleton } from "./ui";
 
 /**
- * The search box on the home page: type, and what matches appears under it
- * as you go — pages, entities, and a search of mail or the books for the
- * words typed. The same results as ⌘K, in place instead of a dialog.
+ * The search box on Home (desktop and tablet; on phones the top bar's search
+ * opens the palette): type, and what matches appears under it as you go:
+ * pages, entities, a few book transactions, and a search of mail or the
+ * books for the words typed. The same results as ⌘K, in place.
+ *
+ * The list is an opaque overlay surface (docs/DESIGN.md §8.19), rows are the
+ * standard 40/48px, and the highlighted row is tracked by id, so results
+ * that arrive late never move the highlight under the cursor.
  */
 
 type ShellContext = { pages: PageLink[] };
 
-type Txn = { transaction_id: string; date: string; amount: number | string; merchant_name: string | null; name: string | null; entity_name: string | null; book_category: string | null };
+type Txn = {
+  transaction_id: string;
+  date: string;
+  amount: number | string;
+  merchant_name: string | null;
+  name: string | null;
+  entity_name: string | null;
+  book_category: string | null;
+};
 
-const money = (n: number) => `${n < 0 ? "+" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const when = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+type Row = Command & { txn?: { date: string; entity: string | null; account: string | null; amount: number } };
 
-/** A few book transactions matching the words typed, a moment after typing stops. */
-function useTransactionHits(q: string): Txn[] {
+/** A few book transactions matching the words typed, a moment after typing stops. `loading` while they're on the way. */
+function useTransactionHits(q: string): { rows: Txn[]; loading: boolean } {
   const [hits, setHits] = useState<{ q: string; rows: Txn[] }>({ q: "", rows: [] });
+  const query = q.trim();
   useEffect(() => {
-    const query = q.trim();
     if (query.length < 2) return;
     const ctl = new AbortController();
     const t = setTimeout(() => {
-      authFetch(`/api/books/data?report=transactions&q=${encodeURIComponent(query)}&limit=5&summary=0`, { signal: ctl.signal })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((body) => {
-          if (body) setHits({ q: query, rows: (body.transactions ?? []) as Txn[] });
-        })
+      authFetch(`/api/books/data?report=transactions&q=${encodeURIComponent(query)}&limit=3&summary=0`, { signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : { transactions: [] }))
+        .then((body) => setHits({ q: query, rows: (body?.transactions ?? []) as Txn[] }))
         .catch(() => undefined);
     }, 180);
     return () => {
       clearTimeout(t);
       ctl.abort();
     };
-  }, [q]);
-  return hits.q === q.trim() ? hits.rows : [];
+  }, [query]);
+  const ready = hits.q === query;
+  return { rows: ready ? hits.rows : [], loading: query.length >= 2 && !ready };
 }
 
-export function HomeSearch({ isDark }: { isDark: boolean }) {
+/** Pages show at most this many before "Show all". */
+const PAGES_SHOWN = 4;
+
+export function HomeSearch() {
   const navigate = useNavigate();
   const { pages } = useOutletContext<ShellContext>() ?? { pages: [] };
   const [q, setQ] = useState("");
   const [focused, setFocused] = useState(false);
-  const [active, setActive] = useState(0);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [allPages, setAllPages] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const entities = useEntities(focused);
@@ -59,51 +75,62 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
     [navigate],
   );
   const base = usePaletteResults({ q, pages, entities, actions: [], go });
-  const txns = useTransactionHits(focused ? q : "");
-  // Transactions sit between the places and the searches.
-  const results = useMemo<Command[]>(() => {
-    if (!txns.length) return base;
-    const rows: Command[] = txns.map((x) => {
-      const who = x.merchant_name || x.name || "Transaction";
-      const amt = Number(x.amount);
+  const { rows: txns, loading: txnsLoading } = useTransactionHits(focused ? q : "");
+  const typed = q.trim().length > 0;
+
+  // Places, then a few transactions, then the searches of mail and the books.
+  const results = useMemo<Row[]>(() => {
+    if (!typed) return base.filter((c) => c.group === "Recent");
+    const pageRows = base.filter((c) => c.group === "Pages");
+    const shownPages = allPages ? pageRows : pageRows.slice(0, PAGES_SHOWN);
+    const morePages: Row[] = !allPages && pageRows.length > PAGES_SHOWN ? [{ id: "more:pages", label: `Show all ${pageRows.length} pages`, group: "Pages", run: () => setAllPages(true) }] : [];
+    const txnRows: Row[] = txns.map((x) => {
+      const who = (x.merchant_name || x.name || "Transaction").trim();
       return {
         id: `txn:${x.transaction_id}`,
         label: who,
-        hint: [when(x.date), x.entity_name, money(amt)].filter(Boolean).join(" · "),
         group: "Search",
-        run: () => go(`/books/transactions?q=${encodeURIComponent(who)}`),
+        txn: { date: x.date, entity: x.entity_name, account: x.book_category ? x.book_category.replace(/^\d{4}\s+/, "") : "Uncategorized", amount: Number(x.amount) },
+        run: () => go(`/books/transactions?q=${encodeURIComponent(who)}&txn=${encodeURIComponent(x.transaction_id)}`),
       };
     });
-    const i = base.findIndex((c) => c.group === "Search");
-    return i < 0 ? [...base, ...rows] : [...base.slice(0, i), ...rows, ...base.slice(i)];
-  }, [base, txns, go]);
-  // Focused and empty: the places opened recently, so the box is useful before a letter is typed.
-  const open = focused && (q.trim().length > 0 || results.some((c) => c.group === "Recent"));
-  const shownResults = q.trim() ? results : results.filter((c) => c.group === "Recent");
+    const rest = base.filter((c) => c.group !== "Pages" && c.group !== "Search");
+    const searches = base.filter((c) => c.group === "Search");
+    return [...rest, ...shownPages, ...morePages, ...txnRows, ...searches];
+  }, [base, txns, go, typed, allPages]);
 
-  useEffect(() => setActive(0), [q]);
+  const open = focused && (typed || results.length > 0);
+  // The highlight follows an id; when that row goes away it falls back to the first.
+  const active = results.find((r) => r.id === activeId) ?? results[0] ?? null;
+
   useEffect(() => {
-    if (open) listRef.current?.querySelector(`[data-idx="${active}"]`)?.scrollIntoView({ block: "nearest" });
+    setActiveId(null);
+    setAllPages(false);
+  }, [q]);
+  useEffect(() => {
+    if (open && active) listRef.current?.querySelector(`[data-id="${CSS.escape(active.id)}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active, open]);
+
+  const choose = (c: Row) => {
+    if (c.group === "Pages" && c.id.startsWith("page:")) rememberRecent({ to: c.id.replace(/^page:/, ""), label: c.label, hint: c.hint });
+    c.run();
+  };
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (!open) {
       if (e.key === "Escape") inputRef.current?.blur();
       return;
     }
+    const i = active ? results.indexOf(active) : -1;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((i) => Math.min(shownResults.length - 1, i + 1));
+      setActiveId(results[Math.min(results.length - 1, i + 1)]?.id ?? null);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActive((i) => Math.max(0, i - 1));
+      setActiveId(results[Math.max(0, i - 1)]?.id ?? null);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const hit = shownResults[active];
-      if (hit) {
-        if (hit.group === "Pages") rememberRecent({ to: hit.id.replace(/^page:/, ""), label: hit.label, hint: hit.hint });
-        hit.run();
-      }
+      if (active) choose(active);
     } else if (e.key === "Escape") {
       e.preventDefault();
       setQ("");
@@ -111,20 +138,54 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
     }
   }
 
-  const muted = "text-gray-500";
-  let lastGroup = "";
+  const heading = (c: Row): string => {
+    if (c.id.startsWith("txn:")) return "In the books";
+    if (c.group === "Pages") {
+      const sections = new Set(results.filter((r) => r.group === "Pages" && !r.id.startsWith("more:")).map((r) => r.hint ?? ""));
+      return sections.size === 1 && [...sections][0] ? `Pages in ${[...sections][0]}` : "Pages";
+    }
+    return c.group;
+  };
+  const oneSection = (c: Row) => c.group === "Pages" && heading(c) !== "Pages";
+  const searches = results.filter((c) => c.group === "Search" && !c.txn);
+  const places = results.filter((c) => !(c.group === "Search" && !c.txn));
+  let lastHeading = "";
+  const option = (c: Row) => {
+    const on = active?.id === c.id;
+    return (
+      <button
+        id={`home-search-${c.id}`}
+        data-id={c.id}
+        role="option"
+        aria-selected={on}
+        tabIndex={-1}
+        onMouseMove={() => setActiveId(c.id)}
+        onClick={() => choose(c)}
+        className={cx("flex w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left", c.txn ? "min-h-(--row-2)" : "min-h-(--row-1)", on && "bg-hover")}
+      >
+        {c.txn ? (
+          <>
+            <span className="min-w-0 flex-1 py-2">
+              <span className="block text-body break-words text-ink">{c.label}</span>
+              <span className="block truncate text-small text-ink-2">{[format.date(c.txn.date), c.txn.entity, c.txn.account].filter(Boolean).join(" · ")}</span>
+            </span>
+            <span className="shrink-0 text-body font-medium text-ink tabular-nums">{format.money(-c.txn.amount, { sign: "always" })}</span>
+          </>
+        ) : (
+          <>
+            {c.group === "Search" && <Icon name="search" size={16} className="text-ink-2" />}
+            <span className={cx("min-w-0 flex-1 truncate text-body", c.id.startsWith("more:") ? "text-accent" : "text-ink")}>{c.label}</span>
+            {c.hint && !oneSection(c) && c.group !== "Search" && <span className="shrink-0 truncate text-caption text-ink-3">{c.hint}</span>}
+          </>
+        )}
+      </button>
+    );
+  };
 
   return (
-    <div className="relative z-20 w-full max-w-[640px]">
-      <div
-        className={`home-search flex h-12 items-center gap-3 rounded-2xl border px-4 transition-shadow ${
-          isDark ? "border-white/10 bg-white/[0.04] text-white" : "border-gray-200 bg-white/70 text-gray-900"
-        } ${focused ? (isDark ? "border-white/25 shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_12px_40px_rgba(0,0,0,0.35)]" : "border-gray-300 shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_12px_40px_rgba(15,23,42,0.1)]") : ""}`}
-      >
-        <svg className={`h-[18px] w-[18px] shrink-0 ${muted}`} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
-          <circle cx="11" cy="11" r="7" />
-          <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
-        </svg>
+    <div className="ds relative w-full">
+      <div className="flex h-11 items-center gap-3 rounded-control border border-edge bg-field px-3 text-ink focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent focus-within:outline-solid">
+        <Icon name="search" size={20} className="text-ink-3" />
         <input
           ref={inputRef}
           value={q}
@@ -132,36 +193,34 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={onKeyDown}
-          placeholder="Search entities, pages, mail, transactions"
+          type="search"
+          placeholder="Search BFO"
           aria-label="Search BFO"
           role="combobox"
           aria-expanded={open}
           aria-controls="home-search-list"
           aria-autocomplete="list"
-          aria-activedescendant={open && shownResults[active] ? `home-search-${active}` : undefined}
+          aria-activedescendant={open && active ? `home-search-${active.id}` : undefined}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-[15px] max-md:text-[16px] md:pointer-coarse:text-[16px] placeholder:text-gray-500"
-          style={{ outline: "none" }}
+          className="h-full min-w-0 flex-1 bg-transparent text-field text-ink outline-none! placeholder:text-ink-3 [&::-webkit-search-cancel-button]:hidden"
         />
         {q ? (
           <button
             type="button"
-            aria-label="Clear"
+            aria-label="Clear the search"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               setQ("");
               inputRef.current?.focus();
             }}
-            className={`flex h-7 w-7 items-center justify-center rounded-full ${isDark ? "text-gray-400 hover:bg-white/10 hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+            className="-mr-2 flex size-8 cursor-pointer items-center justify-center rounded-control text-ink-2 hover:bg-hover hover:text-ink touch:size-11"
           >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-            </svg>
+            <Icon name="x" size={16} />
           </button>
         ) : (
-          <kbd className={`hidden rounded-md border px-1.5 py-0.5 text-[11px] sm:inline ${isDark ? "border-white/15 text-gray-500" : "border-gray-200 text-gray-400"}`}>⌘K</kbd>
+          <Keycap keys={["⌘", "K"]} />
         )}
       </div>
 
@@ -170,36 +229,39 @@ export function HomeSearch({ isDark }: { isDark: boolean }) {
           id="home-search-list"
           ref={listRef}
           role="listbox"
+          aria-label="Search results"
           // Mouse down would blur the input and close the list before the click lands.
           onMouseDown={(e) => e.preventDefault()}
-          className={`glass-panel absolute inset-x-0 top-[calc(100%+8px)] max-h-[min(50vh,420px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl ${isDark ? "text-white" : "text-gray-900"}`}
+          className="absolute inset-x-0 top-[calc(100%+4px)] z-popover flex max-h-[min(60dvh,480px)] flex-col overflow-hidden rounded-card border border-line-strong bg-overlay shadow-(--elevation-2)"
         >
-          {shownResults.length === 0 && <p className={`px-3 py-6 text-center text-sm ${muted}`}>Nothing matches “{q}”.</p>}
-          {shownResults.map((c, i) => {
-            const groupLabel = c.id.startsWith("txn:") ? "Transactions" : c.group;
-            const header = groupLabel !== lastGroup ? groupLabel : null;
-            lastGroup = groupLabel;
-            return (
-              <div key={c.id}>
-                {header && <div className={`px-3 pb-1 pt-2.5 text-[11px] font-medium ${muted}`}>{header}</div>}
-                <button
-                  id={`home-search-${i}`}
-                  data-idx={i}
-                  role="option"
-                  aria-selected={i === active}
-                  onMouseMove={() => setActive(i)}
-                  onClick={() => {
-                    if (c.group === "Pages") rememberRecent({ to: c.id.replace(/^page:/, ""), label: c.label, hint: c.hint });
-                    c.run();
-                  }}
-                  className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${i === active ? (isDark ? "bg-white/10" : "bg-gray-100") : ""}`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{c.label}</span>
-                  {c.hint && <span className={`shrink-0 truncate text-xs ${muted}`}>{c.hint}</span>}
-                </button>
+          <div className="min-h-0 flex-1 overflow-y-auto p-1">
+            {typed && places.length === 0 && !txnsLoading && <p className="px-3 py-4 text-body text-ink-2">Nothing matches “{q.trim()}”.</p>}
+            {places.map((c) => {
+              const h = heading(c);
+              const header = h !== lastHeading ? h : null;
+              lastHeading = h;
+              return (
+                <div key={c.id}>
+                  {header && <div className="px-3 pt-3 pb-1 text-caption font-medium text-ink-2">{header}</div>}
+                  {option(c)}
+                </div>
+              );
+            })}
+            {txnsLoading && (
+              <div aria-hidden>
+                <div className="px-3 pt-3 pb-1 text-caption font-medium text-ink-2">In the books</div>
+                <Skeleton kind="rows" rows={2} />
               </div>
-            );
-          })}
+            )}
+          </div>
+          {/* The searches of mail and the books stay in sight at the foot. */}
+          {searches.length > 0 && (
+            <div className="shrink-0 border-t border-line p-1">
+              {searches.map((c) => (
+                <div key={c.id}>{option(c)}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

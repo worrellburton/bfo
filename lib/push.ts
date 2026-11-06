@@ -7,6 +7,18 @@ import { apnsConfig, deadToken, sendApns, type ApnsEnv } from "./apns.js";
  * notice for each new message that lands in someone's inbox. A device
  * belongs to whoever last registered it, so switching accounts in the app
  * moves the phone's notifications with it.
+ *
+ * What a notice shows on the lock screen follows the person's "previews"
+ * setting (Notifications page): "sender" (the default: who it's from, no
+ * subject or words), "full" (sender, subject and the first words) or "none"
+ * ("New email" alone). A verification code's value never goes in a notice,
+ * whatever the setting: lock screens sit outside the app's Face ID lock and
+ * the notice passes through Apple. Texts carrying a code go to owners only.
+ *
+ * HTTP surface: none; a library for api/push.ts, the mail and text webhooks
+ * and the paper-mail sync.
+ * Who may call it: server code.
+ * Env: APNS_* (through lib/apns.ts), Supabase through sb().
  */
 
 export const TOKEN_RE = /^[0-9a-f]{64,200}$/i;
@@ -29,11 +41,16 @@ export async function unregisterDevice(userId: string, token: string): Promise<v
  * What each person wants told about, from their notification_prefs.push
  * (the Notifications page). Everything is on until switched off.
  */
-type PushPrefs = { mail: boolean; texts: boolean; paper: boolean };
+export type Previews = "sender" | "full" | "none";
+type PushPrefs = { mail: boolean; texts: boolean; paper: boolean; previews: Previews };
 export function pushPrefsOf(prefs: unknown): PushPrefs {
   const p = ((prefs as { push?: Partial<PushPrefs> } | null)?.push ?? {}) as Partial<PushPrefs>;
-  return { mail: p.mail !== false, texts: p.texts !== false, paper: p.paper !== false };
+  const previews: Previews = p.previews === "full" || p.previews === "none" ? p.previews : "sender";
+  return { mail: p.mail !== false, texts: p.texts !== false, paper: p.paper !== false, previews };
 }
+
+/** Digit runs masked, so a code inside a text never reaches a lock screen. */
+export const maskCodes = (text: string) => text.replace(/\d(?:[\s-]?\d){3,}/g, (run) => run.replace(/\d/g, "•"));
 
 type Person = { id: string; role: string; status: string; notification_prefs: unknown };
 
@@ -69,12 +86,22 @@ export type NewMail = {
   occurred_at?: string | null;
 };
 
-/** What a notice for one message says: the sender, the subject, the first words; tapping it opens the message. */
-export function mailPayload(m: NewMail) {
+/**
+ * What a notice for one message says, by the person's previews setting:
+ * the sender (default), the sender, subject and first words (full), or
+ * nothing but "New email" (none). Tapping it opens the message.
+ */
+export function mailPayload(m: NewMail, previews: Previews = "sender") {
   const sender = m.from_name?.trim() || m.from_email || "New mail";
+  const alert =
+    previews === "full"
+      ? { title: clip(sender, 80), subtitle: clip(m.subject?.trim() || "(no subject)", 120), body: clip(maskCodes((m.snippet ?? "").replace(/\s+/g, " ").trim()), 180) }
+      : previews === "none"
+        ? { title: "BFO", body: "New email" }
+        : { title: clip(sender, 80), body: "New email" };
   return {
     aps: {
-      alert: { title: clip(sender, 80), subtitle: clip(m.subject?.trim() || "(no subject)", 120), body: clip((m.snippet ?? "").replace(/\s+/g, " ").trim(), 180) },
+      alert,
       sound: "default",
       "thread-id": m.thread_key || m.id,
     },
@@ -141,7 +168,7 @@ export async function notifyNewMail(rows: NewMail[], now = Date.now()): Promise<
     const prefs = await prefsFor(fresh.map((r) => r.user_id!));
     const wanted = fresh.filter((r) => prefs.get(r.user_id!)?.mail !== false);
     return await deliver(
-      wanted.map((m) => ({ to: [m.user_id!], payload: mailPayload(m), collapseId: m.id })),
+      wanted.map((m) => ({ to: [m.user_id!], payload: mailPayload(m, prefs.get(m.user_id!)?.previews ?? "sender"), collapseId: m.id })),
       "new-mail",
     );
   } catch (err) {
@@ -152,30 +179,41 @@ export async function notifyNewMail(rows: NewMail[], now = Date.now()): Promise<
 
 type NewText = { id: string; from_number?: string | null; body?: string | null; code?: string | null };
 
-/** A text to the office's number: owners and admins who want them (the Phone page). */
+/**
+ * A notice for a text to the office's number. Never the code's value: "A
+ * verification code arrived". The words show only with full previews, and
+ * then with digit runs masked.
+ */
+export function textPayload(r: NewText, previews: Previews = "sender") {
+  const body = maskCodes((r.body ?? "").replace(/\s+/g, " ").trim());
+  const title = r.code ? "A verification code arrived" : "Text to the office";
+  const alert =
+    previews === "none"
+      ? { title: "BFO", body: r.code ? "A verification code arrived" : "New text" }
+      : previews === "full"
+        ? { title, subtitle: clip(r.from_number || "Unknown number", 80), body: clip(body, 180) }
+        : { title, body: clip(r.from_number || "Unknown number", 80) };
+  return { aps: { alert, sound: "default", "thread-id": "texts" }, url: "/phone" };
+}
+
+/**
+ * A text to the office's number, to those who want them (the Phone page):
+ * owners and admins; a text carrying a verification code to owners only, so
+ * a bank's code isn't spread across several people.
+ */
 export async function notifyNewTexts(rows: NewText[]): Promise<number> {
   if (!apnsConfig() || !rows.length) return 0;
   try {
-    const to = (await peopleIn(["owner", "admin"])).filter((p) => p.prefs.texts).map((p) => p.id);
-    if (!to.length) return 0;
-    return await deliver(
-      rows.map((r) => {
-        const body = (r.body ?? "").replace(/\s+/g, " ").trim();
-        return {
-          to,
-          payload: {
-            aps: {
-              alert: { title: r.code ? `Code ${r.code}` : "Text to the office", subtitle: clip(r.from_number || "Unknown number", 80), body: clip(body, 180) },
-              sound: "default",
-              "thread-id": "texts",
-            },
-            url: "/phone",
-          },
-          collapseId: r.id,
-        };
-      }),
-      "text",
-    );
+    const people = (await peopleIn(["owner", "admin"])).filter((p) => p.prefs.texts);
+    const owners = new Set((await peopleIn(["owner"])).map((p) => p.id));
+    if (!people.length) return 0;
+    const sends = rows.flatMap((r) => {
+      const audience = r.code ? people.filter((p) => owners.has(p.id)) : people;
+      const byPreview = new Map<Previews, string[]>();
+      for (const p of audience) byPreview.set(p.prefs.previews, [...(byPreview.get(p.prefs.previews) ?? []), p.id]);
+      return [...byPreview.entries()].map(([previews, to]) => ({ to, payload: textPayload(r, previews), collapseId: r.id }));
+    });
+    return await deliver(sends, "text");
   } catch (err) {
     console.error("push: text notices failed", err);
     return 0;

@@ -1,16 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { Button, Segmented } from "../ui";
 
 /**
  * Where a signer makes their mark: draw it with a finger or mouse, or type
  * it and have it set in a script face. Either way the result is a PNG with
  * a transparent background, trimmed to the ink, that the server stamps into
- * the PDF.
+ * the PDF. The pad is paper in both themes (docs/DESIGN.md §2.5); the caller
+ * is told which way the mark was made, for the record.
  */
 
 const SCRIPT = "'Snell Roundhand', 'Savoye LET', 'Brush Script MT', 'Segoe Script', 'Lucida Handwriting', cursive";
 
-export function SignaturePad({ name, onChange, dark }: { name: string; onChange: (png: string | null) => void; dark: boolean }) {
+export type SignMethod = "drawn" | "typed";
+
+/** The ink a signature is drawn in: the brand's near-black, the same on paper in either theme. */
+const INK = "rgb(10 10 12)";
+
+export function SignaturePad({ name, onChange, label = "Your signature" }: { name: string; onChange: (png: string | null, method: SignMethod) => void; dark?: boolean; label?: string }) {
   const [mode, setMode] = useState<"draw" | "type">("draw");
+  const method: SignMethod = mode === "type" ? "typed" : "drawn";
+  const emit = (png: string | null) => onChange(png, method);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const inked = useRef(false);
@@ -43,11 +52,11 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
         ctx.lineWidth = 2.2;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        ctx.strokeStyle = "#0a0a0c";
+        ctx.strokeStyle = INK;
         if (ink && shown) {
           ctx.drawImage(ink, 0, 0, ink.width / shown.ratio, ink.height / shown.ratio);
           // A narrower pad can cut ink off; the PNG is what's left.
-          onChange(trimmed(c));
+          emit(trimmed(c));
         }
       }
       shown = { w: rect.width, h: rect.height, ratio };
@@ -55,7 +64,7 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
     size();
     inked.current = false;
     setHasInk(false);
-    onChange(null);
+    emit(null);
     const ro = new ResizeObserver(size);
     ro.observe(c);
     return () => ro.disconnect();
@@ -93,7 +102,7 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
     if (!drawing.current) return;
     drawing.current = false;
     const c = canvasRef.current;
-    if (c && inked.current) onChange(trimmed(c));
+    if (c && inked.current) emit(trimmed(c));
   }
   function clear() {
     const c = canvasRef.current;
@@ -101,60 +110,59 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
     if (c && ctx) ctx.clearRect(0, 0, c.width, c.height);
     inked.current = false;
     setHasInk(false);
-    onChange(null);
+    emit(null);
   }
 
-  // Typed: rendered off-screen in the script face.
+  // Typed: rendered off-screen in the script face, once the page's fonts have loaded (else a fallback face is what's stamped).
   useEffect(() => {
     if (mode !== "type") return;
     const text = name.trim();
     if (!text) {
-      onChange(null);
+      emit(null);
       return;
     }
-    const c = document.createElement("canvas");
-    const ratio = 2;
-    const size = 44;
-    const ctx = c.getContext("2d");
-    if (!ctx) return;
-    ctx.font = `${size * ratio}px ${SCRIPT}`;
-    const w = Math.ceil(ctx.measureText(text).width) + 40 * ratio;
-    c.width = w;
-    c.height = size * ratio * 1.6;
-    const ctx2 = c.getContext("2d");
-    if (!ctx2) return;
-    ctx2.font = `${size * ratio}px ${SCRIPT}`;
-    ctx2.fillStyle = "#0a0a0c";
-    ctx2.textBaseline = "middle";
-    ctx2.fillText(text, 20 * ratio, c.height / 2);
-    onChange(trimmed(c));
+    let live = true;
+    const draw = () => {
+      if (!live) return;
+      const c = document.createElement("canvas");
+      const ratio = 2;
+      const size = 44;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      ctx.font = `${size * ratio}px ${SCRIPT}`;
+      c.width = Math.ceil(ctx.measureText(text).width) + 40 * ratio;
+      c.height = size * ratio * 1.6;
+      const ctx2 = c.getContext("2d");
+      if (!ctx2) return;
+      ctx2.font = `${size * ratio}px ${SCRIPT}`;
+      ctx2.fillStyle = INK;
+      ctx2.textBaseline = "middle";
+      ctx2.fillText(text, 20 * ratio, c.height / 2);
+      emit(trimmed(c));
+    };
+    void (document.fonts?.ready ?? Promise.resolve()).then(draw, draw);
+    return () => {
+      live = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, name]);
 
-  const tab = (m: "draw" | "type", label: string) => (
-    <button
-      type="button"
-      onClick={() => setMode(m)}
-      aria-pressed={mode === m}
-      className={`h-8 max-md:h-[44px] md:pointer-coarse:h-[44px] rounded-full px-3.5 text-[12px] font-medium transition-colors ${mode === m ? (dark ? "bg-white text-black" : "bg-gray-900 text-white") : dark ? "bg-white/[0.06] text-gray-300 hover:bg-white/10" : "bg-black/[0.05] text-gray-600 hover:bg-black/[0.08]"}`}
-    >
-      {label}
-    </button>
-  );
-
   return (
-    <div>
+    <div className="ds" role="group" aria-label={label}>
       <div className="mb-2 flex items-center gap-2">
-        {tab("draw", "Draw")}
-        {tab("type", "Type")}
+        <Segmented
+          label="How to sign"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "draw", label: "Draw" },
+            { value: "type", label: "Type" },
+          ]}
+        />
         {mode === "draw" && hasInk && (
-          <button
-            type="button"
-            onClick={clear}
-            className={`ml-auto inline-flex items-center px-2 text-[12px] max-md:min-h-[44px] md:pointer-coarse:min-h-[44px] ${dark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}
-          >
+          <Button variant="quiet" size="sm" className="ml-auto" onClick={clear}>
             Clear
-          </button>
+          </Button>
         )}
       </div>
       {mode === "draw" ? (
@@ -166,25 +174,25 @@ export function SignaturePad({ name, onChange, dark }: { name: string; onChange:
             onPointerUp={up}
             onPointerCancel={up}
             onPointerLeave={up}
-            className="h-[150px] w-full cursor-crosshair touch-none rounded-xl bg-[#faf8f2]"
-            aria-label="Draw your signature"
+            className="block h-[150px] w-full cursor-crosshair touch-none rounded-card border border-edge bg-paper"
+            aria-label="Draw your signature with a finger or the mouse"
           />
-          <div aria-hidden className="pointer-events-none absolute inset-x-6 bottom-9 border-b border-dashed border-black/20" />
+          <div aria-hidden className="pointer-events-none absolute inset-x-6 bottom-9 border-b border-dashed border-edge" />
           {!hasInk && (
-            <p aria-hidden className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[13px] text-black/30">
+            <p aria-hidden className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-small text-brand-ink opacity-70">
               Sign here
             </p>
           )}
         </div>
       ) : (
-        <div className="flex h-[150px] items-center justify-center rounded-xl bg-[#faf8f2] px-6">
-          <span className="text-[40px] leading-none text-[#0a0a0c]" style={{ fontFamily: SCRIPT }}>
-            {name.trim() || (
-              <span className="text-[13px] text-black/30" style={{ fontFamily: "inherit" }}>
-                Type your name above
-              </span>
-            )}
-          </span>
+        <div className="flex h-[150px] items-center justify-center rounded-card border border-edge bg-paper px-6">
+          {name.trim() ? (
+            <span className="text-brand-ink" style={{ fontFamily: SCRIPT, fontSize: 40, lineHeight: 1 }}>
+              {name.trim()}
+            </span>
+          ) : (
+            <span className="text-small text-brand-ink opacity-70">Type your name above</span>
+          )}
         </div>
       )}
     </div>

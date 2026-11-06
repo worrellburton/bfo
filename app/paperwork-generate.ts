@@ -1,5 +1,5 @@
 import { parseAddress } from "./formation";
-import { entityType, stateCode, stateName, taxClassOf, type PaperworkInput } from "./entity-paperwork";
+import { agentTerm, entityType, filingAgency, splitPeople, stateCode, stateName, taxClassIssues, taxClassOf, type PaperworkInput } from "./entity-paperwork";
 
 /**
  * Paperwork BFO writes itself, from what the entity's record already says:
@@ -39,9 +39,18 @@ type W9Data = {
   tin: { kind: "ssn" | "ein"; digits: string } | null;
   /** What couldn't be filled in, and why — said to the person before they sign. */
   notes: string[];
+  /** Why it can't be filled in at all while this stands (a tax-class conflict); null when it can. fillW9 refuses while it's set. */
+  blocked: string | null;
+  /** How line 1 was reached: the entity, each owner followed with its class, and who files. */
+  chain: { name: string; as: string }[];
+  /** Two or more grantors: whose name and SSN go on line 1 is a choice (pass it back as `opts.grantor`). */
+  grantorChoices?: string[];
 };
 
 const digits = (s?: string | null) => (s ?? "").replace(/\D/g, "");
+
+/** The review every W-9 carries: what the signer certifies. */
+export const W9_REVIEW = "Check line 1, the box on line 3a and the TIN before signing: whoever signs certifies them under penalties of perjury.";
 
 /** How an entity that files its own return is classified on the W-9. */
 function boxFor(r: Rec): { box: number; llcLetter: string } | null {
@@ -56,16 +65,42 @@ function boxFor(r: Rec): { box: number; llcLetter: string } | null {
   return null;
 }
 
-/** With an owner on record and no count, an LLC is read as single-owner (the IRS default). */
+/** The members who hold a share (managers without one don't count toward the owners). */
+const holders = (r: Rec) => (r.members ?? []).filter((m) => m.name?.trim() && (!/manager/i.test(m.role ?? "") || m.percent != null) && (m.percent == null || m.percent > 0));
+
+/** The record as the rule book reads it: its owner, and how many members hold a share. With an owner on record and no count, an LLC is read as single-owner (the IRS default). */
 const withOwner = (r: Rec, lookup: (id: string) => Rec | undefined): Rec => {
   const owner = r.ownerId ? lookup(r.ownerId) : undefined;
-  return { ...r, ownerCount: r.ownerCount ?? (r.members?.length || undefined), owner: owner ? { name: owner.name, type: owner.type, llcType: owner.llcType } : r.owner };
+  return { ...r, ownerCount: r.ownerCount ?? (holders(r).length || undefined), owner: owner ? { name: owner.name, type: owner.type, llcType: owner.llcType } : r.owner };
 };
 
-/** What goes on the entity's W-9. `lookup` resolves an owner id to its record. */
-export function w9Data(entity: Rec, lookup: (id: string) => Rec | undefined): W9Data {
+/** The class problem that stops a W-9 or an agreement being prepared from this record, in a sentence; null when there's none. */
+function classProblem(r: Rec, lookup: (id: string) => Rec | undefined): string | null {
+  const issue = taxClassIssues(withOwner(r, lookup)).find((i) => i.key !== "trust-class" || entityType(r) === "Trust");
+  return issue ? `${(r.name ?? "").trim() || "This entity"}: ${issue.title.charAt(0).toLowerCase()}${issue.title.slice(1)}.` : null;
+}
+
+const CLASS_WORD: Record<string, string> = {
+  "Disregarded Entity": "disregarded",
+  Partnership: "partnership",
+  "S Corporation": "S corporation",
+  "C Corporation": "C corporation",
+  "Grantor trust": "grantor trust",
+  "Non-grantor trust": "non-grantor trust",
+};
+
+/**
+ * What goes on the entity's W-9. `lookup` resolves an owner id to its record.
+ * It refuses (`blocked`) while the entity's tax class, or that of an owner on
+ * the way up, conflicts with its owners on record. A disregarded LLC's goes
+ * in the name and TIN of the owner that files; through a grantor trust that's
+ * a grantor, and only when the trust's class is recorded as a grantor trust.
+ * With two or more grantors, `opts.grantor` says which.
+ */
+export function w9Data(entity: Rec, lookup: (id: string) => Rec | undefined, opts: { grantor?: string } = {}): W9Data {
   const notes: string[] = [];
   const a = withOwner(entity, lookup);
+  const own = (entity.name ?? "").trim();
   // Lines 5–6 are where the payer mails the 1099: the mailing address, when there's one.
   const mailTo = entity.mailingAddress || entity.address;
   const addr = parseAddress(mailTo);
@@ -73,51 +108,125 @@ export function w9Data(entity: Rec, lookup: (id: string) => Rec | undefined): W9
     street: addr ? [addr.street1, addr.street2].filter(Boolean).join(", ") : (mailTo ?? "").trim(),
     cityStateZip: addr ? `${addr.city}, ${addr.region} ${addr.postal}` : "",
   };
+  const empty = { name: "", business: own, box: 0, llcLetter: "", ...base, tin: null };
+  const stop = (why: string, chain: W9Data["chain"]): W9Data => ({
+    ...empty,
+    notes: [why, "Settle the tax classification first. Payers report its income under the TIN on the W-9, so a W-9 in the wrong taxpayer's name misreports it."],
+    blocked: `${why} Settle the tax classification before filling in the W-9.`,
+    chain,
+  });
+  const conflict = classProblem(entity, lookup);
+  if (conflict) return stop(conflict, [{ name: own, as: (a.llcType ?? "").trim() || "no class recorded" }]);
   if (!addr) notes.push(mailTo ? "The address isn't in a form the W-9 can split; check lines 5 and 6." : "No address on record: fill in lines 5 and 6.");
 
-  if (taxClassOf(a).value !== "Disregarded Entity") {
+  const tax = taxClassOf(a);
+  if (tax.value !== "Disregarded Entity") {
     const cls = boxFor(a);
     if (!cls) notes.push("The tax classification isn't on record: tick the line 3a box by hand.");
     const ein = digits(entity.ein);
     if (ein.length !== 9) notes.push(entity.ein ? "The EIN on record isn't nine digits." : "No EIN on record yet: it goes in Part I once the IRS issues it.");
-    return { name: (entity.name ?? "").trim(), business: "", ...(cls ?? { box: 0, llcLetter: "" }), ...base, tin: ein.length === 9 ? { kind: "ein", digits: ein } : null, notes };
+    notes.push(W9_REVIEW);
+    return {
+      name: own,
+      business: "",
+      ...(cls ?? { box: 0, llcLetter: "" }),
+      ...base,
+      tin: ein.length === 9 ? { kind: "ein", digits: ein } : null,
+      notes,
+      blocked: null,
+      chain: [{ name: own, as: tax.value ? CLASS_WORD[tax.value] : "no class recorded" }],
+    };
   }
 
   // Disregarded: the W-9 is the owner's that files, with this LLC on line 2.
+  const chain: W9Data["chain"] = [{ name: own, as: "disregarded" }];
+  const path = () => chain.map((c) => `${c.name} (${c.as})`).join(" → ");
   const seen = new Set<string>();
   let cur = entity.ownerId ? lookup(entity.ownerId) : undefined;
   while (cur) {
+    const curName = (cur.name ?? "").trim();
     const t = entityType(cur);
-    const tax = taxClassOf(withOwner(cur, lookup)).value;
-    if (t === "Trust" && tax !== "Non-grantor trust") {
-      const grantor = (cur.grantors ?? "").split(/,|&|\band\b/)[0].trim();
-      notes.push(`A grantor trust owns it, so the W-9 is the grantor's: ${grantor ? `${grantor}'s` : "their"} SSN goes in Part I. BFO doesn't keep SSNs; fill it in before signing.`);
-      if (!grantor) notes.push("The grantor's name isn't on the trust's record: fill in line 1.");
-      return { name: grantor, business: (entity.name ?? "").trim(), box: W9_BOX.individual, llcLetter: "", ...base, tin: null, notes };
-    }
-    if (tax !== "Disregarded Entity" || !cur.ownerId || seen.has(cur.ownerId)) {
-      const cls = boxFor(withOwner(cur, lookup));
-      if (!cls) notes.push(`${cur.name}'s tax classification isn't on record: tick the line 3a box by hand.`);
-      const ein = digits(cur.ein);
-      if (ein.length !== 9) notes.push(`${cur.name}'s EIN isn't on record: it goes in Part I.`);
+    const upConflict = classProblem(cur, lookup);
+    if (upConflict && t !== "Trust") return stop(upConflict, [...chain, { name: curName, as: (cur.llcType ?? "").trim() || "no class recorded" }]);
+    const ct = taxClassOf(withOwner(cur, lookup));
+    if (t === "Trust") {
+      if (ct.value === "Non-grantor trust") {
+        chain.push({ name: curName, as: "non-grantor trust" });
+        const ein = digits(cur.ein);
+        if (ein.length !== 9) notes.push(`${curName}'s EIN isn't on record: it goes in Part I.`);
+        notes.unshift(`Line 1 follows the owners: ${path()}.`);
+        notes.push(W9_REVIEW);
+        return { name: curName, business: own, box: W9_BOX.trust, llcLetter: "", ...base, tin: ein.length === 9 ? { kind: "ein", digits: ein } : null, notes, blocked: null, chain };
+      }
+      if (ct.value !== "Grantor trust" || ct.isDefault) {
+        // A grantor's SSN goes on the form only when the record says the trust is a grantor trust.
+        chain.push({ name: curName, as: "class not recorded" });
+        notes.unshift(`Line 1 follows the owners: ${path()}.`);
+        notes.push(`${curName}'s tax classification isn't on record, so whose TIN goes on line 1 can't be said. Record it on the trust's page (a revocable trust is a grantor trust), then fill in the W-9 again. Line 1 and Part I are left blank.`);
+        notes.push(W9_REVIEW);
+        return { ...empty, notes, blocked: null, chain };
+      }
+      chain.push({ name: curName, as: "grantor trust" });
+      const grantors = splitPeople(cur.grantors);
+      const chosen = opts.grantor && grantors.includes(opts.grantor) ? opts.grantor : grantors.length === 1 ? grantors[0] : "";
+      if (chosen) chain.push({ name: chosen, as: "grantor" });
+      notes.unshift(`Line 1 follows the owners: ${path()}.`);
+      if (!grantors.length) notes.push("The grantor's name isn't on the trust's record: fill in line 1.");
+      if (grantors.length > 1 && !chosen)
+        notes.push(
+          `The trust has ${grantors.length} grantors (${list(grantors)}). Line 1 takes the name and SSN of the grantor the trust reports under; for spouses who file jointly that may be either. Choose one before it's filled in; line 1 is left blank.`,
+        );
+      if (digits(cur.ein).length === 9)
+        notes.push(`${curName} has its own EIN on record. If it reports under the Form 1041 method or Optional Method 2 (Treas. Reg. 1.671-4), the trust's name and EIN go on line 1 instead.`);
+      if (chosen) notes.push(`${chosen}'s SSN goes in Part I. BFO doesn't keep SSNs; fill it in before signing.`);
+      notes.push(W9_REVIEW);
       return {
-        name: (cur.name ?? "").trim(),
-        business: (entity.name ?? "").trim(),
+        name: chosen,
+        business: own,
+        box: W9_BOX.individual,
+        llcLetter: "",
+        ...base,
+        tin: null,
+        notes,
+        blocked: null,
+        chain,
+        ...(grantors.length > 1 ? { grantorChoices: grantors } : {}),
+      };
+    }
+    if (ct.value !== "Disregarded Entity" || !cur.ownerId || seen.has(cur.ownerId)) {
+      chain.push({ name: curName, as: ct.value ? CLASS_WORD[ct.value] : "no class recorded" });
+      const cls = boxFor(withOwner(cur, lookup));
+      if (!cls) notes.push(`${curName}'s tax classification isn't on record: tick the line 3a box by hand.`);
+      const ein = digits(cur.ein);
+      if (ein.length !== 9) notes.push(`${curName}'s EIN isn't on record: it goes in Part I.`);
+      notes.unshift(`Line 1 follows the owners: ${path()}.`);
+      notes.push(W9_REVIEW);
+      return {
+        name: curName,
+        business: own,
         ...(cls ?? { box: 0, llcLetter: "" }),
         ...base,
         tin: ein.length === 9 ? { kind: "ein", digits: ein } : null,
         notes,
+        blocked: null,
+        chain,
       };
     }
+    chain.push({ name: curName, as: "disregarded" });
     seen.add(cur.ownerId);
     cur = lookup(cur.ownerId);
   }
   notes.push("Who owns it isn't on record, and a disregarded LLC's W-9 is its owner's: fill in line 1 and Part I.");
-  return { name: "", business: (entity.name ?? "").trim(), box: 0, llcLetter: "", ...base, tin: null, notes };
+  notes.push(W9_REVIEW);
+  return { ...empty, notes, blocked: null, chain };
 }
+
+const list = (n: string[]) => (n.length <= 2 ? n.join(" and ") : `${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}`);
 
 /** The IRS's W-9 (Rev. March 2024), filled in. Left editable so it can be checked and signed. */
 export async function fillW9(data: W9Data, formBytes: ArrayBuffer): Promise<Blob> {
+  // Never a W-9 for a taxpayer the record can't name: the signer certifies it under penalties of perjury.
+  if (data.blocked) throw new Error(data.blocked);
   const { PDFDocument } = await import("pdf-lib");
   const pdf = await PDFDocument.load(formBytes);
   const form = pdf.getForm();
@@ -177,6 +286,10 @@ type OAInput = {
   managers: string[];
   /** "Disregarded Entity", "Partnership", "S Corporation" or "C Corporation". */
   taxClass: string;
+  /** Where the effective date came from: the state's record of its formation, ours, or today (neither has one). */
+  effectiveFrom?: "state" | "record" | "today";
+  /** A tax-class conflict on record (several owners recorded as disregarded, say): nothing is drafted while it stands. */
+  classIssue?: string | null;
 };
 
 type OADoc = {
@@ -218,6 +331,10 @@ export function oaProblems(i: OAInput): string[] {
   if (i.members.length && total !== 100) out.push(`The members' shares add up to ${total}%, not 100%.`);
   if (i.members.some((m) => !m.name.trim())) out.push("Every member needs a name.");
   if (i.managed === "managers" && !i.managers.length) out.push("A manager-managed LLC needs its managers named.");
+  // The tax article, the capital accounts and the partnership representative all turn on the class.
+  if (i.classIssue) out.push(`${i.classIssue} Settle its tax classification first: the agreement's tax article depends on it.`);
+  else if (i.members.length > 1 && i.taxClass === "Disregarded Entity")
+    out.push("It has several members but is recorded as disregarded. Settle its tax classification first: with two or more members it's a partnership unless it elected otherwise.");
   return out;
 }
 
@@ -233,7 +350,7 @@ export function operatingAgreement(i: OAInput): OADoc {
   const s = (heading: string, ...paragraphs: string[]) => ({ heading, paragraphs });
 
   const tax =
-    i.taxClass === "Partnership" || (!single && !i.taxClass)
+    i.taxClass === "Partnership" || (!single && (!i.taxClass || i.taxClass === "Disregarded Entity"))
       ? [
           "The Members intend that the Company be classified as a partnership for federal and state income tax purposes, and no Member shall take any action inconsistent with that classification.",
           `Profits and losses shall be allocated among the Members in proportion to their Percentage Interests, subject to Section 704(b) of the Internal Revenue Code and the regulations under it. A capital account shall be maintained for each Member in accordance with those regulations.`,
@@ -250,7 +367,7 @@ export function operatingAgreement(i: OAInput): OADoc {
   const sections = [
     s(
       "Formation",
-      `The Company was formed as a limited liability company under ${act} (the "Act") by the filing of its ${i.state === "DE" ? "certificate of formation" : "articles of organization"} with the ${i.state === "DE" ? "Delaware Secretary of State" : `${st} Secretary of State`}. The rights and obligations of ${memberWord} and the administration of the Company are governed by this Agreement and the Act. Where this Agreement and a provision of the Act that may be varied by agreement differ, this Agreement controls.`,
+      `The Company was formed as a limited liability company under ${act} (the "Act") by the filing of its ${i.state === "DE" ? "certificate of formation" : "articles of organization"} with the ${i.state === "DE" ? "Delaware Secretary of State" : filingAgency(i.state, "LLC")}. The rights and obligations of ${memberWord} and the administration of the Company are governed by this Agreement and the Act. Where this Agreement and a provision of the Act that may be varied by agreement differ, this Agreement controls.`,
     ),
     s(
       "Name",
@@ -258,8 +375,8 @@ export function operatingAgreement(i: OAInput): OADoc {
     ),
     s("Purpose and Powers", `${purposeSentence(i.purpose)} The Company has every power the Act grants that is necessary or convenient to that purpose.`),
     s(
-      "Offices and Registered Agent",
-      `The principal office of the Company is ${i.address || "at such place as " + (single ? "the Member" : "the Members") + " designate"}, or another place ${managers ? "the Managers" : single ? "the Member" : "the Members"} may designate. The Company's registered agent in ${st} is ${i.registeredAgent || "the agent named in its filing with the Secretary of State"}, or any successor appointed in accordance with the Act.`,
+      `Offices and ${agentTerm(i.state)}`,
+      `The principal office of the Company is ${i.address || "at such place as " + (single ? "the Member" : "the Members") + " designate"}, or another place ${managers ? "the Managers" : single ? "the Member" : "the Members"} may designate. The Company's ${agentTerm(i.state).toLowerCase()} in ${st} is ${i.registeredAgent || `the agent named in its filing with the ${i.state === "DE" ? "Delaware Secretary of State" : filingAgency(i.state, "LLC")}`}, or any successor appointed in accordance with the Act.`,
     ),
     s("Term", "The Company began on the date its formation filing became effective and shall continue until dissolved under this Agreement or the Act."),
     s(
@@ -319,7 +436,7 @@ export function operatingAgreement(i: OAInput): OADoc {
   return {
     title: single ? "Single-Member Operating Agreement" : "Operating Agreement",
     subtitle: `of ${i.name}, a ${st} limited liability company`,
-    preamble: `This ${single ? "Single-Member " : ""}Operating Agreement (this "Agreement") of ${i.name} (the "Company") is made and entered into effective as of ${longDate(i.effective)} by ${single ? `${sole}, as the sole member of the Company (the "Member")` : `the persons listed on Exhibit A as members of the Company (each a "Member" and together the "Members")`}.`,
+    preamble: `This ${single ? "Single-Member " : ""}Operating Agreement (this "Agreement") of ${i.name} (the "Company") is entered into by ${single ? `${sole}, as the sole member of the Company (the "Member")` : `the persons listed on Exhibit A as members of the Company (each a "Member" and together the "Members")`} on the dates of their signatures below, and is effective as of ${longDate(i.effective)} (the "Effective Date").`,
     sections,
     exhibit: {
       heading: single ? "Exhibit A: Member" : "Exhibit A: Members and Percentage Interests",
@@ -349,10 +466,16 @@ export function oaInput(entity: Rec & { name: string }, lookup: (id: string) => 
   const profileManagers = entity.profile?.managers ?? [];
   const managed = managers.length || /manager-managed|managed by (its )?manager/i.test(entity.profile?.management ?? "") ? "managers" : "members";
   const withCount = { ...entity, ownerCount: members.length || undefined, owner: owner ? { name: owner.name, type: owner.type, llcType: owner.llcType } : null };
+  const issue = taxClassIssues(withCount).find((x) => x.key !== "trust-class");
+  // The agreement can't take effect before the LLC existed: the state's own formation date (a live read) wins over ours.
+  const stateDate = entity.stateRecord && entity.stateRecord.mode !== "test" ? (entity.stateRecord as { formationDate?: string }).formationDate?.slice(0, 10) : undefined;
+  const effective = stateDate && /^\d{4}-\d{2}-\d{2}$/.test(stateDate) ? stateDate : entity.formationDate || today.toISOString().slice(0, 10);
   return {
     name: entity.name,
     state: stateCode(entity.state) ?? "",
-    effective: entity.formationDate || today.toISOString().slice(0, 10),
+    effective,
+    effectiveFrom: stateDate && /^\d{4}-\d{2}-\d{2}$/.test(stateDate) ? "state" : entity.formationDate ? "record" : "today",
+    classIssue: issue ? issue.title + "." : null,
     address: (entity.address ?? "").trim(),
     registeredAgent: (entity.registeredAgent ?? "").trim(),
     purpose: entity.profile?.purpose?.trim() ?? "",
@@ -485,7 +608,7 @@ export async function operatingAgreementPdfWithBoxes(d: OADoc, entityName: strin
   pdf.text(d.subtitle.replace(/^of /, ""), W / 2, y, { align: "center" });
   y += 34;
   para(
-    `IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} executed this ${d.title} as of the date first written above. This Agreement may be signed in counterparts and by electronic signature, each of which is an original and all of which together are one instrument.`,
+    `IN WITNESS WHEREOF, the undersigned ${d.signers.length === 1 ? "has" : "have"} executed this ${d.title} on the date${d.signers.length === 1 ? "" : "s"} written beside ${d.signers.length === 1 ? "the signature" : "their signatures"}, effective as of the Effective Date. This Agreement may be signed in counterparts and by electronic signature, each of which is an original and all of which together are one instrument.`,
     { align: "justify", gap: 22 },
   );
 

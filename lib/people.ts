@@ -49,7 +49,10 @@ export function needsTypedConfirm(from: Role, to?: Role): boolean {
 
 /** A full name: at least two words of letters (an initial counts), so records and signatures carry more than a first name. */
 export function isFullName(raw: string | null | undefined): boolean {
-  const words = (raw ?? "").trim().split(/\s+/).filter((w) => /\p{L}/u.test(w));
+  const words = (raw ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => /\p{L}/u.test(w));
   return words.length >= 2;
 }
 
@@ -65,14 +68,18 @@ export type AccessChange = { action: string; summary: string; detail: Record<str
  * kind of change, each a plain sentence with the before and after. `target`
  * is the record before the change; `patch` holds the columns being written.
  */
-export function accessChanges(target: { name: string | null; role: Role; status: Status; mail_address?: string | null; phone?: string | null; email?: string | null }, patch: Record<string, unknown>): AccessChange[] {
+export function accessChanges(
+  target: { name: string | null; role: Role; status: Status; mail_address?: string | null; phone?: string | null; email?: string | null },
+  patch: Record<string, unknown>,
+): AccessChange[] {
   const who = target.name?.trim() || target.phone || target.email || "someone";
   const out: AccessChange[] = [];
   const nextRole = (patch.role as Role | undefined) ?? target.role;
 
   if (patch.status !== undefined && patch.status !== target.status) {
     const to = patch.status as Status;
-    if (target.status === "incoming" && to === "approved") out.push({ action: "user.approve", summary: `Approved ${who} as ${roleLabel(nextRole)}`, detail: { from: target.status, to, role: nextRole } });
+    if (target.status === "incoming" && to === "approved")
+      out.push({ action: "user.approve", summary: `Approved ${who} as ${roleLabel(nextRole)}`, detail: { from: target.status, to, role: nextRole } });
     else if (target.status === "incoming" && to === "denied") out.push({ action: "user.deny", summary: `Turned down ${who}’s request to join`, detail: { from: target.status, to } });
     else if (to === "denied") out.push({ action: "user.revoke", summary: `Turned off ${who}’s access`, detail: { from: target.status, to } });
     else if (to === "approved") out.push({ action: "user.restore", summary: `Turned ${who}’s access back on`, detail: { from: target.status, to } });
@@ -92,7 +99,11 @@ export function accessChanges(target: { name: string | null; role: Role; status:
   }
   for (const key of ["phone", "email"] as const) {
     if (patch[key] !== undefined && (patch[key] ?? null) !== (target[key] ?? null)) {
-      out.push({ action: "user.contact_change", summary: `Changed ${who}’s sign-in ${key === "phone" ? "number" : "email"}`, detail: { field: key, from: target[key] ?? null, to: patch[key] ?? null } });
+      out.push({
+        action: "user.contact_change",
+        summary: `Changed ${who}’s sign-in ${key === "phone" ? "number" : "email"}`,
+        detail: { field: key, from: target[key] ?? null, to: patch[key] ?? null },
+      });
     }
   }
   return out;
@@ -124,6 +135,8 @@ const csvCell = (v: string | null | undefined): string => {
 /** The access list as CSV, for a periodic access review. Dates stay as stored (ISO, UTC). */
 export function peopleCsv(rows: ExportRow[]): string {
   const head = ["Name", "Role", "Status", "Signs in with", "Email", "Mailbox", "Access granted", "Granted by", "Number verified", "Last signed in", "Last active", "Added"];
-  const lines = rows.map((r) => [r.name, roleLabel(r.role), r.status, r.phone, r.email, r.mailbox, r.grantedAt, r.grantedBy, r.verifiedAt, r.lastSignIn, r.lastActive, r.addedAt].map(csvCell).join(","));
+  const lines = rows.map((r) =>
+    [r.name, roleLabel(r.role), r.status, r.phone, r.email, r.mailbox, r.grantedAt, r.grantedBy, r.verifiedAt, r.lastSignIn, r.lastActive, r.addedAt].map(csvCell).join(","),
+  );
   return [head.join(","), ...lines].join("\r\n") + "\r\n";
 }

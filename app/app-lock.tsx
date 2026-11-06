@@ -1,13 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { isNativeApp } from "./native";
+import { lockupOf, useBrandLogo } from "./brand";
+import { Wordmark } from "./brand-lockup";
+import { lockRequired } from "./shell-model";
+import type { Role } from "./auth";
+import { usePresence } from "./ui";
+import { overlayRoot } from "./ui/portal";
+import { modalAria } from "./shell-overlay";
 
 /**
  * Face ID lock for the iPhone app. When it's on (the default wherever the
  * phone has Face ID, Touch ID or a passcode), BFO opens behind a cover and
- * asks for Face ID before showing anything; leaving the app covers it at once,
- * so the app switcher never shows mail or accounts, and coming back after more
- * than a minute asks again. The passcode works when Face ID doesn't. The
- * account menu turns it off (useAppLockSetting). On the web it does nothing.
+ * asks for Face ID before showing anything; leaving the app covers it at
+ * once, so the app switcher never shows mail or accounts, and coming back
+ * after more than a minute asks again. The passcode works when Face ID
+ * doesn't. On the web it does nothing.
+ *
+ * While the cover is up, everything behind it is inert, so neither a
+ * keyboard nor VoiceOver can reach the page. Turning the lock off takes Face
+ * ID first, and anyone who can see the office's codes or change the books
+ * can't turn it off at all (shell-model lockRequired). The cover is the
+ * door's: black, the ivory wordmark, one ivory button (docs/DESIGN.md §2.7).
  */
 
 const SETTING_KEY = "bfo-face-id";
@@ -25,7 +39,7 @@ function settingOn(): boolean {
   }
 }
 
-type LockKind = "Face ID" | "Touch ID" | "Passcode";
+export type LockKind = "Face ID" | "Touch ID" | "Passcode";
 
 /** What this phone can unlock with, or null when it can't (no passcode set, or not the app). */
 async function lockAvailable(): Promise<LockKind | null> {
@@ -40,36 +54,80 @@ async function lockAvailable(): Promise<LockKind | null> {
   }
 }
 
-async function verify(kind: LockKind | null): Promise<boolean> {
+async function verify(kind: LockKind | null, reason = "Unlock BFO"): Promise<boolean> {
   try {
     const { NativeBiometric } = await loadBio();
-    await NativeBiometric.verifyIdentity({ reason: "Unlock BFO", title: "Unlock BFO", subtitle: kind === "Passcode" ? undefined : `Use ${kind ?? "Face ID"}`, useFallback: true });
+    await NativeBiometric.verifyIdentity({ reason, title: reason, subtitle: kind === "Passcode" ? undefined : `Use ${kind ?? "Face ID"}`, useFallback: true });
     return true;
   } catch {
     return false;
   }
 }
 
-/** The account menu's switch. */
-export function useAppLockSetting(): { kind: LockKind | null; on: boolean; set: (on: boolean) => void } {
+/**
+ * Proves the person holding the phone is its owner before something that
+ * changes who is signed in (switching accounts). True at once on the web
+ * and on a phone without a lock.
+ */
+export async function confirmIdentity(reason: string): Promise<boolean> {
+  if (!isNativeApp() || !settingOn()) return true;
+  const kind = await lockAvailable();
+  return kind ? verify(kind, reason) : true;
+}
+
+/** The lock's switch, for Settings › This device. Turning it off asks for Face ID; some roles can't. */
+export function useAppLockSetting(role?: Role | null): { kind: LockKind | null; on: boolean; required: boolean; set: (on: boolean) => Promise<boolean> } {
   const [kind, setKind] = useState<LockKind | null>(null);
   const [on, setOn] = useState(true);
+  const required = lockRequired(role);
   useEffect(() => {
     setOn(settingOn());
     void lockAvailable().then(setKind);
   }, []);
   return {
     kind,
-    on,
-    set: (next) => {
+    on: on || required,
+    required,
+    set: async (next) => {
+      if (!next && (required || !(await verify(kind, "Turn off the lock")))) return false;
       try {
         localStorage.setItem(SETTING_KEY, next ? "on" : "off");
       } catch {
         // for this visit only
       }
       setOn(next);
+      return true;
     },
   };
+}
+
+/** Makes everything but the cover inert while it's up, and gives back only what it took. */
+function useInertBehind(on: boolean, host: HTMLElement | null) {
+  useLayoutEffect(() => {
+    if (!on || !host) return;
+    const root = overlayRoot();
+    const taken: HTMLElement[] = [];
+    const candidates = [...(document.body.children as HTMLCollectionOf<HTMLElement>), ...(root.children as HTMLCollectionOf<HTMLElement>)];
+    for (const el of candidates) {
+      if (el === root || el === host || el.tagName === "SCRIPT" || el.inert) continue;
+      el.inert = true;
+      taken.push(el);
+    }
+    return () => {
+      for (const el of taken) el.inert = false;
+    };
+  }, [on, host]);
+}
+
+let lockHost: HTMLElement | null = null;
+function host(): HTMLElement {
+  const root = overlayRoot();
+  if (!lockHost || !lockHost.isConnected) {
+    lockHost = document.createElement("div");
+    lockHost.setAttribute("data-app-lock", "");
+    root.prepend(lockHost);
+  }
+  return lockHost;
 }
 
 /** The cover itself. Mounted once in the signed-in shell. */
@@ -78,10 +136,16 @@ export function AppLock() {
   // Covered from the very first frame when the lock is on, so nothing shows before Face ID.
   const [state, setState] = useState<"open" | "locked" | "cover">(() => (native && settingOn() ? "locked" : "open"));
   const [kind, setKind] = useState<LockKind | null>(null);
+  const [failed, setFailed] = useState(false);
   const verifying = useRef(false);
   const hiddenAt = useRef<number | null>(null);
   const kindRef = useRef<LockKind | null>(null);
   kindRef.current = kind;
+  const logo = useBrandLogo();
+  const covered = state !== "open";
+  const { mounted, leaving } = usePresence(covered, 200);
+  const el = mounted && typeof document !== "undefined" ? host() : null;
+  useInertBehind(covered, el);
 
   const unlock = async (k: LockKind | null) => {
     if (verifying.current) return;
@@ -91,6 +155,7 @@ export function AppLock() {
     window.setTimeout(() => {
       verifying.current = false;
     }, 600);
+    setFailed(!ok);
     if (ok) setState("open");
   };
 
@@ -104,6 +169,9 @@ export function AppLock() {
       if (!settingOn() || !k) setState("open");
       else void unlock(k);
     })();
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -123,6 +191,7 @@ export function AppLock() {
           hiddenAt.current = null;
           const k = kindRef.current;
           if (away > LOCK_AFTER_MS && k) {
+            setFailed(false);
             setState("locked");
             void unlock(k);
           } else setState((s) => (s === "cover" ? "open" : s));
@@ -138,25 +207,36 @@ export function AppLock() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (state === "open") return null;
-  return (
-    <div className="app-lock fixed inset-0 z-[300] flex flex-col items-center justify-center gap-6 bg-[#0a0a0a] px-8 text-center" role="dialog" aria-modal="true" aria-label="BFO is locked">
-      <img src="/icon-192.png" alt="" className="h-[76px] w-[76px] rounded-[18px]" />
+  if (!el) return null;
+  const what = kind ?? "Face ID";
+  return createPortal(
+    <div
+      data-theme="dark"
+      {...modalAria("BFO is locked")}
+      style={{ zIndex: 100 }}
+      className={`ds fixed inset-0 flex flex-col items-center bg-brand-ink px-8 text-center text-brand-ivory ${leaving ? "ds-scrim-out" : ""}`}
+    >
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 pb-[10vh]">
+        <Wordmark font={lockupOf(logo).font} size={44} />
+        {state === "locked" && <p className="text-body text-door-ink-2">Locked</p>}
+      </div>
       {state === "locked" && (
-        <>
-          <p className="text-[17px] font-semibold text-white">BFO is locked</p>
+        <div className="flex w-full max-w-[320px] flex-col items-center gap-3" style={{ paddingBottom: "calc(48px + env(safe-area-inset-bottom))" }}>
+          {failed && (
+            <p role="status" className="text-small text-door-ink-2 text-pretty">
+              {what === "Passcode" ? "That didn’t work. Try again." : `${what} didn’t work. Try again, or use your passcode.`}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => void unlock(kind)}
-            className="inline-flex h-[48px] min-w-[220px] cursor-pointer items-center justify-center gap-2 rounded-full bg-white px-6 text-[15px] font-semibold text-black active:scale-[0.98]"
+            className="inline-flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-brand-ivory px-6 text-body font-medium text-brand-ink focus-visible:outline-brand-ivory! focus-visible:outline-offset-[3px]!"
           >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
-              <path d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 16c1.4 1 3.6 1 5 0" />
-            </svg>
-            Unlock with {kind ?? "Face ID"}
+            Unlock with {what}
           </button>
-        </>
+        </div>
       )}
-    </div>
+    </div>,
+    el,
   );
 }

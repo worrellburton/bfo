@@ -251,8 +251,8 @@ describe("mail addresses and user changes", () => {
   });
 
   it("gives a self-registered user user-xxxxxx at approval, not one from the name they typed", async () => {
-    target = { ...base, name: "Accounting Team", role: "email", status: "incoming" };
-    const r = await call("PATCH", { id: TID, status: "approved" });
+    target = { ...base, name: "Accounting Team", role: "viewer", status: "incoming", verified_at: "2026-01-01T00:00:00Z" };
+    const r = await call("PATCH", { id: TID, status: "approved", role: "email" });
     expect(r.status).toBe(200);
     expect(r.json.user.mailAddress).toBe(`user-b1b2b3@${MAIL_DOMAIN}`);
     expect(calls.find((c) => c.path === `app_users?id=eq.${TID}&mail_address=is.null`)?.body).toEqual({ mail_address: `user-b1b2b3@${MAIL_DOMAIN}` });

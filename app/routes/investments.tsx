@@ -1,20 +1,49 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { Link } from "react-router";
-import { authFetch, getUser } from "../auth";
+/**
+ * Investments: every brokerage position across the connected accounts, the
+ * portfolio's value over time, allocation, unrealized gain split by tax
+ * status, and income over the window the data really covers. Positions and
+ * cost basis are as the custodian reports them through Plaid; the chart's
+ * earlier days are rebuilt from transactions and closing prices. Built on
+ * app/ui (docs/DESIGN.md); the arithmetic is in app/investments-model.ts.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useSearchParams } from "react-router";
+import { canWrite, isAdmin } from "../auth";
 import { loadPlaid } from "../plaid-link";
-import { useTheme } from "../theme";
-import { Icon, Menu, PATHS, tiers, textInput, ruleBorder, hairline as hairlineOf } from "../books-shared";
+import {
+  Banner,
+  Button,
+  Card,
+  Empty,
+  InfoToggle,
+  LinkButton,
+  List,
+  ListRow,
+  Page,
+  PageHeader,
+  SearchField,
+  Segmented,
+  Select,
+  Skeleton,
+  Table,
+  TextLink,
+  confirm,
+  format,
+  toast,
+  type Column,
+} from "../ui";
+import { CLASS_COLOUR, CLASS_LABEL, CLASS_ORDER, annualPace, classify, gains, monthKeys, monthsBetween, type AssetClass } from "../investments-model";
+import { TAX_STATUS_LABEL, defaultTaxStatus, isRetirement, ownerOf, type OwnerKind, type TaxStatus } from "../treasury-model";
+import { InstitutionMark } from "../treasury-ui";
+import { accountName, getJson, typeLabel, useRecords } from "../treasury-data";
 
 export function meta() {
   return [{ title: "Investments · BFO" }, { name: "description", content: "Holdings, allocation and income across every brokerage account." }];
 }
 
-// ── Data shapes (api/plaid/data?report=investments) ──────────────────────
-
 type InvAccount = {
   item_id: string;
   institution_name: string;
-  institution_color: string | null;
   institution_logo: string | null;
   account_id: string;
   name: string;
@@ -23,10 +52,12 @@ type InvAccount = {
   type: string;
   subtype: string | null;
   balance_current: number | null;
-  currency: string | null;
   nickname: string | null;
   entity_id: string | null;
   entity_name: string | null;
+  owner_kind?: OwnerKind | null;
+  owner_names?: string[] | null;
+  tax_status?: TaxStatus | null;
   holdings_count: number;
   holdings_value: number;
 };
@@ -45,27 +76,20 @@ type Holding = {
   price_as_of: string | null;
   value: number;
   cost_basis: number | null;
-  currency: string | null;
 };
 
-type InvError = {
-  item_id: string;
-  institution: string;
-  code: string | null;
-  reconnect: boolean;
-  /** Linked through Treasury without consent for its holdings: update mode adds it. */
-  consent?: boolean;
-  message: string;
-};
+type InvError = { item_id: string; institution: string; code: string | null; reconnect: boolean; consent?: boolean; message: string };
 
 type Income = {
   last90: number;
   ttm: number;
-  dividends90: number;
-  interest90: number;
-  byMonth: { month: string; dividends: number; interest: number }[];
+  from?: string | null;
+  to?: string;
+  byMonth: { month: string; dividends: number; interest: number; capitalGains?: number }[];
   bySecurity: { ticker: string | null; name: string; amount: number }[];
 } | null;
+
+type Activity = { date: string; account_id: string; type: string; subtype: string | null; name: string; ticker: string | null; security_name: string | null; quantity: number; amount: number };
 
 type InvData = {
   asOf: string;
@@ -73,287 +97,131 @@ type InvData = {
   holdings: Holding[];
   errors: InvError[];
   history: { day: string; invested: number }[];
-  /** When the days before BFO's own record were rebuilt (api/plaid/history.ts), how far back they go. */
   historyRebuilt?: { from: string; until: string } | null;
+  hiddenAccounts?: { count: number; value: number };
   income: Income;
-  activity?: { buys90: number; sells90: number };
+  activity?: { recent?: Activity[] };
 };
 
-// ── Formatting ───────────────────────────────────────────────────────────
-
-const usd0 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const usd2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const qtyFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
-const fmtUSD = (n: number) => usd0.format(n);
-const fmtSigned = (n: number) => `${n >= 0 ? "+" : "−"}${usd0.format(Math.abs(n))}`;
-function fmtCompact(n: number): string {
-  const a = Math.abs(n);
-  const sign = n < 0 ? "−" : "";
-  if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(a >= 1e10 ? 1 : 2)}B`;
-  if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(a >= 1e7 ? 1 : 2)}M`;
-  if (a >= 1e4) return `${sign}$${Math.round(a / 1e3)}K`;
-  if (a >= 1e3) return `${sign}$${(a / 1e3).toFixed(1)}K`;
-  return `${sign}$${Math.round(a)}`;
-}
-function fmtPct(p: number, signed = true): string {
-  const a = Math.abs(p);
-  const body = a < 10 ? a.toFixed(a < 0.1 && a > 0 ? 2 : 1) : a.toFixed(0);
-  return signed ? `${p >= 0 ? "+" : "−"}${body}%` : `${body}%`;
-}
-const dayDate = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00`);
-/** "Oct 6", or "Oct 6, 2025" once the day falls outside the current year. */
-const shortDay = (iso: string) => {
-  const d = dayDate(iso);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) });
-};
-const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-// ── Classification ───────────────────────────────────────────────────────
-
-type AssetClass = "equity" | "etf" | "mutual" | "fixed" | "cash" | "other";
-
-/** Fixed order = fixed colour slot (colour follows the class, never its rank). */
-const CLASSES: { key: AssetClass; label: string; dark: string; light: string }[] = [
-  { key: "equity", label: "Stocks", dark: "#7f77f1", light: "#4f46e5" },
-  { key: "etf", label: "ETFs", dark: "#d95926", light: "#eb6834" },
-  { key: "mutual", label: "Mutual funds", dark: "#199e70", light: "#1baf7a" },
-  { key: "fixed", label: "Fixed income", dark: "#c98500", light: "#eda100" },
-  { key: "cash", label: "Cash & money market", dark: "#d55181", light: "#e87ba4" },
-  { key: "other", label: "Other", dark: "#6b7280", light: "#9ca3af" },
-];
-const CLASS_BY_KEY = new Map(CLASSES.map((c) => [c.key, c]));
-
-function classify(h: Holding): AssetClass {
-  if (h.money_market || h.is_cash_equivalent || h.type === "cash") return "cash";
-  switch (h.type) {
-    case "equity":
-      return "equity";
-    case "etf":
-      return "etf";
-    case "mutual fund":
-      return "mutual";
-    case "fixed income":
-      return "fixed";
-    default:
-      return "other";
-  }
+/**
+ * Who holds an account, for this page. A retirement account still mapped to
+ * an entity isn't shown as that entity's: an IRA is one person's, so it reads
+ * "Owner to confirm" until a person is recorded (Account owners).
+ */
+function holderOf(a: InvAccount, nameOf: (id: string) => string | null) {
+  if (isRetirement(a.subtype, a.official_name || a.name) && a.owner_kind !== "person") return { key: "confirm", label: "Owner to confirm", kind: "none" as const };
+  return ownerOf(a, nameOf);
 }
 
-/** "ira" → "IRA", "brokerage" → "Brokerage", "roth_401k" → "Roth 401k". */
-function subtypeLabel(sub: string | null): string | null {
-  if (!sub) return null;
-  return sub
-    .split(/[_\s]+/)
-    .map((w) => (/^(ira|sep|hsa|ugma|utma|529|401a|403b|457b|esa|tfsa|rrsp|sipp|isa)$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
-    .join(" ");
+/** A fund's name without the fund family repeated before its own: "Vanguard Index Funds - Vanguard 500 Index…" → "Vanguard 500 Index…". */
+function fundName(name: string): string {
+  const parts = name.split(" - ");
+  return parts.length > 1 && parts.slice(1).join(" - ").trim().split(/\s+/).length >= 2 ? parts.slice(1).join(" - ").trim() : name;
 }
 
-function accountLabel(a: InvAccount): string {
-  const base = a.nickname || a.official_name || a.name || "Account";
-  return a.mask && !base.includes(a.mask) ? `${base} ··${a.mask}` : base;
-}
+/** A share: "<0.1%" for a sliver, never "0.0%". */
+const share = (pct: number) => (pct > 0 && pct < 0.05 ? "<0.1%" : format.percent(pct));
 
-/** What an account is worth: its positions when it reports any, else its balance. */
 const accountValue = (a: InvAccount) => (a.holdings_count > 0 ? a.holdings_value : (a.balance_current ?? 0));
 
-// ── Primitives ───────────────────────────────────────────────────────────
-
-/** Invisible vertical hit-area extension so short controls reach ~40px on touch screens. */
-const TAP_Y = "relative after:absolute after:inset-x-0 after:-inset-y-[12px] after:content-[''] lg:after:inset-0";
-
-function Bone({ className = "", style }: { className?: string; style?: CSSProperties }) {
-  return <div className={`shimmer ${className}`} style={style} aria-hidden />;
-}
-
 const RANGES = [
-  { key: "30", label: "30D", days: 30 },
-  { key: "90", label: "90D", days: 90 },
-  { key: "365", label: "1Y", days: 365 },
-  { key: "all", label: "All", days: Infinity },
+  { value: "30", label: "30D", days: 30 },
+  { value: "90", label: "90D", days: 90 },
+  { value: "365", label: "1Y", days: 365 },
+  { value: "all", label: "All", days: Infinity },
 ] as const;
-type RangeKey = (typeof RANGES)[number]["key"];
-
+type RangeKey = (typeof RANGES)[number]["value"];
 type Point = { day: string; value: number };
 
-/** Invested value over time: hand-rolled SVG, scrubbable (the Home chart's anatomy). */
-function TrendChart({ points, isDark, hover, setHover }: { points: Point[]; isDark: boolean; hover: number | null; setHover: (i: number | null) => void }) {
+const dayMs = (d: string) => Date.parse(`${d.slice(0, 10)}T12:00:00Z`);
+
+/** The value over time: one accent line on a solid surface, x by date, y labelled at its low and high. Arrow keys move along it. */
+function TrendChart({ points, index, onIndex }: { points: Point[]; index: number; onIndex: (i: number | null) => void }) {
   const W = 1000;
   const H = 200;
-  const { line, area, xy, gridYs } = useMemo(() => {
+  const geo = useMemo(() => {
     const vals = points.map((p) => p.value);
-    let lo = Math.min(...vals);
-    let hi = Math.max(...vals);
-    if (hi - lo < 1) {
-      hi += 1;
-      lo -= 1;
-    }
-    const pad = (hi - lo) * 0.18;
-    lo -= pad;
-    hi += pad * 0.6;
-    const n = points.length;
-    const xy = points.map((p, i) => [n === 1 ? W / 2 : (i / (n - 1)) * W, H - ((p.value - lo) / (hi - lo)) * H] as const);
-    const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
-    const area = `${line} L${W},${H} L0,${H} Z`;
-    const gridYs = [0.25, 0.5, 0.75].map((f) => f * H);
-    return { line, area, xy, gridYs };
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
+    const span = hi - lo < 1 ? 1 : hi - lo;
+    const t0 = dayMs(points[0].day);
+    const t1 = dayMs(points[points.length - 1].day);
+    const xy = points.map((p) => [t1 === t0 ? W / 2 : ((dayMs(p.day) - t0) / (t1 - t0)) * W, H - 8 - ((p.value - lo) / span) * (H - 16)] as const);
+    const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+    return { xy, line, area: `${line} L${W},${H} L0,${H} Z`, lo, hi };
   }, [points]);
-
-  const accent = isDark ? "#818cf8" : "#4f46e5";
-  const last = xy[xy.length - 1];
-  const active = hover != null ? xy[hover] : null;
-  const gid = isDark ? "inv-trend-d" : "inv-trend-l";
-  // The chart's width in px, so the popup can be kept inside it.
-  const [width, setWidth] = useState(0);
-
-  const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setWidth(rect.width);
-    const f = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setHover(Math.round(f * (points.length - 1)));
+  const at = geo.xy[index];
+  const pick = (clientX: number, rect: DOMRect) => {
+    const f = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * W;
+    let best = 0;
+    for (let i = 1; i < geo.xy.length; i++) if (Math.abs(geo.xy[i][0] - f) < Math.abs(geo.xy[best][0] - f)) best = i;
+    onIndex(best);
   };
-
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowLeft") onIndex(Math.max(0, index - 1));
+    else if (e.key === "ArrowRight") onIndex(Math.min(points.length - 1, index + 1));
+    else if (e.key === "Home") onIndex(0);
+    else if (e.key === "End") onIndex(points.length - 1);
+    else return;
+    e.preventDefault();
+  };
   return (
-    <div
-      className="relative h-[110px] w-full cursor-crosshair touch-pan-y select-none sm:h-[140px]"
-      onPointerMove={onMove}
-      onPointerDown={onMove}
-      onPointerLeave={() => setHover(null)}
-      role="img"
-      aria-label={`Invested value over the last ${points.length} days`}
-    >
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible">
-        <defs>
-          <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={accent} stopOpacity={isDark ? 0.32 : 0.18} />
-            <stop offset="100%" stopColor={accent} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        {gridYs.map((y) => (
-          <line key={y} x1={0} x2={W} y1={y} y2={y} stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(17,24,39,0.06)"} strokeDasharray="3 5" vectorEffect="non-scaling-stroke" />
-        ))}
-        <path d={area} fill={`url(#${gid})`} className="motion-safe:animate-[bfo-fade_0.9s_ease-out_both]" />
-        <path d={line} fill="none" stroke={accent} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      </svg>
-
-      {last && hover == null && (
-        <span className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${(last[0] / W) * 100}%`, top: `${(last[1] / H) * 100}%` }}>
-          <span className="absolute inset-0 rounded-full motion-safe:animate-ping" style={{ background: accent, opacity: 0.35 }} />
-          <span className="relative block h-2 w-2 rounded-full" style={{ background: accent, boxShadow: `0 0 12px ${accent}` }} />
-        </span>
-      )}
-
-      {active && (
-        <>
-          <span className={`pointer-events-none absolute inset-y-0 w-px ${isDark ? "bg-white/20" : "bg-gray-900/15"}`} style={{ left: `${(active[0] / W) * 100}%` }} />
-          <span
-            className={`pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${isDark ? "border-gray-950" : "border-white"}`}
-            style={{ left: `${(active[0] / W) * 100}%`, top: `${(active[1] / H) * 100}%`, background: accent }}
-          />
-          <PointCard points={points} index={hover!} x={active[0] / W} width={width} isDark={isDark} />
-        </>
-      )}
-    </div>
-  );
-}
-
-/** The scrub popup: the day's value, its move on the prior day and since the range began. */
-function PointCard({ points, index, x, width, isDark }: { points: Point[]; index: number; x: number; width: number; isDark: boolean }) {
-  const p = points[index];
-  if (!p) return null;
-  const prev = index > 0 ? points[index - 1] : null;
-  const start = points[0];
-  const tone = (n: number) => (Math.abs(n) < 0.5 ? "text-gray-500" : n > 0 ? (isDark ? "text-emerald-300" : "text-emerald-600") : isDark ? "text-rose-300" : "text-rose-600");
-  const pct = (n: number, base: number) => (base ? ` (${fmtPct((n / base) * 100)})` : "");
-  const date = dayDate(p.day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-  const dayMove = prev ? p.value - prev.value : null;
-  const rangeMove = p.value - start.value;
-  // Beside the scrub line on whichever side has room, clamped to the chart so
-  // the hero card's overflow-hidden never cuts it off on a narrow screen.
-  const POP = 228;
-  const GAP = 14;
-  const px = x * width;
-  const alignRight = width ? px + GAP + POP > width && (px - GAP - POP >= 0 || x > 0.5) : x > 0.55;
-  const position: CSSProperties = width
-    ? { left: Math.max(0, Math.min(width - POP, alignRight ? px - GAP - POP : px + GAP)), top: "50%", transform: "translateY(-50%)" }
-    : { left: `${x * 100}%`, top: "50%", transform: `translate(${alignRight ? "calc(-100% - 14px)" : "14px"}, -50%)` };
-  return (
-    <div
-      className={`pointer-events-none absolute z-20 w-[228px] rounded-xl border p-3 text-[11.5px] shadow-xl backdrop-blur-md ${
-        isDark ? "border-white/10 bg-[#0d0f17]/95 text-gray-200 shadow-black/50" : "border-gray-200 bg-white/95 text-gray-800 shadow-gray-900/10"
-      }`}
-      style={position}
-    >
-      <p className="text-[11px] font-medium text-gray-500">{date}</p>
-      <p className="mt-1 text-[16px] font-semibold tabular-nums tracking-[-0.01em]">{fmtUSD(p.value)}</p>
-      <div className="mt-1 space-y-0.5 tabular-nums">
-        {dayMove != null && (
-          <p className="flex justify-between gap-3">
-            <span className="text-gray-500">Day change</span>
-            <span className={tone(dayMove)}>
-              {fmtSigned(dayMove)}
-              {pct(dayMove, prev!.value)}
-            </span>
-          </p>
-        )}
-        {index > 0 && (
-          <p className="flex justify-between gap-3">
-            <span className="text-gray-500">Since {shortDay(start.day)}</span>
-            <span className={tone(rangeMove)}>
-              {fmtSigned(rangeMove)}
-              {pct(rangeMove, start.value)}
-            </span>
-          </p>
+    <div className="flex gap-3">
+      <div className="flex w-[56px] shrink-0 flex-col justify-between py-1 text-right text-caption text-ink-2 tabular-nums" aria-hidden>
+        <span>{format.money(geo.hi, { precision: "compact" })}</span>
+        <span>{format.money(geo.lo, { precision: "compact" })}</span>
+      </div>
+      <div
+        role="slider"
+        tabIndex={0}
+        aria-label="Portfolio value by day"
+        aria-valuemin={0}
+        aria-valuemax={points.length - 1}
+        aria-valuenow={index}
+        aria-valuetext={`${format.date(points[index].day, "medium")}: ${format.money(points[index].value, { precision: "dollars" })}`}
+        onKeyDown={onKey}
+        onPointerMove={(e) => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
+        onPointerDown={(e) => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
+        onPointerLeave={() => onIndex(null)}
+        className="relative h-[140px] min-w-0 flex-1 cursor-crosshair touch-pan-y rounded-mark select-none"
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden>
+          <line x1={0} x2={W} y1={H - 0.5} y2={H - 0.5} className="stroke-line" vectorEffect="non-scaling-stroke" />
+          <path d={geo.area} className="fill-accent-tint" />
+          <path d={geo.line} fill="none" className="stroke-accent" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {at && <line x1={at[0]} x2={at[0]} y1={0} y2={H} className="stroke-line-strong" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        {at && (
+          <span className="pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent" style={{ left: `${(at[0] / W) * 100}%`, top: `${(at[1] / H) * 100}%` }} />
         )}
       </div>
     </div>
   );
 }
 
-/** Institution mark: the Plaid logo when we have it, else a tinted initial. */
-function InstitutionDisc({ a, size = 28 }: { a: { institution_name: string; institution_color: string | null; institution_logo: string | null }; size?: number }) {
-  if (a.institution_logo) {
-    return <img src={`data:image/png;base64,${a.institution_logo}`} alt="" className="shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-black/5" style={{ width: size, height: size }} />;
-  }
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-white"
-      style={{ width: size, height: size, background: a.institution_color || "#6366f1" }}
-      aria-hidden
-    >
-      {(a.institution_name || "?").slice(0, 1)}
-    </span>
-  );
-}
-
-// ── Page ─────────────────────────────────────────────────────────────────
-
-type SortKey = "name" | "account" | "quantity" | "price" | "value" | "cost" | "gain" | "weight";
-type GroupBy = "account" | "institution" | "entity";
+type Row = Holding & { klass: AssetClass; gain: number | null; weight: number; account: string; tax: TaxStatus | null };
+type GroupBy = "account" | "owner" | "institution";
 
 export default function Investments() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const records = useRecords();
+  const writer = canWrite();
+  const admin = isAdmin();
+  const [params] = useSearchParams();
   const [data, setData] = useState<InvData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState<string | null>(null);
   const [range, setRange] = useState<RangeKey>("365");
   const [hover, setHover] = useState<number | null>(null);
   const [groupBy, setGroupBy] = useState<GroupBy>("account");
   const [q, setQ] = useState("");
-  const [acct, setAcct] = useState("all");
+  const [acct, setAcct] = useState<string>(params.get("account") ?? "all");
   const [cls, setCls] = useState<AssetClass | "all">("all");
-  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "value", dir: "desc" });
-  const [incomeHover, setIncomeHover] = useState<number | null>(null);
-  const holdingsRef = useRef<HTMLElement>(null);
+  const [month, setMonth] = useState<string | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const holdingsRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setFailed(null);
     try {
-      const r = await authFetch("/api/plaid/data?report=investments");
-      const body = await r.json().catch(() => ({}));
-      // The API's `message` is written for people; `error` is often a bare code.
-      if (!r.ok) throw new Error(body?.message || (r.status >= 500 ? "The server didn't respond. Try again in a moment." : body?.error) || "Couldn't load investments.");
+      const body = await getJson<Partial<InvData>>("/api/plaid/data?report=investments");
       setData({
         asOf: body.asOf ?? new Date().toISOString(),
         accounts: body.accounts ?? [],
@@ -361,1078 +229,606 @@ export default function Investments() {
         errors: body.errors ?? [],
         history: body.history ?? [],
         historyRebuilt: body.historyRebuilt ?? null,
+        hiddenAccounts: body.hiddenAccounts,
         income: body.income ?? null,
         activity: body.activity,
       });
+      setFailed(null);
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : "Couldn't load investments.");
-    } finally {
-      setLoading(false);
+      setFailed(err instanceof Error ? err.message : "Couldn’t load investments.");
     }
   }, []);
-
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (params.get("account")) holdingsRef.current?.scrollIntoView({ block: "start" });
+  }, [params, data]);
 
-  // The past before BFO began recording: rebuilt from Plaid's transactions and closing prices.
-  const canEdit = ["owner", "admin", "member"].includes(getUser()?.role ?? "");
-  const [rebuilding, setRebuilding] = useState(false);
-  const [rebuildNote, setRebuildNote] = useState("");
-  async function rebuildHistory() {
-    setRebuilding(true);
-    setRebuildNote("");
-    try {
-      const r = await authFetch("/api/plaid/history", { method: "POST" });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body?.message || body?.error || "Couldn't rebuild the history.");
-      const skipped: string[] = body.skipped ?? [];
-      const unpriced: string[] = body.unpriced ?? [];
-      setRebuildNote(
-        body.days
-          ? `Plaid has these accounts' transactions back to ${shortDay(body.from)}, so the chart now starts there${body.error != null ? `. It matches the days BFO recorded within ${(body.error * 100).toFixed(1)}%` : ""}.${unpriced.length ? ` ${unpriced.join(", ")} has no price history, so today's price is used for it.` : ""}${skipped.length ? ` Left out: ${skipped.join("; ")}.` : ""}`
-          : `Nothing to rebuild.${skipped.length ? ` ${skipped.join("; ")}.` : ""}`,
-      );
-      await load();
-    } catch (err) {
-      setRebuildNote(err instanceof Error ? err.message : "Couldn't rebuild the history.");
-    } finally {
-      setRebuilding(false);
-    }
-  }
-
-  // A brokerage that came in through Treasury: collect consent for its holdings, then read them.
-  const [consenting, setConsenting] = useState<string | null>(null);
-  async function connectHoldings(itemId: string) {
-    setConsenting(itemId);
-    setFailed(null);
-    try {
-      const [res] = await Promise.all([authFetch("/api/plaid/create-link-token", { method: "POST", body: JSON.stringify({ kind: "bank", item_id: itemId, add_investments: true }) }), loadPlaid()]);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.link_token) throw new Error(data?.message || data?.error || "Couldn't start Plaid.");
-      if (!window.Plaid) throw new Error("Couldn't load Plaid.");
-      window.Plaid.create({
-        token: data.link_token,
-        onSuccess: () => {
-          setConsenting(null);
-          void load();
-        },
-        onExit: (err) => {
-          setConsenting(null);
-          if (err) setFailed(err.display_message || err.error_message || "Plaid was closed before finishing.");
-        },
-      }).open();
-    } catch (err) {
-      setConsenting(null);
-      setFailed(err instanceof Error ? err.message : "Couldn't start Plaid.");
-    }
-  }
-
-  // ── Derived ────────────────────────────────────────────────────────────
-  const accounts = data?.accounts ?? [];
-  const accountById = useMemo(() => new Map(accounts.map((a) => [a.account_id, a])), [accounts]);
-  const total = useMemo(() => accounts.reduce((s, a) => s + accountValue(a), 0), [accounts]);
-
-  const rows = useMemo(
+  const accounts = useMemo(() => data?.accounts ?? [], [data]);
+  const byId = useMemo(() => new Map(accounts.map((a) => [a.account_id, a])), [accounts]);
+  const taxOf = useCallback(
+    (id: string): TaxStatus | null => {
+      const a = byId.get(id);
+      return a ? (a.tax_status ?? defaultTaxStatus(a.subtype, a.official_name || a.name, a.type)) : null;
+    },
+    [byId],
+  );
+  const total = accounts.reduce((s, a) => s + accountValue(a), 0);
+  const rows: Row[] = useMemo(
     () =>
       (data?.holdings ?? []).map((h) => {
         const klass = classify(h);
-        const gain = klass !== "cash" && h.cost_basis != null && h.cost_basis > 0 ? h.value - h.cost_basis : null;
-        const a = accountById.get(h.account_id);
+        const a = byId.get(h.account_id);
         return {
           ...h,
           klass,
-          gain,
-          gainPct: gain != null && h.cost_basis ? (gain / h.cost_basis) * 100 : null,
+          gain: klass !== "cash" && h.cost_basis != null && h.cost_basis > 0 ? h.value - h.cost_basis : null,
           weight: total > 0 ? (h.value / total) * 100 : 0,
-          accountName: a ? accountLabel(a) : "Account",
-          institution: a?.institution_name ?? "",
+          account: a ? accountName(a) : "Account",
+          tax: taxOf(h.account_id),
         };
       }),
-    [data, accountById, total],
+    [data, byId, total, taxOf],
   );
+  const g = gains(rows, taxOf);
+  const cash = rows.filter((r) => r.klass === "cash").reduce((s, r) => s + r.value, 0);
+  const pricedAt =
+    rows
+      .map((r) => r.price_as_of)
+      .filter((d): d is string => !!d)
+      .sort()[0] ?? null;
+  const institutions = [...new Set(accounts.map((a) => a.institution_name))];
 
-  const gainTotals = useMemo(() => {
-    let gain = 0;
-    let basis = 0;
-    let n = 0;
-    for (const r of rows) {
-      if (r.gain == null) continue;
-      gain += r.gain;
-      basis += r.cost_basis ?? 0;
-      n++;
-    }
-    return { gain, basis, n, pct: basis > 0 ? (gain / basis) * 100 : null };
-  }, [rows]);
-
+  // Allocation: every class in the list; under 1% folded into Other in the bar.
   const allocation = useMemo(() => {
     const sums = new Map<AssetClass, number>();
     for (const r of rows) sums.set(r.klass, (sums.get(r.klass) ?? 0) + r.value);
-    // Accounts reporting no positions still count, as "Other".
     for (const a of accounts) if (a.holdings_count === 0 && (a.balance_current ?? 0) > 0) sums.set("other", (sums.get("other") ?? 0) + (a.balance_current ?? 0));
     const sum = [...sums.values()].reduce((s, v) => s + v, 0);
-    return CLASSES.filter((c) => (sums.get(c.key) ?? 0) > 0.5).map((c) => ({
-      ...c,
-      value: sums.get(c.key) ?? 0,
-      pct: sum > 0 ? ((sums.get(c.key) ?? 0) / sum) * 100 : 0,
-      count: rows.filter((r) => r.klass === c.key).length,
-    }));
+    const list = CLASS_ORDER.filter((k) => (sums.get(k) ?? 0) > 0.5).map((k) => ({ key: k, value: sums.get(k) ?? 0, pct: sum > 0 ? ((sums.get(k) ?? 0) / sum) * 100 : 0 }));
+    const bar = list.filter((c) => c.pct >= 1 || c.key === "other");
+    const folded = list.filter((c) => c.pct < 1 && c.key !== "other").reduce((s, c) => s + c.pct, 0);
+    const otherIdx = bar.findIndex((c) => c.key === "other");
+    if (folded > 0) {
+      if (otherIdx >= 0) bar[otherIdx] = { ...bar[otherIdx], pct: bar[otherIdx].pct + folded };
+      else bar.push({ key: "other", value: 0, pct: folded });
+    }
+    return { list, bar };
   }, [rows, accounts]);
 
-  const groups = useMemo(() => {
-    const m = new Map<string, { key: string; label: string; sub: string; value: number }>();
-    for (const a of accounts) {
-      const key = groupBy === "account" ? a.account_id : groupBy === "institution" ? a.institution_name : a.entity_name || "__none__";
-      const label = groupBy === "account" ? accountLabel(a) : groupBy === "institution" ? a.institution_name : a.entity_name || "Unmapped";
-      const g = m.get(key) ?? {
-        key,
-        label,
-        sub: groupBy === "account" ? [a.institution_name, a.entity_name].filter(Boolean).join(" · ") : "",
-        value: 0,
-      };
-      g.value += accountValue(a);
-      m.set(key, g);
-    }
-    const list = [...m.values()].sort((a, b) => b.value - a.value);
-    if (groupBy !== "account")
-      for (const g of list) {
-        const n = accounts.filter((a) => (groupBy === "institution" ? a.institution_name : a.entity_name || "__none__") === g.key).length;
-        g.sub = `${n} account${n === 1 ? "" : "s"}`;
-      }
-    return list;
-  }, [accounts, groupBy]);
-
-  // Trend: the stored daily invested total, plus today's live figure.
+  // The value series: recorded days (and rebuilt ones before them), with today's live figure.
   const fullSeries = useMemo(() => {
     const hist = (data?.history ?? []).filter((h) => Number.isFinite(h.invested));
     const firstReal = hist.findIndex((h) => h.invested > 0);
     const pts: Point[] = (firstReal < 0 ? [] : hist.slice(firstReal)).map((h) => ({ day: h.day, value: h.invested }));
-    const today = localDay();
+    const today = format.isoDate(new Date());
     if (total > 0) {
       if (pts.length && pts[pts.length - 1].day >= today) pts[pts.length - 1] = { day: pts[pts.length - 1].day, value: total };
       else if (pts.length) pts.push({ day: today, value: total });
     }
     return pts;
   }, [data, total]);
-  const rangeDays = RANGES.find((r) => r.key === range)!.days;
   const series = useMemo(() => {
-    if (!Number.isFinite(rangeDays) || !fullSeries.length) return fullSeries;
-    const cutoff = new Date(dayDate(fullSeries[fullSeries.length - 1].day).getTime() - rangeDays * 86400000);
-    const iso = localDay(cutoff);
-    const from = fullSeries.findIndex((p) => p.day >= iso);
-    return fullSeries.slice(Math.max(0, from));
-  }, [fullSeries, rangeDays]);
-  const shown = hover != null && series[hover] ? series[hover] : series[series.length - 1];
+    const days = RANGES.find((r) => r.value === range)!.days;
+    if (!Number.isFinite(days) || !fullSeries.length) return fullSeries;
+    const cutoff = dayMs(fullSeries[fullSeries.length - 1].day) - days * 86_400_000;
+    return fullSeries.filter((p) => dayMs(p.day) >= cutoff);
+  }, [fullSeries, range]);
+  const idx = hover ?? series.length - 1;
+  const point = series[idx];
   const first = series[0];
-  const change = shown && first ? shown.value - first.value : 0;
-  const changePct = shown && first && first.value > 0 ? (change / first.value) * 100 : null;
+  const change = point && first ? point.value - first.value : 0;
 
-  // Holdings table: filter → sort.
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    const list = rows.filter(
-      (r) =>
-        (acct === "all" || r.account_id === acct) && (cls === "all" || r.klass === cls) && (!needle || `${r.ticker ?? ""} ${r.name} ${r.accountName} ${r.institution}`.toLowerCase().includes(needle)),
-    );
-    const dir = sort.dir === "asc" ? 1 : -1;
-    const val = (r: (typeof rows)[number]): number | string | null => {
-      switch (sort.key) {
-        case "name":
-          return (r.ticker || r.name).toLowerCase();
-        case "account":
-          return r.accountName.toLowerCase();
-        case "quantity":
-          return r.quantity;
-        case "price":
-          return r.price;
-        case "value":
-          return r.value;
-        case "cost":
-          return r.klass === "cash" ? null : r.cost_basis;
-        case "gain":
-          return r.gainPct;
-        case "weight":
-          return r.weight;
-      }
-    };
-    return [...list].sort((a, b) => {
-      const va = val(a);
-      const vb = val(b);
-      if (va == null && vb == null) return b.value - a.value;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      if (typeof va === "string" && typeof vb === "string") return va.localeCompare(vb) * dir;
-      return ((va as number) - (vb as number)) * dir || b.value - a.value;
-    });
-  }, [rows, q, acct, cls, sort]);
-  const maxWeight = Math.max(0, ...rows.map((r) => r.weight));
-  const filteredValue = filtered.reduce((s, r) => s + r.value, 0);
-  const isFiltered = acct !== "all" || cls !== "all" || q.trim() !== "";
-
-  const onSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" || key === "account" ? "asc" : "desc" }));
-
-  const focusHoldings = (patch: { acct?: string; cls?: AssetClass | "all" }) => {
-    if (patch.acct !== undefined) setAcct(patch.acct);
-    if (patch.cls !== undefined) setCls(patch.cls);
-    requestAnimationFrame(() => {
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      holdingsRef.current?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
-    });
-  };
-
-  // Income, by calendar month (last 12, oldest first).
+  // Income, over the months the transactions cover.
+  const income = data?.income ?? null;
+  const covered = useMemo(() => {
+    // Where the server doesn't say, the earliest transaction the chart's rebuild found is the same date.
+    const from = income?.from ?? data?.historyRebuilt?.from ?? null;
+    const to = income?.to ?? (data ? data.asOf.slice(0, 10) : null);
+    return income && from && to ? { from, to, months: monthsBetween(from, to) } : null;
+  }, [income, data]);
   const months = useMemo(() => {
-    const now = new Date();
-    const byMonth = new Map((data?.income?.byMonth ?? []).map((m) => [m.month, m]));
-    return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const m = byMonth.get(key);
-      return {
-        key,
-        label: d.toLocaleDateString("en-US", { month: "short" }),
-        long: d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-        dividends: m?.dividends ?? 0,
-        interest: m?.interest ?? 0,
-        total: (m?.dividends ?? 0) + (m?.interest ?? 0),
-      };
+    if (!income) return [];
+    const by = new Map(income.byMonth.map((m) => [m.month, m]));
+    const keys = covered ? monthKeys(covered.from, covered.to) : income.byMonth.map((m) => m.month);
+    return keys.map((k) => {
+      const m = by.get(k);
+      const total = (m?.dividends ?? 0) + (m?.interest ?? 0) + (m?.capitalGains ?? 0);
+      return { key: k, label: format.date(`${k}-15`, "short").replace(/\s\d+(,|$)/, "$1"), dividends: m?.dividends ?? 0, interest: m?.interest ?? 0, capitalGains: m?.capitalGains ?? 0, total };
     });
-  }, [data]);
-  const monthMax = Math.max(1, ...months.map((m) => m.total));
+  }, [income, covered]);
+  const incomeTotal = months.reduce((s, m) => s + m.total, 0);
+  const pace = covered ? annualPace(incomeTotal, covered.months) : null;
+  const monthMax = Math.max(1, ...months.map((m) => Math.max(0, m.total)));
+  const shownMonth = months.find((m) => m.key === month) ?? months[months.length - 1];
 
-  // ── Tokens (Home's card language; Books' table language) ───────────────
-  const { t1, t2, t3 } = tiers(isDark);
-  const surface = isDark ? "border glass-card" : "border glass-card";
-  const kicker = "text-[12px] font-medium text-gray-500";
-  const textMuted = "text-gray-500";
-  const textSoft = isDark ? "text-gray-400" : "text-gray-600";
-  const hairline = isDark ? "border-white/[0.08]" : "border-gray-200";
-  const rowBorder = isDark ? "divide-white/[0.06]" : "divide-gray-100";
-  const rowHover = isDark ? "hover:bg-white/[0.025]" : "hover:bg-gray-50/80";
-  const accent = isDark ? "#818cf8" : "#4f46e5";
-  const accentText = isDark ? "text-[#a5b4fc]" : "text-[#4f46e5]";
-  const posText = isDark ? "text-emerald-300" : "text-emerald-600";
-  const negText = isDark ? "text-rose-300" : "text-rose-600";
-  const posChip = isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700";
-  const negChip = isDark ? "border-rose-500/20 bg-rose-500/10 text-rose-300" : "border-rose-200 bg-rose-50 text-rose-700";
-  const chipBase = "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums whitespace-nowrap";
-  const linkQuiet = `${TAP_Y} text-[11px] ${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`;
-  const segWrap = `flex rounded-lg border p-0.5 ${hairline} ${isDark ? "bg-white/[0.02]" : "bg-gray-50"}`;
-  const segBtn = (on: boolean) =>
-    `${TAP_Y} h-6 cursor-pointer rounded-md px-2.5 text-[11px] font-medium transition-colors ${
-      on ? (isDark ? "bg-white/[0.09] text-white" : "bg-white text-gray-900 shadow-sm") : `${textMuted} ${isDark ? "hover:text-gray-200" : "hover:text-gray-900"}`
-    }`;
-  const tickerBadge = `inline-block h-5 min-w-[44px] max-w-[76px] shrink-0 truncate rounded-md px-1.5 text-center leading-5 font-mono text-[10.5px] font-medium tracking-[0.02em] ${
-    isDark ? "bg-white/[0.06] text-gray-200" : "bg-gray-100 text-gray-700"
-  }`;
-  // Every card enters together: one fade + settle, no stagger.
-  const enter = "motion-safe:animate-[bfo-pop_0.5s_cubic-bezier(0.16,1,0.3,1)_both]";
-  const gainTone = (n: number | null) => (n == null || Math.abs(n) < 0.5 ? t2 : n > 0 ? posText : negText);
+  // Accounts, grouped.
+  const groups = useMemo(() => {
+    const m = new Map<string, { key: string; label: string; sub: string; value: number; to?: string }>();
+    for (const a of accounts) {
+      const owner = holderOf(a, (id) => (records.loaded ? records.nameOf(id) : (a.entity_name ?? null)));
+      const key = groupBy === "account" ? a.account_id : groupBy === "institution" ? a.institution_name : owner.key;
+      const label = groupBy === "account" ? accountName(a) : groupBy === "institution" ? a.institution_name : owner.label;
+      const tax = taxOf(a.account_id);
+      const gr = m.get(key) ?? {
+        key,
+        label,
+        sub: groupBy === "account" ? [a.institution_name, typeLabel(a), owner.kind === "none" ? null : owner.label, tax ? TAX_STATUS_LABEL[tax] : null].filter(Boolean).join(" · ") : "",
+        value: 0,
+        to: groupBy === "account" ? `/treasury/${a.account_id}` : undefined,
+      };
+      gr.value += accountValue(a);
+      m.set(key, gr);
+    }
+    const list = [...m.values()].sort((x, y) => y.value - x.value);
+    if (groupBy !== "account")
+      for (const gr of list)
+        gr.sub = format.count(
+          accounts.filter((a) => (groupBy === "institution" ? a.institution_name : holderOf(a, (id) => (records.loaded ? records.nameOf(id) : (a.entity_name ?? null))).key) === gr.key).length,
+          "account",
+        );
+    return list;
+  }, [accounts, groupBy, records, taxOf]);
+  const ownerKeys = new Set(accounts.map((a) => holderOf(a, (id) => (records.loaded ? records.nameOf(id) : (a.entity_name ?? null))).key));
+  const groupOptions = [
+    { value: "account" as const, label: "Account" },
+    ...(ownerKeys.size > 1 ? [{ value: "owner" as const, label: "Owner" }] : []),
+    ...(institutions.length > 1 ? [{ value: "institution" as const, label: "Institution" }] : []),
+  ];
 
-  const firstLoad = loading && !data;
-  const empty = !loading && !!data && accounts.length === 0;
-  const asOf = data ? new Date(data.asOf) : null;
-  const institutions = [...new Set(accounts.map((a) => a.institution_name))];
+  const filtered = rows.filter(
+    (r) => (acct === "all" || r.account_id === acct) && (cls === "all" || r.klass === cls) && (!q.trim() || `${r.ticker ?? ""} ${r.name} ${r.account}`.toLowerCase().includes(q.trim().toLowerCase())),
+  );
+  const activity = (data?.activity?.recent ?? []).slice(0, 25);
 
-  // ── Pieces ─────────────────────────────────────────────────────────────
+  async function rebuild() {
+    const ok = await confirm({
+      title: "Rebuild the chart’s earlier days?",
+      message:
+        "The days before BFO began recording are rebuilt from the accounts’ transactions and each day’s closing price from Yahoo Finance, replacing the earlier rebuild. Days BFO recorded don’t change.",
+      details: ["Recorded with your name, the time and the method used."],
+      confirmLabel: "Rebuild history",
+    });
+    if (!ok) return;
+    setRebuilding(true);
+    try {
+      const out = await getJson<{ days: number; from: string | null }>("/api/plaid/history", { method: "POST" });
+      toast({ message: out.days && out.from ? `Rebuilt from ${format.date(out.from, "medium")}` : "Nothing to rebuild" });
+      await load();
+    } catch (err) {
+      setFailed(err instanceof Error ? err.message : "Couldn’t rebuild the history.");
+    } finally {
+      setRebuilding(false);
+    }
+  }
 
-  const sortTh = (label: string, key: SortKey, align: "left" | "right" = "left", className = "") => {
-    const active = sort.key === key;
-    const caret = (
-      <Icon
-        d={active && sort.dir === "asc" ? PATHS.up : PATHS.down}
-        strokeWidth={2}
-        className={`h-3 w-3 shrink-0 transition-opacity ${active ? "opacity-100" : "opacity-30 group-hover/th:opacity-70"}`}
-      />
-    );
-    return (
-      <th
-        scope="col"
-        aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-        className={`group/th px-2 py-2.5 font-medium first:pl-5 last:pr-5 ${align === "right" ? "text-right" : ""} ${className}`}
-      >
-        <button
-          type="button"
-          onClick={() => onSort(key)}
-          title={active ? `Sorted by ${label.toLowerCase()}, ${sort.dir === "asc" ? "low to high" : "high to low"}. Click to flip.` : `Sort by ${label.toLowerCase()}`}
-          className={`-mx-1.5 -my-0.5 inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 transition-colors ${
-            active ? t1 : isDark ? "hover:bg-white/[0.04] hover:text-gray-100" : "hover:bg-gray-100 hover:text-gray-900"
-          }`}
-        >
-          {align === "right" && caret}
-          {label}
-          {align !== "right" && caret}
-        </button>
-      </th>
-    );
-  };
+  async function connectHoldings(itemId: string) {
+    try {
+      const [{ link_token }] = await Promise.all([
+        getJson<{ link_token: string }>("/api/plaid/create-link-token", { method: "POST", body: JSON.stringify({ kind: "bank", item_id: itemId, add_investments: true }) }),
+        loadPlaid(),
+      ]);
+      window.Plaid?.create({ token: link_token, onSuccess: () => void load(), onExit: () => undefined }).open();
+    } catch (err) {
+      setFailed(err instanceof Error ? err.message : "Couldn’t open the bank’s window.");
+    }
+  }
 
-  const classDot = (k: AssetClass) => {
-    const c = CLASS_BY_KEY.get(k)!;
-    return <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: isDark ? c.dark : c.light }} aria-hidden />;
-  };
-
-  const errorsBanner =
-    data && data.errors.length > 0 ? (
-      <div
-        role="status"
-        className={`flex flex-col gap-2 rounded-2xl border px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between ${enter} ${
-          isDark ? "border-amber-500/20 bg-amber-500/[0.06]" : "border-amber-200 bg-amber-50/70"
-        }`}
-      >
-        <div className="flex min-w-0 items-start gap-3">
-          <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${isDark ? "bg-amber-500/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>
-            <Icon d={PATHS.sync} className="h-3.5 w-3.5" strokeWidth={2} />
-          </span>
-          <div className="min-w-0 text-[12.5px]">
-            {data.errors.map((e) => (
-              <p key={e.item_id} className={isDark ? "text-amber-100" : "text-amber-900"}>
-                <span className="font-medium">{e.institution}</span>{" "}
-                {e.consent ? "is connected through Treasury without access to its holdings" : e.reconnect ? "needs reconnecting" : "couldn't be reached just now"}
-                <span className={isDark ? "text-amber-200/60" : "text-amber-800/70"}>
-                  {" "}
-                  — {e.consent ? "a minute with Plaid adds them." : e.reconnect ? "its positions aren't included below." : "showing everything else."}
-                </span>
-              </p>
-            ))}
-          </div>
-        </div>
-        {data.errors.some((e) => e.consent) ? (
-          <button
-            type="button"
-            disabled={!!consenting}
-            onClick={() => void connectHoldings(data.errors.find((e) => e.consent)!.item_id)}
-            className={`shrink-0 cursor-pointer self-start rounded-full border px-3 py-1 text-[11.5px] font-medium transition-colors sm:self-auto relative after:absolute after:inset-x-0 after:-inset-y-[8px] after:content-[''] lg:after:inset-0 disabled:opacity-60 ${
-              isDark ? "border-amber-500/25 text-amber-200 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
-            }`}
-          >
-            {consenting ? "Opening Plaid…" : "Connect holdings →"}
-          </button>
+  const columns: Column<Row>[] = [
+    {
+      key: "name",
+      header: "Holding",
+      render: (r) => (
+        <span className="flex min-w-0 flex-col">
+          <span className="break-words text-ink">{r.ticker ? `${r.ticker} · ${fundName(r.name)}` : fundName(r.name)}</span>
+          <span className="text-small text-ink-2">{CLASS_LABEL[r.klass]}</span>
+        </span>
+      ),
+      sort: (a, b) => (a.ticker || a.name).localeCompare(b.ticker || b.name),
+    },
+    { key: "account", header: "Account", width: "190px", render: (r) => <span className="text-ink-2">{r.account}</span>, sort: (a, b) => a.account.localeCompare(b.account) },
+    {
+      key: "qty",
+      header: "Quantity",
+      align: "right",
+      width: "110px",
+      render: (r) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(r.quantity),
+      sort: (a, b) => a.quantity - b.quantity,
+    },
+    { key: "value", header: "Value", align: "right", width: "130px", render: (r) => format.money(r.value), sort: (a, b) => a.value - b.value },
+    {
+      key: "basis",
+      header: "Cost basis",
+      align: "right",
+      width: "130px",
+      render: (r) => (r.klass === "cash" ? <span className="text-ink-3">—</span> : r.cost_basis ? format.money(r.cost_basis) : <span className="text-ink-3">Not reported</span>),
+      sort: (a, b) => (a.cost_basis ?? -1) - (b.cost_basis ?? -1),
+    },
+    {
+      key: "gain",
+      header: "Unrealized",
+      align: "right",
+      width: "130px",
+      render: (r) =>
+        r.gain == null ? (
+          <span className="text-ink-3">—</span>
         ) : (
-          <Link
-            to="/treasury"
-            className={`shrink-0 self-start rounded-full border px-3 py-1 text-[11.5px] font-medium transition-colors sm:self-auto relative after:absolute after:inset-x-0 after:-inset-y-[8px] after:content-[''] lg:after:inset-0 ${
-              isDark ? "border-amber-500/25 text-amber-200 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
-            }`}
-          >
-            Reconnect in Treasury →
-          </Link>
-        )}
-        {failed && data.errors.some((e) => e.consent) && <p className={`basis-full text-[12px] ${isDark ? "text-amber-200/80" : "text-amber-800/80"}`}>{failed}</p>}
-      </div>
-    ) : null;
+          <span className={r.tax === "taxable" && r.gain !== 0 ? (r.gain > 0 ? "text-positive" : "text-negative") : "text-ink"}>{format.money(r.gain, { sign: "always" })}</span>
+        ),
+      sort: (a, b) => (a.gain ?? -Infinity) - (b.gain ?? -Infinity),
+    },
+    { key: "weight", header: "Share", align: "right", width: "80px", render: (r) => share(r.weight), sort: (a, b) => a.weight - b.weight },
+  ];
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  const loading = !data && !failed;
+  const empty = !!data && accounts.length === 0;
+  const errors = data?.errors ?? [];
+  const recordedFrom = data?.historyRebuilt?.until ?? null;
 
   return (
-    <div className="mx-auto max-w-[1180px] space-y-3 px-2 tabular-nums sm:space-y-4 sm:px-8 lg:px-12">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px]">Investments</h1>
-          <p className={`mt-1 text-[12.5px] ${textSoft}`}>
-            {firstLoad ? (
-              "Gathering positions…"
-            ) : accounts.length ? (
-              <>
-                {accounts.length} account{accounts.length === 1 ? "" : "s"}
-                {institutions.length ? ` at ${institutions.join(", ")}` : ""} · {rows.length} position{rows.length === 1 ? "" : "s"}
-              </>
+    <Page
+      header={
+        <PageHeader
+          title="Investments"
+          context={
+            data && accounts.length
+              ? `${format.count(accounts.length, "account")}${institutions.length ? ` at ${format.list(institutions)}` : ""} · ${format.count(rows.length, "position")}${pricedAt ? ` · priced at the ${format.date(pricedAt, "short")} close` : ""} · fetched ${format.dateTime(data.asOf, { zone: true })}`
+              : "Brokerage positions, through Plaid"
+          }
+          menu={[{ label: "Open Treasury", onSelect: () => window.location.assign("/treasury") }, ...(writer ? [{ label: "Rebuild the chart’s earlier days…", onSelect: () => void rebuild() }] : [])]}
+        />
+      }
+    >
+      {failed && (
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+          onDismiss={() => setFailed(null)}
+        >
+          {failed}
+        </Banner>
+      )}
+      {errors.length > 0 && (
+        <Banner
+          tone="warning"
+          action={
+            errors.some((e) => e.consent) && admin ? (
+              <Button variant="quiet" size="sm" onClick={() => void connectHoldings(errors.find((e) => e.consent)!.item_id)}>
+                Connect holdings
+              </Button>
             ) : (
-              "Brokerage holdings, allocation and income"
-            )}
-          </p>
+              <TextLink to="/treasury">Open Treasury</TextLink>
+            )
+          }
+        >
+          {errors.map((e) => `${e.institution} ${e.consent ? "is connected without access to its holdings" : e.reconnect ? "needs to be signed in to again" : "didn’t answer just now"}`).join(". ")}.
+          Its positions aren’t in these figures.
+        </Banner>
+      )}
+      {data?.hiddenAccounts && data.hiddenAccounts.count > 0 && (
+        <p className="-mt-4 text-small text-ink-2">
+          Leaves out {format.count(data.hiddenAccounts.count, "account")} hidden in Treasury, holding {format.money(data.hiddenAccounts.value, { precision: "dollars" })}.{" "}
+          <TextLink inline to="/treasury">
+            Show them in Treasury
+          </TextLink>
+        </p>
+      )}
+
+      {loading && (
+        <div className="flex flex-col gap-6">
+          <Skeleton kind="card" />
+          <Skeleton kind="table" rows={8} />
         </div>
-        {asOf && !empty && (
-          <p className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
-            As of {asOf.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, {asOf.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-          </p>
-        )}
-      </header>
-
-      {failed && !data && (
-        <section className={`rounded-2xl px-5 py-10 text-center ${surface} ${enter}`}>
-          <p className="text-[13px] font-medium">Investments couldn't load</p>
-          <p className={`mt-1 text-[12px] ${textMuted}`}>{failed}</p>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className={`mt-4 inline-flex h-[40px] sm:h-8 cursor-pointer items-center rounded-full border px-4 text-[12px] font-medium ${hairline} ${
-              isDark ? "hover:bg-white/[0.05]" : "hover:bg-gray-50"
-            }`}
-          >
-            Try again
-          </button>
-        </section>
       )}
-
-      {errorsBanner}
-
       {empty && (
-        <section className={`flex flex-col items-center rounded-2xl px-5 py-14 text-center ${surface} ${enter}`}>
-          <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${isDark ? "bg-[#818cf8]/10 text-[#a5b4fc]" : "bg-[#4f46e5]/[0.07] text-[#4f46e5]"}`}>
-            <Icon d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" className="h-5 w-5" strokeWidth={1.6} />
-          </span>
-          <p className="mt-4 text-[14px] font-medium">No investment accounts yet</p>
-          <p className={`mt-1 max-w-[340px] text-[12.5px] ${textMuted}`}>Connect a brokerage in Treasury and its holdings, allocation and income will appear here.</p>
-          <Link
-            to="/treasury"
-            className={`mt-5 inline-flex h-8 items-center rounded-full px-4 text-[12px] font-medium text-white transition-colors ${
-              isDark ? "bg-[#6366f1] hover:bg-[#818cf8]" : "bg-[#4f46e5] hover:bg-[#4338ca]"
-            }`}
-          >
-            Connect a brokerage in Treasury
-          </Link>
-        </section>
+        <Empty
+          title="No investment accounts yet"
+          action={
+            admin ? (
+              <LinkButton to="/treasury" variant="primary">
+                Connect in Treasury
+              </LinkButton>
+            ) : undefined
+          }
+        >
+          Brokerage accounts connected in Treasury appear here with their positions, allocation and income.
+        </Empty>
       )}
 
-      {(firstLoad || (data && !empty)) && (
+      {data && accounts.length > 0 && (
         <>
-          {/* ── Hero: value, gain, trend ─────────────────────────────────── */}
-          <section className={`relative overflow-hidden rounded-2xl ${surface} ${enter}`}>
-            <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent ${isDark ? "via-[#818cf8]/70" : "via-[#4f46e5]/50"} to-transparent`} />
-            <div className={`pointer-events-none absolute -top-28 left-1/3 h-48 w-1/2 rounded-full blur-3xl ${isDark ? "bg-[#818cf8]/[0.09]" : "bg-[#4f46e5]/[0.05]"}`} />
-            {firstLoad ? (
-              <div className="relative space-y-4 p-5 sm:p-6">
-                <Bone className="h-3 w-40" />
-                <Bone className="h-10 w-64 max-w-full" />
-                <Bone className="h-[110px] w-full sm:h-[140px]" />
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <Bone className="h-8" />
-                  <Bone className="h-8" />
-                  <Bone className="h-8" />
-                  <Bone className="h-8" />
-                </div>
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
-                  <div className="min-w-0">
-                    <p className={kicker}>
-                      Portfolio value
-                      {hover != null && shown && (
-                        <>
-                          <span className="mx-1.5 opacity-50">/</span>
-                          {shortDay(shown.day)}
-                        </>
-                      )}
+          <Card>
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-small font-medium text-ink-2">{hover != null && point ? format.date(point.day, "medium") : "Portfolio value"}</p>
+                  <p className="mt-1 text-display text-ink tabular-nums">{format.money(point?.value ?? total, { precision: "dollars" })}</p>
+                  {first && point && series.length > 1 && (
+                    <p className="mt-1 text-small text-ink-2">
+                      {change === 0 ? "No change" : `${change > 0 ? "↑" : "↓"} ${format.money(Math.abs(change), { precision: "dollars" })} · ${format.percent(Math.abs((change / first.value) * 100))}`}{" "}
+                      since {format.date(first.day, "short")}, including money moved in or out
                     </p>
-                    <p className="mt-1.5 text-[24px] font-semibold leading-none tracking-[-0.02em] sm:text-[28px]">{fmtUSD(hover != null && shown ? shown.value : total)}</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {series.length >= 2 ? (
-                        <>
-                          <span className={`${chipBase} ${change >= 0 ? posChip : negChip}`}>
-                            <Icon d={change >= 0 ? PATHS.up : PATHS.down} className="h-2.5 w-2.5" strokeWidth={2.4} />
-                            {change >= 0 ? "+" : "−"}
-                            {fmtCompact(Math.abs(change))}
-                            {changePct != null && <span className="opacity-70">· {fmtPct(changePct)}</span>}
-                          </span>
-                          <span className={`text-[11px] ${textMuted}`}>since {shortDay(first.day)}</span>
-                        </>
-                      ) : (
-                        <span className={`text-[11px] ${textMuted}`}>The trend fills in as daily history accrues.</span>
-                      )}
-                    </div>
-                  </div>
-                  {series.length >= 2 && (
-                    <div className={segWrap} role="group" aria-label="Range">
-                      {RANGES.map((r) => {
-                        // A range reaching back before the history began shows the same line as "All".
-                        const beyond =
-                          Number.isFinite(r.days) && fullSeries.length > 0 && dayDate(fullSeries[0].day).getTime() > dayDate(fullSeries[fullSeries.length - 1].day).getTime() - r.days * 86400000;
-                        return (
-                          <button
-                            key={r.key}
-                            type="button"
-                            onClick={() => {
-                              setRange(r.key);
-                              setHover(null);
-                            }}
-                            aria-pressed={range === r.key}
-                            disabled={beyond && range !== r.key}
-                            title={beyond ? `Tracking began ${shortDay(fullSeries[0].day)}; this shows the same as All` : undefined}
-                            className={`${segBtn(range === r.key)} disabled:cursor-default disabled:opacity-40`}
-                          >
-                            {r.label}
-                          </button>
-                        );
-                      })}
-                    </div>
                   )}
                 </div>
-
-                {series.length >= 2 && (
-                  <>
-                    <div className="mt-2 px-1 sm:px-2">
-                      <TrendChart points={series} isDark={isDark} hover={hover} setHover={setHover} />
-                    </div>
-                    <div className={`flex justify-between px-5 pb-1 pt-1.5 text-[11px] ${textMuted}`}>
-                      <span>{shortDay(first.day)}</span>
-                      <span>{shortDay(series[series.length - 1].day)}</span>
-                    </div>
-                  </>
-                )}
-                {(data?.historyRebuilt || canEdit) && (
-                  <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-1 pt-1 text-[11px] ${textMuted}`}>
-                    {data?.historyRebuilt && (
-                      <span>
-                        Before {shortDay(data!.historyRebuilt!.until)}, rebuilt from the accounts' transactions and each day's closing prices. It starts {shortDay(data!.historyRebuilt!.from)}, as far
-                        back as Plaid has the transactions.
-                      </span>
-                    )}
-                    {canEdit && (
-                      <button
-                        type="button"
-                        disabled={rebuilding}
-                        onClick={() => void rebuildHistory()}
-                        className="cursor-pointer underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {rebuilding ? "Rebuilding the past two years…" : data?.historyRebuilt ? "Rebuild" : "Fill in the past two years"}
-                      </button>
-                    )}
-                    {rebuildNote && <span className="basis-full">{rebuildNote}</span>}
-                  </div>
-                )}
-
-                <div className={`mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t px-5 pb-4 pt-3 sm:grid-cols-4 ${hairline}`}>
-                  <div className="min-w-0">
-                    <p className={kicker}>Unrealized gain</p>
-                    <p className={`mt-1 text-[13px] font-medium ${gainTone(gainTotals.n ? gainTotals.gain : null)}`}>
-                      {gainTotals.n ? (
-                        <>
-                          <span className="whitespace-nowrap">{fmtSigned(gainTotals.gain)}</span>
-                          {gainTotals.pct != null && <span className="ml-1.5 text-[11.5px] opacity-80">{fmtPct(gainTotals.pct)}</span>}
-                        </>
-                      ) : (
-                        "—"
-                      )}
-                    </p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className={kicker}>Cost basis</p>
-                    <p className="mt-1 truncate text-[13px] font-medium">{gainTotals.n ? fmtUSD(gainTotals.basis) : "—"}</p>
-                    <p className={`truncate text-[10.5px] ${textMuted}`}>{gainTotals.n ? `${gainTotals.n} position${gainTotals.n === 1 ? "" : "s"}, ex-cash` : "Not reported"}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className={kicker}>Income · 12 mo</p>
-                    <p className="mt-1 truncate text-[13px] font-medium">{data?.income ? fmtUSD(data.income.ttm) : "—"}</p>
-                    {data?.income && total > 0 && <p className={`truncate text-[10.5px] ${textMuted}`}>{fmtPct((data.income.ttm / total) * 100, false)} trailing yield</p>}
-                  </div>
-                  <div className="min-w-0">
-                    <p className={kicker}>Cash & money market</p>
-                    {(() => {
-                      const c = allocation.find((a) => a.key === "cash");
-                      return (
-                        <>
-                          <p className="mt-1 truncate text-[13px] font-medium">{c ? fmtUSD(c.value) : "—"}</p>
-                          {c && <p className={`truncate text-[10.5px] ${textMuted}`}>{fmtPct(c.pct, false)} of portfolio</p>}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* ── Allocation ─────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
-            <section className={`overflow-hidden rounded-2xl lg:col-span-7 ${surface} ${enter}`}>
-              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
-                <p className={kicker}>Allocation by asset type</p>
-                {cls !== "all" && (
-                  <button type="button" onClick={() => setCls("all")} className={`cursor-pointer ${linkQuiet}`}>
-                    Clear filter
-                  </button>
+                {fullSeries.length > 1 && (
+                  <Segmented
+                    label="Period"
+                    value={range}
+                    onChange={(v) => {
+                      setRange(v);
+                      setHover(null);
+                    }}
+                    options={RANGES.map((r) => ({ value: r.value, label: r.label }))}
+                  />
                 )}
               </div>
-              {firstLoad ? (
-                <div className="space-y-4 p-5">
-                  <Bone className="h-2.5 w-full" />
-                  {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <Bone className="h-3 flex-1" style={{ maxWidth: `${60 - i * 8}%` }} />
-                      <Bone className="ml-auto h-3 w-20" />
-                    </div>
-                  ))}
-                </div>
+              {series.length > 1 ? (
+                <TrendChart points={series} index={Math.min(idx, series.length - 1)} onIndex={setHover} />
               ) : (
-                <div className="px-5 pb-3 pt-4">
-                  {/* Segmented bar: 2px surface gaps between fills, rounded ends. */}
-                  <div className="flex h-2.5 gap-[2px] overflow-hidden rounded-full" role="img" aria-label={allocation.map((a) => `${a.label} ${fmtPct(a.pct, false)}`).join(", ")}>
-                    {allocation.map((a) => (
-                      <span
-                        key={a.key}
-                        className={`h-full transition-opacity first:rounded-l-full last:rounded-r-full ${cls !== "all" && cls !== a.key ? "opacity-30" : ""}`}
-                        style={{ width: `${a.pct}%`, minWidth: 3, background: isDark ? a.dark : a.light }}
-                        title={`${a.label} · ${fmtUSD(a.value)} · ${fmtPct(a.pct, false)}`}
-                      />
-                    ))}
-                  </div>
-                  <ul className={`mt-3 divide-y ${rowBorder}`}>
-                    {allocation.map((a) => {
-                      const on = cls === a.key;
-                      return (
-                        <li key={a.key}>
-                          <button
-                            type="button"
-                            onClick={() => focusHoldings({ cls: on ? "all" : a.key })}
-                            aria-pressed={on}
-                            className={`-mx-2 flex w-[calc(100%+1rem)] cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors ${rowHover} ${
-                              on ? (isDark ? "bg-white/[0.04]" : "bg-gray-50") : ""
-                            }`}
-                            title="Show these holdings"
-                          >
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: isDark ? a.dark : a.light }} aria-hidden />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[12.5px] font-medium">{a.label}</span>
-                              <span className={`block text-[11px] ${textMuted}`}>{a.count ? `${a.count} holding${a.count === 1 ? "" : "s"}` : "Account balance"}</span>
-                            </span>
-                            <span className="text-right">
-                              <span className="block text-[12.5px] font-medium">{fmtUSD(a.value)}</span>
-                              <span className={`block text-[11px] ${textMuted}`}>{fmtPct(a.pct, false)}</span>
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
+                <p className="text-small text-ink-2">The chart fills in as BFO records each day’s value.</p>
               )}
-            </section>
+              <div className="flex items-start gap-2 text-small text-ink-2">
+                <InfoToggle label="How this chart is built">
+                  {recordedFrom
+                    ? `Before ${format.date(recordedFrom, "short")}, each day is rebuilt from the accounts’ transactions and that day’s closing price from Yahoo Finance; from then on it is the value BFO recorded that day. `
+                    : "Each day is the value BFO recorded that day. "}
+                  Days with no reading are skipped. A deposit, withdrawal or an account hidden in Treasury moves the line too.
+                </InfoToggle>
+                <span className="pt-[6px]">How this chart is built</span>
+                {writer && (
+                  <Button variant="quiet" size="sm" busy={rebuilding} busyLabel="Rebuilding…" onClick={() => void rebuild()} className="ml-auto">
+                    Rebuild…
+                  </Button>
+                )}
+              </div>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-4 sm:grid-cols-4">
+                {g.taxable.positions > 0 && (
+                  <Stat
+                    label="Unrealized gain, taxable"
+                    value={format.money(g.taxable.gain, { precision: "dollars", sign: "always" })}
+                    sub={`on ${format.money(g.taxable.basis, { precision: "dollars" })} cost basis`}
+                  />
+                )}
+                {g.deferred.positions > 0 && (
+                  <Stat label="Unrealized, tax-deferred and exempt" value={format.money(g.deferred.gain, { precision: "dollars", sign: "always" })} sub="No tax until withdrawn" />
+                )}
+                {cash > 0 && <Stat label="Cash and money market" value={format.money(cash, { precision: "dollars" })} sub={`${format.percent(total ? (cash / total) * 100 : 0)} of the portfolio`} />}
+                {income && covered && (
+                  <Stat label={`Income since ${format.date(covered.from, "short")}`} value={format.money(incomeTotal, { precision: "dollars" })} sub={`${covered.months} months covered`} />
+                )}
+              </dl>
+              <p className="text-small text-ink-2">
+                Cost basis as each custodian reports it; the method and lots aren’t available here.
+                {g.noBasis.positions > 0 &&
+                  ` Basis isn’t reported for ${format.count(g.noBasis.positions, "position")} (${format.money(g.noBasis.value, { precision: "dollars" })}), so they’re left out of the gain.`}
+              </p>
+            </div>
+          </Card>
 
-            <section className={`overflow-hidden rounded-2xl lg:col-span-5 ${surface} ${enter}`}>
-              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3 ${hairline}`}>
-                <p className={kicker}>Where it sits</p>
-                <div className={segWrap} role="group" aria-label="Group by">
-                  {(["account", "institution", "entity"] as const).map((g) => (
-                    <button key={g} type="button" aria-pressed={groupBy === g} onClick={() => setGroupBy(g)} className={segBtn(groupBy === g)}>
-                      {g === "account" ? "Account" : g === "institution" ? "Institution" : "Entity"}
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <Card title="Allocation">
+              <div className="flex h-2 overflow-hidden rounded-full bg-sunken" role="img" aria-label={allocation.list.map((c) => `${CLASS_LABEL[c.key]} ${format.percent(c.pct)}`).join(", ")}>
+                {allocation.bar.map((c) => (
+                  <span key={c.key} className={`${CLASS_COLOUR[c.key]} h-full`} style={{ width: `${c.pct}%` }} />
+                ))}
+              </div>
+              <ul className="mt-4 flex flex-col">
+                {allocation.list.map((c) => (
+                  <li key={c.key}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCls(c.key);
+                        holdingsRef.current?.scrollIntoView({ block: "start" });
+                      }}
+                      className="flex min-h-10 w-full items-center gap-3 rounded-control px-2 text-left hover:bg-hover touch:min-h-[44px]"
+                    >
+                      <span className={`${CLASS_COLOUR[c.key]} size-2 shrink-0 rounded-full`} aria-hidden />
+                      <span className="min-w-0 flex-1 text-body text-ink">{CLASS_LABEL[c.key]}</span>
+                      <span className="text-body text-ink tabular-nums">{format.money(c.value, { precision: "dollars" })}</span>
+                      <span className="w-[56px] text-right text-small text-ink-2 tabular-nums">{share(c.pct)}</span>
                     </button>
-                  ))}
-                </div>
-              </div>
-              {firstLoad ? (
-                <div className="space-y-4 p-5">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="space-y-2">
-                      <Bone className="h-3" style={{ width: `${55 - i * 10}%` }} />
-                      <Bone className="h-1.5 w-full" />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <ul className="space-y-3.5 px-5 py-4">
-                  {groups.map((g) => {
-                    const pct = total > 0 ? (g.value / total) * 100 : 0;
-                    return (
-                      <li key={g.key}>
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="min-w-0">
-                            <span className="block truncate text-[12.5px] font-medium">{g.label}</span>
-                            {g.sub && <span className={`block truncate text-[11px] ${textMuted}`}>{g.sub}</span>}
-                          </span>
-                          <span className="shrink-0 text-right">
-                            <span className="text-[12.5px] font-medium">{fmtUSD(g.value)}</span>
-                            <span className={`ml-2 text-[11px] ${textMuted}`}>{fmtPct(pct, false)}</span>
-                          </span>
-                        </div>
-                        <div className={`mt-1.5 h-1.5 overflow-hidden rounded-full ${isDark ? "bg-white/[0.05]" : "bg-gray-100"}`}>
-                          <div className="h-full rounded-full motion-safe:transition-[width] motion-safe:duration-500" style={{ width: `${pct}%`, background: accent }} />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+
+            <Card title="Accounts" flush action={groupOptions.length > 1 ? <Segmented label="Group by" value={groupBy} onChange={setGroupBy} options={groupOptions} /> : undefined}>
+              <List label="Accounts">
+                {groups.map((gr) => {
+                  const a = groupBy === "account" ? byId.get(gr.key) : undefined;
+                  return (
+                    <ListRow
+                      key={gr.key}
+                      to={gr.to}
+                      leading={a ? <InstitutionMark name={a.institution_name} logo={a.institution_logo} /> : undefined}
+                      title={gr.label}
+                      secondary={gr.sub}
+                      meta={total ? share((gr.value / total) * 100) : undefined}
+                      trailing={format.money(gr.value, { precision: "dollars" })}
+                    />
+                  );
+                })}
+              </List>
+            </Card>
           </div>
 
-          {/* ── Holdings ───────────────────────────────────────────────── */}
-          <section ref={holdingsRef} className={`scroll-mt-4 overflow-hidden rounded-2xl ${surface} ${enter}`}>
-            <div className={`flex flex-col gap-3 border-b px-4 py-3 sm:px-5 lg:flex-row lg:items-center ${ruleBorder(isDark)}`}>
-              <div className="flex min-w-0 items-baseline gap-2.5 lg:mr-auto">
-                <p className={kicker}>Holdings</p>
-                {!firstLoad && <span className={`text-[11px] ${textMuted}`}>{isFiltered ? `${filtered.length} of ${rows.length} · ${fmtUSD(filteredValue)}` : `${rows.length} positions`}</span>}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
-                  <Icon d={PATHS.search} className={`pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${t3}`} strokeWidth={2} />
-                  <input
-                    type="search"
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search ticker or name"
-                    aria-label="Search holdings"
-                    className={`h-[40px] w-full cursor-text rounded-full border pl-9 pr-4 text-[16px] placeholder:text-sm sm:h-9 sm:text-sm [&::-webkit-search-cancel-button]:appearance-none ${textInput(isDark)}`}
-                  />
+          <div ref={holdingsRef} className="scroll-mt-4">
+            <Card title="Holdings" count={filtered.length} flush>
+              <div className="flex flex-wrap items-center gap-3 px-5 py-3 touch:px-4">
+                <div className="min-w-[200px] flex-1">
+                  <SearchField value={q} onChange={setQ} placeholder="Search holdings" label="Search holdings" />
                 </div>
                 {accounts.length > 1 && (
-                  <div className="max-w-[260px] [&>button]:max-w-full">
-                    <Menu
-                      value={acct}
-                      isDark={isDark}
-                      size="md"
+                  <div className="w-full sm:w-[220px]">
+                    <Select
                       label="Account"
+                      size="sm"
+                      value={acct}
                       onChange={setAcct}
-                      options={[{ value: "all", label: "All accounts" }, ...accounts.map((a) => ({ value: a.account_id, label: accountLabel(a), hint: a.institution_name }))]}
+                      options={[{ value: "all", label: "Every account" }, ...accounts.map((a) => ({ value: a.account_id, label: accountName(a) }))]}
                     />
                   </div>
                 )}
-                {cls !== "all" && (
-                  <button
-                    type="button"
-                    onClick={() => setCls("all")}
-                    className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[12px] font-medium ${hairline} ${
-                      isDark ? "hover:bg-white/[0.05]" : "hover:bg-gray-50"
-                    }`}
-                  >
-                    {classDot(cls)}
-                    {CLASS_BY_KEY.get(cls)!.label}
-                    <Icon d={PATHS.close} className="h-3 w-3 opacity-60" strokeWidth={2} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {firstLoad ? (
-              <div className="space-y-0">
-                {Array.from({ length: 7 }, (_, i) => (
-                  <div key={i} className={`flex items-center gap-3 px-5 py-3 ${i ? `border-t ${hairlineOf(isDark)}` : ""}`}>
-                    <Bone className="h-5 w-11" />
-                    <Bone className="h-3 w-48" />
-                    <Bone className="ml-auto h-3 w-20" />
-                    <Bone className="hidden h-3 w-16 sm:block" />
-                  </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="px-4 py-14 text-center">
-                <Icon d={PATHS.search} className={`mx-auto h-6 w-6 ${t3}`} strokeWidth={1.4} />
-                <p className={`mt-3 text-sm font-medium ${t1}`}>{rows.length ? "No holdings match" : "No positions reported"}</p>
-                <p className={`mt-1 text-xs ${t2}`}>{rows.length ? "Try a different search or account." : "These accounts report balances but no individual positions."}</p>
-                {isFiltered && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQ("");
-                      setAcct("all");
-                      setCls("all");
-                    }}
-                    className={`mt-3 cursor-pointer text-[12px] font-medium ${accentText}`}
-                  >
-                    Clear filters
-                  </button>
-                )}
-              </div>
-            ) : (
-              // Sized by the card, not the screen: beside the iPad rail a
-              // "wide" screen still leaves a narrow column.
-              <div className="@container">
-                {/* Table: wide cards */}
-                <div className="hidden overflow-x-auto @3xl:block">
-                  <table className="w-full text-sm tabular-nums">
-                    <thead>
-                      <tr className={`border-b text-left text-xs font-medium ${t2} ${ruleBorder(isDark)}`}>
-                        {sortTh("Holding", "name")}
-                        {sortTh("Account", "account", "left", "hidden @6xl:table-cell")}
-                        {sortTh("Quantity", "quantity", "right", "hidden @7xl:table-cell")}
-                        {sortTh("Price", "price", "right", "hidden @4xl:table-cell")}
-                        {sortTh("Value", "value", "right")}
-                        {sortTh("Cost basis", "cost", "right", "hidden @6xl:table-cell")}
-                        {sortTh("Gain / loss", "gain", "right")}
-                        {sortTh("Weight", "weight", "right", "w-[120px]")}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((r, i) => (
-                        <tr
-                          key={`${r.account_id}-${r.security_id}`}
-                          className={`transition-colors ${i ? `border-t ${hairlineOf(isDark)}` : ""} ${isDark ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
-                        >
-                          <td className="w-full max-w-0 py-2.5 pl-5 pr-2">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <span className={tickerBadge} title={r.ticker ?? undefined}>
-                                {r.ticker || "—"}
-                              </span>
-                              <span className="min-w-0">
-                                <span className={`block max-w-[320px] truncate text-[13px] ${t1}`} title={r.name}>
-                                  {r.name}
-                                </span>
-                                <span className={`flex items-center gap-1.5 text-[11px] ${t2}`}>
-                                  {classDot(r.klass)}
-                                  {CLASS_BY_KEY.get(r.klass)!.label}
-                                  <span className="truncate @6xl:hidden">· {r.accountName}</span>
-                                </span>
-                              </span>
-                            </div>
-                          </td>
-                          <td className={`hidden max-w-[200px] truncate px-2 py-2.5 text-[12.5px] @6xl:table-cell ${t2}`} title={`${r.institution} · ${r.accountName}`}>
-                            {r.accountName}
-                          </td>
-                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @7xl:table-cell ${t2}`}>{qtyFmt.format(r.quantity)}</td>
-                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @4xl:table-cell ${t2}`}>{usd2.format(r.price)}</td>
-                          <td className={`px-2 py-2.5 text-right text-[13px] font-medium ${t1}`}>{fmtUSD(r.value)}</td>
-                          <td className={`hidden px-2 py-2.5 text-right text-[12.5px] @6xl:table-cell ${t2}`}>{r.klass === "cash" || r.cost_basis == null ? "—" : fmtUSD(r.cost_basis)}</td>
-                          <td className="px-2 py-2.5 text-right">
-                            {r.gain == null ? (
-                              <span className={t3}>—</span>
-                            ) : (
-                              <span className={`inline-flex flex-col items-end leading-tight ${gainTone(r.gain)}`}>
-                                <span className="text-[12.5px] font-medium">{fmtSigned(r.gain)}</span>
-                                {r.gainPct != null && <span className="text-[11px] opacity-80">{fmtPct(r.gainPct)}</span>}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 pl-2 pr-5 text-right">
-                            <span className="inline-flex items-center justify-end gap-2">
-                              <span className={`hidden h-1 w-12 overflow-hidden rounded-full @4xl:block ${isDark ? "bg-white/[0.06]" : "bg-gray-100"}`} aria-hidden>
-                                <span className="block h-full rounded-full" style={{ width: `${maxWeight > 0 ? (r.weight / maxWeight) * 100 : 0}%`, background: accent }} />
-                              </span>
-                              <span className={`w-11 text-[12px] ${t2}`}>{fmtPct(r.weight, false)}</span>
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="w-full sm:w-[200px]">
+                  <Select<AssetClass | "all">
+                    label="Asset type"
+                    size="sm"
+                    value={cls}
+                    onChange={setCls}
+                    options={[{ value: "all", label: "Every type" }, ...allocation.list.map((c) => ({ value: c.key as AssetClass | "all", label: CLASS_LABEL[c.key] }))]}
+                  />
                 </div>
-
-                {/* Cards: phones and narrow cards */}
-                <div className="flex flex-col gap-2 p-3 @3xl:hidden">
-                  <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar">
-                    {(
-                      [
-                        ["value", "Value"],
-                        ["gain", "Gain"],
-                        ["weight", "Weight"],
-                        ["name", "A–Z"],
-                      ] as const
-                    ).map(([k, label]) => (
-                      <button
-                        key={k}
-                        type="button"
-                        onClick={() => onSort(k)}
-                        aria-pressed={sort.key === k}
-                        className={`inline-flex h-[40px] shrink-0 cursor-pointer items-center gap-1 rounded-full border px-3.5 text-[12px] font-medium ${hairline} ${
-                          sort.key === k ? (isDark ? "bg-white/[0.08] text-white" : "bg-gray-900 text-white") : t2
-                        }`}
+              </div>
+              <Table
+                caption="Holdings"
+                columns={columns}
+                rows={[...filtered].sort((a, b) => b.value - a.value)}
+                rowKey={(r) => `${r.account_id}:${r.security_id}`}
+                phoneRow={(r) => ({
+                  title: r.ticker ? `${r.ticker} · ${fundName(r.name)}` : fundName(r.name),
+                  secondary: [
+                    r.account,
+                    `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(r.quantity)} units`,
+                    r.gain != null ? `${format.money(r.gain, { precision: "dollars", sign: "always" })} unrealized` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  trailing: format.money(r.value),
+                })}
+                empty={
+                  <Empty
+                    size="section"
+                    action={
+                      <Button
+                        variant="quiet"
+                        size="sm"
+                        onClick={() => {
+                          setQ("");
+                          setAcct("all");
+                          setCls("all");
+                        }}
                       >
-                        {label}
-                        {sort.key === k && <Icon d={sort.dir === "asc" ? PATHS.up : PATHS.down} className="h-3 w-3" strokeWidth={2} />}
-                      </button>
-                    ))}
-                  </div>
-                  {filtered.map((r) => (
-                    <div key={`${r.account_id}-${r.security_id}`} className={`rounded-xl border p-3 ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-gray-200 bg-white"}`}>
-                      <div className="flex items-start gap-3">
-                        <span className={`${tickerBadge} mt-0.5`}>{r.ticker || "—"}</span>
-                        <span className="min-w-0 flex-1">
-                          <span className={`block truncate text-[13px] font-medium ${t1}`}>{r.name}</span>
-                          <span className={`block truncate text-[11px] ${t2}`}>{r.accountName}</span>
-                        </span>
-                        <span className="shrink-0 text-right">
-                          <span className={`block text-[13px] font-medium ${t1}`}>{fmtUSD(r.value)}</span>
-                          {r.gain != null ? (
-                            <span className={`block text-[11px] ${gainTone(r.gain)}`}>
-                              {fmtSigned(r.gain)}
-                              {r.gainPct != null && ` · ${fmtPct(r.gainPct)}`}
-                            </span>
-                          ) : (
-                            <span className={`block text-[11px] ${t3}`}>{CLASS_BY_KEY.get(r.klass)!.label}</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className={`mt-2.5 flex items-center justify-between border-t pt-2 text-[11px] ${t2} ${hairlineOf(isDark)}`}>
-                        <span>
-                          {qtyFmt.format(r.quantity)} × {usd2.format(r.price)}
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          {classDot(r.klass)}
-                          {fmtPct(r.weight, false)} of portfolio
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
+                        Clear filters
+                      </Button>
+                    }
+                  >
+                    No holdings match these filters.
+                  </Empty>
+                }
+              />
+            </Card>
+          </div>
 
-          {/* ── Accounts + Income ──────────────────────────────────────── */}
-          <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
-            <section className={`overflow-hidden rounded-2xl lg:col-span-7 ${surface} ${enter}`}>
-              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
-                <p className={kicker}>Accounts</p>
-                <Link to="/treasury" className={linkQuiet}>
-                  Treasury →
-                </Link>
-              </div>
-              {firstLoad ? (
-                <div className="space-y-3 p-5">
-                  {[0, 1].map((i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <Bone className="h-8 w-8 shrink-0" />
-                      <div className="flex-1 space-y-1.5">
-                        <Bone className="h-3 w-1/2" />
-                        <Bone className="h-2.5 w-1/3" />
-                      </div>
-                      <Bone className="h-3 w-20" />
-                    </div>
-                  ))}
-                </div>
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <Card
+              title="Dividends and interest"
+              info="Dividends, interest and capital-gain distributions, counted once whether paid out or reinvested. Withdrawals and contributions aren’t income and are left out."
+            >
+              {!income ? (
+                <p className="text-body text-ink-2">The custodians’ transactions aren’t available yet, so income can’t be shown.</p>
               ) : (
-                <ul className={`divide-y ${rowBorder}`}>
-                  {[...accounts]
-                    .sort((a, b) => accountValue(b) - accountValue(a))
-                    .map((a) => {
-                      const v = accountValue(a);
-                      const on = acct === a.account_id;
-                      return (
-                        <li key={a.account_id}>
-                          <button
-                            type="button"
-                            onClick={() => focusHoldings({ acct: on ? "all" : a.account_id, cls: "all" })}
-                            className={`flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left transition-colors ${rowHover} ${on ? (isDark ? "bg-white/[0.035]" : "bg-gray-50") : ""}`}
-                            title="Show this account's holdings"
-                          >
-                            <InstitutionDisc a={a} />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[12.5px] font-medium">{accountLabel(a)}</span>
-                              <span className={`block truncate text-[11px] ${textMuted}`}>{[a.institution_name, subtypeLabel(a.subtype), a.entity_name].filter(Boolean).join(" · ")}</span>
-                            </span>
-                            <span className="shrink-0 text-right">
-                              <span className="block text-[12.5px] font-medium">{fmtUSD(v)}</span>
-                              <span className={`block text-[11px] ${textMuted}`}>
-                                {a.holdings_count} holding{a.holdings_count === 1 ? "" : "s"}
-                                {total > 0 ? ` · ${fmtPct((v / total) * 100, false)}` : ""}
-                              </span>
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  {data?.errors.map((e) => (
-                    <li key={`err-${e.item_id}`} className="flex items-center gap-3 px-5 py-3">
-                      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-600"}`}>
-                        <Icon d={PATHS.sync} className="h-3.5 w-3.5" strokeWidth={2} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12.5px] font-medium">{e.institution}</span>
-                        <span className={`block truncate text-[11px] ${textMuted}`}>{e.consent ? "Holdings not shared yet" : e.reconnect ? "Needs reconnecting" : "Temporarily unavailable"}</span>
-                      </span>
-                      {e.consent ? (
-                        <button
-                          type="button"
-                          disabled={!!consenting}
-                          onClick={() => void connectHoldings(e.item_id)}
-                          className={`${TAP_Y} shrink-0 cursor-pointer text-[11.5px] font-medium ${accentText} hover:underline disabled:opacity-60`}
-                        >
-                          {consenting === e.item_id ? "Opening Plaid…" : "Connect holdings →"}
-                        </button>
-                      ) : (
-                        <Link to="/treasury" className={`${TAP_Y} shrink-0 text-[11.5px] font-medium ${accentText} hover:underline`}>
-                          Reconnect →
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className={`overflow-hidden rounded-2xl lg:col-span-5 ${surface} ${enter}`}>
-              <div className={`flex items-center justify-between gap-3 border-b px-5 py-3.5 ${hairline}`}>
-                <p className={kicker}>Dividends & interest</p>
-                {data?.income && <span className={`text-[11px] ${textMuted}`}>Cash paid, reinvestments excluded</span>}
-              </div>
-              {firstLoad ? (
-                <div className="space-y-4 p-5">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Bone className="h-10" />
-                    <Bone className="h-10" />
-                  </div>
-                  <Bone className="h-[72px] w-full" />
-                </div>
-              ) : !data?.income ? (
-                <div className="px-5 py-10 text-center">
-                  <p className={`text-[12px] ${textMuted}`}>Income history isn't available from these connections yet.</p>
-                </div>
-              ) : (
-                <div className="px-5 pb-4 pt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="min-w-0">
-                      <p className={kicker}>Last 90 days</p>
-                      <p className="mt-1 text-[18px] font-semibold tracking-[-0.01em]">{fmtUSD(data.income.last90)}</p>
-                      <p className={`truncate text-[11px] ${textMuted}`}>
-                        {fmtUSD(data.income.dividends90)} dividends · {fmtUSD(data.income.interest90)} interest
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className={kicker}>Trailing 12 months</p>
-                      <p className="mt-1 text-[18px] font-semibold tracking-[-0.01em]">{fmtUSD(data.income.ttm)}</p>
-                      <p className={`truncate text-[11px] ${textMuted}`}>≈ {fmtUSD(data.income.ttm / 12)} / month</p>
-                    </div>
-                  </div>
-
-                  {/* Monthly bars: one hue, rounded tops on a shared baseline. */}
-                  <div className="mt-4">
-                    <div className="flex h-[72px] items-end gap-[3px]" onPointerLeave={() => setIncomeHover(null)}>
-                      {months.map((m, i) => (
-                        <div key={m.key} className="flex h-full flex-1 cursor-default items-end" onPointerEnter={() => setIncomeHover(i)} aria-label={`${m.long}: ${fmtUSD(m.total)}`}>
-                          <div
-                            className="w-full rounded-t-[4px] transition-opacity"
-                            style={{
-                              height: `${Math.max(m.total > 0 ? 4 : 1.5, (m.total / monthMax) * 100)}%`,
-                              background: m.total > 0 ? accent : isDark ? "rgba(255,255,255,0.08)" : "rgba(17,24,39,0.08)",
-                              opacity: incomeHover == null || incomeHover === i ? 1 : 0.4,
-                            }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className={`mt-1.5 flex justify-between text-[10.5px] ${textMuted}`}>
-                      <span>{months[0].label}</span>
-                      <span>{months[months.length - 1].label}</span>
-                    </div>
-                    <p className={`mt-2 h-4 text-[11.5px] ${textSoft}`} aria-live="polite">
-                      {incomeHover != null ? (
-                        <>
-                          <span className={isDark ? "text-gray-100" : "text-gray-900"}>{months[incomeHover].long}</span> · {fmtUSD(months[incomeHover].total)}
-                          {months[incomeHover].total > 0 && (
-                            <span className={textMuted}>
-                              {" "}
-                              ({fmtUSD(months[incomeHover].dividends)} div · {fmtUSD(months[incomeHover].interest)} int)
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className={textMuted}>Point at a month for its detail</span>
-                      )}
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-title text-ink tabular-nums">{format.money(incomeTotal, { precision: "dollars" })}</p>
+                    <p className="text-small text-ink-2">
+                      {covered ? `Since ${format.date(covered.from, "medium")}, ${covered.months} months: as far back as the custodians’ transactions go.` : "Over the months shown."}
+                      {pace != null && ` At this pace, about ${format.money(pace, { precision: "dollars" })} a year.`}
                     </p>
                   </div>
-
-                  {data.income.bySecurity.length > 0 && (
-                    <div className={`mt-3 border-t pt-3 ${hairline}`}>
-                      <p className={kicker}>Top payers · 12 mo</p>
-                      <ul className="mt-2 space-y-1.5">
-                        {data.income.bySecurity.slice(0, 5).map((s) => (
-                          <li key={`${s.ticker}-${s.name}`} className="flex items-center gap-2.5">
-                            <span className={tickerBadge}>{s.ticker || "—"}</span>
-                            <span className={`min-w-0 flex-1 truncate text-[12px] ${textSoft}`}>{s.name}</span>
-                            <span className="shrink-0 text-[12px] font-medium">{fmtUSD(s.amount)}</span>
-                          </li>
-                        ))}
-                      </ul>
+                  {months.length > 0 && (
+                    <div className="flex h-[96px] items-end gap-1" role="group" aria-label="Income by month">
+                      {months.map((m) => (
+                        <button
+                          key={m.key}
+                          type="button"
+                          onClick={() => setMonth(m.key)}
+                          onFocus={() => setMonth(m.key)}
+                          aria-pressed={shownMonth?.key === m.key}
+                          aria-label={`${m.label}: ${format.money(m.total)}`}
+                          className="flex h-full min-w-0 flex-1 flex-col justify-end rounded-mark"
+                        >
+                          <span
+                            className={`block w-full rounded-t-[2px] ${shownMonth?.key === m.key ? "bg-ink" : "bg-ink-3"}`}
+                            style={{ height: `${Math.max(2, (Math.max(0, m.total) / monthMax) * 100)}%` }}
+                          />
+                        </button>
+                      ))}
                     </div>
+                  )}
+                  {shownMonth && (
+                    <p className="text-small text-ink-2 tabular-nums">
+                      {shownMonth.label}: dividends {format.money(shownMonth.dividends)} · interest {format.money(shownMonth.interest)}
+                      {shownMonth.capitalGains ? ` · capital gains ${format.money(shownMonth.capitalGains)}` : ""}. Choose a month for its detail.
+                    </p>
+                  )}
+                  {income.bySecurity.length > 0 && (
+                    <ul className="flex flex-col border-t border-line pt-2">
+                      {income.bySecurity.slice(0, 5).map((s) => (
+                        <li key={`${s.ticker}-${s.name}`} className="flex min-h-8 items-center justify-between gap-3 text-body">
+                          <span className="min-w-0 truncate text-ink">{s.ticker ? `${s.ticker} · ${fundName(s.name)}` : fundName(s.name)}</span>
+                          <span className="shrink-0 text-ink tabular-nums">{format.money(s.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}
-            </section>
+            </Card>
+
+            <Card title="Activity, last 90 days" flush>
+              {activity.length === 0 ? (
+                <p className="px-5 py-4 text-body text-ink-2 touch:px-4">No trades, dividends or transfers in the last 90 days.</p>
+              ) : (
+                <List label="Recent activity">
+                  {activity.map((t, i) => (
+                    <ListRow
+                      key={`${t.date}-${i}`}
+                      title={t.security_name || t.name}
+                      secondary={[
+                        format.date(t.date, "short"),
+                        tidyType(t.type, t.subtype),
+                        byId.get(t.account_id) ? accountName(byId.get(t.account_id)!) : null,
+                        t.quantity ? `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(Math.abs(t.quantity))} units` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      trailing={<span className={t.amount < 0 ? "text-positive" : "text-ink"}>{format.money(-t.amount, { sign: "always" })}</span>}
+                    />
+                  ))}
+                </List>
+              )}
+              <p className="border-t border-line px-5 py-3 text-small text-ink-2 touch:px-4">Realized gains and losses aren’t computed here: see each custodian’s Form 1099-B.</p>
+            </Card>
           </div>
+
+          <p className="max-w-[68ch] text-small text-ink-2">
+            Positions, prices and cost basis as reported by {format.list(institutions)} through Plaid, fetched {format.dateTime(data.asOf, { zone: true })}.
+            {recordedFrom ? ` The chart before ${format.date(recordedFrom, "short")} is estimated from transactions and Yahoo Finance closing prices.` : ""} Not an account statement or a tax document.
+          </p>
         </>
       )}
+    </Page>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-small font-medium text-ink-2">{label}</dt>
+      <dd className="mt-1 text-title text-ink tabular-nums">{value}</dd>
+      {sub && <dd className="text-small text-ink-2">{sub}</dd>}
     </div>
   );
+}
+
+/** "cash · qualified dividend" → "Qualified dividend". */
+function tidyType(type: string, subtype: string | null): string {
+  const s = (subtype || type || "").replace(/_/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Activity";
 }

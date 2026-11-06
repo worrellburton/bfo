@@ -5,21 +5,7 @@ import { currentUser, fail, handleError, sb, type AppUser } from "../lib/auth.js
 import { speak, transcribe, VoiceError } from "../lib/voice.js";
 import { mintRealtimeSecret, RealtimeError, spokenInstructions } from "../lib/realtime.js";
 import { readCollection } from "../lib/tree.js";
-import {
-  ASK_MODEL,
-  MAX_TOOL_ROUNDS,
-  provenance,
-  runTool,
-  scopeFor,
-  systemPrompt,
-  titleFrom,
-  toolLabel,
-  toolsFor,
-  transcript,
-  type ChatMessageRow,
-  type ChatRow,
-  type Source,
-} from "../lib/ask.js";
+import { ASK_MODEL, MAX_TOOL_ROUNDS, provenance, runTool, scopeFor, systemPrompt, titleFrom, toolLabel, toolsFor, transcript, type ChatMessageRow, type ChatRow, type Source } from "../lib/ask.js";
 
 /**
  * Ask BFO (lib/ask.ts). Conversations belong to the person who had them and
@@ -76,7 +62,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const view = String(req.query.view ?? "");
       if (view === "chats") {
         const before = typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before)) ? new Date(req.query.before).toISOString() : null;
-        const rows = (await sb<ChatRow[]>(`chats?user_id=eq.${me.id}${before ? `&updated_at=lt.${encodeURIComponent(before)}` : ""}&select=id,title,updated_at&order=updated_at.desc,id.desc&limit=${CHAT_PAGE + 1}`)) ?? [];
+        const rows =
+          (await sb<ChatRow[]>(
+            `chats?user_id=eq.${me.id}${before ? `&updated_at=lt.${encodeURIComponent(before)}` : ""}&select=id,title,updated_at&order=updated_at.desc,id.desc&limit=${CHAT_PAGE + 1}`,
+          )) ?? [];
         return res.status(200).json({ chats: rows.slice(0, CHAT_PAGE).map((c) => ({ id: c.id, title: c.title ?? "New chat", updatedAt: c.updated_at })), more: rows.length > CHAT_PAGE });
       }
       if (view === "chat") {
@@ -86,7 +75,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const rows = (await sb<ChatMessageRow[]>(`chat_messages?chat_id=eq.${id}&select=role,content,created_at&order=id.asc&limit=400`)) ?? [];
         return res.status(200).json({
           chat: { id: chat.id, title: chat.title ?? "New chat", updatedAt: chat.updated_at },
-          messages: rows.map((m) => ({ role: m.role, text: typeof m.content === "string" ? m.content : String((m.content as { text?: string })?.text ?? ""), at: m.created_at, ...sourcesOf(m.content) })),
+          messages: rows.map((m) => ({
+            role: m.role,
+            text: typeof m.content === "string" ? m.content : String((m.content as { text?: string })?.text ?? ""),
+            at: m.created_at,
+            ...sourcesOf(m.content),
+          })),
         });
       }
       return fail(res, 400, "bad_view");
@@ -292,7 +286,11 @@ async function send(res: VercelResponse, me: NonNullable<Awaited<ReturnType<type
       emit({ type: "text", delta: answer });
     }
     if (sources.length) emit({ type: "sources", sources });
-    await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role: "assistant", content: sources.length ? { text: answer.trim(), sources } : { text: answer.trim() } }, prefer: "return=minimal" });
+    await sb("chat_messages", {
+      method: "POST",
+      body: { chat_id: chat.id, role: "assistant", content: sources.length ? { text: answer.trim(), sources } : { text: answer.trim() } },
+      prefer: "return=minimal",
+    });
     await sb(`chats?id=eq.${chat.id}`, { method: "PATCH", body: { updated_at: new Date().toISOString() } }).catch((err) => console.error("ask: couldn't touch the chat", err));
     emit({ type: "done" });
   } catch (err) {
@@ -300,9 +298,11 @@ async function send(res: VercelResponse, me: NonNullable<Awaited<ReturnType<type
     const text = err instanceof Anthropic.APIError ? `The assistant couldn't answer (${err.status}).` : "Something went wrong while answering.";
     emit({ type: "error", message: text });
     if (answer.trim())
-      await sb("chat_messages", { method: "POST", body: { chat_id: chat.id, role: "assistant", content: sources.length ? { text: answer.trim(), sources } : { text: answer.trim() } }, prefer: "return=minimal" }).catch((e) =>
-        console.error("ask: couldn't save the partial answer", e),
-      );
+      await sb("chat_messages", {
+        method: "POST",
+        body: { chat_id: chat.id, role: "assistant", content: sources.length ? { text: answer.trim(), sources } : { text: answer.trim() } },
+        prefer: "return=minimal",
+      }).catch((e) => console.error("ask: couldn't save the partial answer", e));
   }
   res.end();
 }

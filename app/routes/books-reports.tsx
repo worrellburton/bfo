@@ -1,198 +1,134 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+/**
+ * Books › Reports: revenue and expenses (cash basis), the connected
+ * balances, and the statements (cash flow, trial balance, 1099 worksheet),
+ * for any set of entities and year. The view, entities and year live in the
+ * URL, so a drill-down's back link, a refresh or a shared link restores the
+ * same report. Exports carry the same scope line as the screen.
+ */
+
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { authFetch } from "../auth";
-import { useTheme } from "../theme";
 import { csvText } from "../books-csv";
+import { BalanceView } from "../books-report-balance";
+import { KpiStrip } from "../books-report-kit";
+import { BASIS_LEGEND, cleanName, periodText, readPnl, readSheet, readStatements, readWorksheet, scopeText, type Pnl, type Sheet, type Statements, type Worksheet } from "../books-report-model";
+import { PnlView } from "../books-report-pnl";
+import { StatementsView } from "../books-report-statements";
+import { Banner, Button, Menu, MultiSelect, Page, PageHeader, Segmented, Select, Skeleton, format, usePhone, useDocumentTitle, type MenuItem } from "../ui";
 
 export function meta() {
-  return [{ title: "BFO - Books · Reports" }];
+  return [{ title: "Reports · Books · BFO" }];
 }
 
-type PnlRow = { label: string; monthly: number[]; total: number };
-type Pnl = {
-  year: number;
-  entity: string;
-  transaction_count: number;
-  eliminated_count: number;
-  revenue: PnlRow[];
-  operating: PnlRow[];
-  other: PnlRow[];
-  revenue_monthly: number[];
-  operating_monthly: number[];
-  other_monthly: number[];
-  operating_income_monthly: number[];
-  net_monthly: number[];
-  net_total: number;
-  transfers: { rows: PnlRow[]; in: number[]; out: number[]; net: number[]; total: number };
-  intercompany: { in: number[]; out: number[]; net: number[]; total: number };
-};
-
+type View = "pnl" | "balance" | "statements";
 type Entity = { id: string; name: string };
 
-type BsRow = { label: string; detail: string; balance: number };
-type BalanceSheet = {
-  as_of: string | null;
-  sections: {
-    cash: { rows: BsRow[]; total: number };
-    investments: { rows: BsRow[]; total: number };
-    loans: { rows: BsRow[]; total: number };
-    credit: { rows: BsRow[]; total: number };
-  };
-  total_assets: number;
-  total_liabilities: number;
-  net_worth: number;
-};
+const VIEWS: Array<{ value: View; label: string; short: string }> = [
+  { value: "pnl", label: "Revenue & expenses", short: "Revenue" },
+  { value: "balance", label: "Balances", short: "Balances" },
+  { value: "statements", label: "Statements", short: "Statements" },
+];
 
-function moneyFull(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const thisYear = () => String(new Date().getFullYear());
+
+/** Hand the browser a CSV: the scope lines first, then the header and rows. */
+function downloadCsv(name: string, scope: string[], header: string[], rows: Array<Array<string | number | null>>) {
+  const line = (cells: Array<string | number | null>) => cells.map((c) => (typeof c === "number" ? `"${c.toFixed(2)}"` : csvText(c ?? ""))).join(",");
+  const csv = [...scope.map((s) => line([s])), "", line(header), ...rows.map(line)].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function money(n: number): string {
-  if (Math.round(n) === 0) return "—";
-  const v = Math.abs(Math.round(n)).toLocaleString("en-US");
-  return n < 0 ? `($${v})` : `$${v}`;
+async function getJson(path: string, fallback: string): Promise<unknown> {
+  const res = await authFetch(path);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { message?: string })?.message || fallback);
+  return data;
 }
 
 export default function BooksReports() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
   const navigate = useNavigate();
-
-  // The report's state lives in the URL, so a drill-down's back link (or a
-  // refresh, or a shared link) restores exactly the view you were on.
-  const [urlParams, setUrlParams] = useSearchParams();
+  const phone = usePhone();
+  const [params, setParams] = useSearchParams();
   const [entities, setEntities] = useState<Entity[]>([]);
-  // Empty selection = all entities.
-  const [selected, setSelected] = useState<Set<string>>(() => {
-    const e = urlParams.get("entity");
-    return e && e !== "all" ? new Set(e.split(",").filter(Boolean)) : new Set();
+  const [selected, setSelected] = useState<string[]>(() => {
+    const e = params.get("entity");
+    return e && e !== "all" ? e.split(",").filter(Boolean) : [];
   });
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
-  const [year, setYear] = useState(() => (/^\d{4}$/.test(urlParams.get("year") ?? "") ? urlParams.get("year")! : String(new Date().getFullYear())));
-  const [pnl, setPnl] = useState<Pnl | null>(null);
-  const [view, setView] = useState<"pnl" | "balance" | "statements">(() => {
-    const v = urlParams.get("view");
+  const [year, setYear] = useState(() => (/^\d{4}$/.test(params.get("year") ?? "") ? params.get("year")! : thisYear()));
+  const [view, setView] = useState<View>(() => {
+    const v = params.get("view");
     return v === "balance" || v === "statements" ? v : "pnl";
   });
-  const [sheet, setSheet] = useState<BalanceSheet | null>(null);
-  const [statements, setStatements] = useState<any | null>(null);
-  const [tax1099, setTax1099] = useState<any | null>(null);
+  const [asOf, setAsOf] = useState<string>(() => (/^\d{4}-\d{2}-\d{2}$/.test(params.get("as_of") ?? "") ? params.get("as_of")! : "latest"));
+  const [pnl, setPnl] = useState<Pnl | null>(null);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [statements, setStatements] = useState<Statements | null>(null);
+  const [worksheet, setWorksheet] = useState<Worksheet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  // The frozen label column casts a soft edge once a table scrolls sideways.
-  const [pnlXScrolled, setPnlXScrolled] = useState(false);
-  const [flowXScrolled, setFlowXScrolled] = useState(false);
-  // Collapsed P&L sections still show their total row.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const toggleSection = (k: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      next.has(k) ? next.delete(k) : next.add(k);
-      return next;
-    });
+  const [attempt, setAttempt] = useState(0);
+  const [exporting, setExporting] = useState(false);
 
-  const entityParam = selected.size === 0 ? "all" : [...selected].join(",");
+  useDocumentTitle("Reports", "Books");
 
-  // Mirror the current view into the URL (replace — no history spam).
+  const entityParam = selected.length ? selected.join(",") : "all";
+  const scope = scopeText(selected, entities);
+  const entityCount = selected.length || entities.length;
+
+  // Mirror the report into the URL (replace: no history spam).
   useEffect(() => {
     const next = new URLSearchParams();
     if (entityParam !== "all") next.set("entity", entityParam);
-    if (year !== String(new Date().getFullYear())) next.set("year", year);
+    if (year !== thisYear()) next.set("year", year);
     if (view !== "pnl") next.set("view", view);
-    if (next.toString() !== urlParams.toString()) setUrlParams(next, { replace: true });
+    if (view === "balance" && asOf !== "latest") next.set("as_of", asOf);
+    if (next.toString() !== params.toString()) setParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityParam, year, view]);
-
-  // Pull the year's transactions and hand the browser a CSV for the CPA.
-  const [exporting, setExporting] = useState(false);
-  async function downloadCsv() {
-    setExporting(true);
-    setError("");
-    try {
-      const rows: any[] = [];
-      for (let offset = 0; ; offset += 500) {
-        const res = await authFetch(`/api/books/data?report=transactions&year=${year}&entity=${encodeURIComponent(entityParam)}&limit=500&offset=${offset}`);
-        if (!res.ok) throw new Error("Couldn't export the transactions.");
-        const data = await res.json();
-        rows.push(...(data.transactions ?? []));
-        if ((data.transactions ?? []).length < 500) break;
-      }
-      // Text cells are formula-proofed (bank descriptions come from outside);
-      // the amount stays a plain quoted number.
-      const header = ["Date", "Entity", "Description", "Vendor", "Account", "Amount"];
-      const body = rows.map((t) => [...[t.date, t.entity_name, t.name, t.merchant_name, t.book_category].map(csvText), `"${(-t.amount).toFixed(2)}"`].join(","));
-      const csv = [header.join(","), ...body].join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `bfo-transactions-${year}.csv`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't export the transactions.");
-    } finally {
-      setExporting(false);
-    }
-  }
+  }, [entityParam, year, view, asOf]);
 
   useEffect(() => {
     void (async () => {
       try {
         const res = await authFetch("/api/books/data?report=meta");
-        if (res.ok) setEntities((await res.json()).entities ?? []);
+        if (res.ok) setEntities(((await res.json()).entities ?? []).map((e: Entity) => ({ id: e.id, name: cleanName(e.name) || e.name })));
       } catch {
-        // picker just stays short
+        // the picker stays short; the report still loads
       }
     })();
   }, []);
 
   useEffect(() => {
-    if (!pickerOpen) return;
-    function onDown(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [pickerOpen]);
-
-  useEffect(() => {
-    // A newer entity, year or view supersedes this one: a slow earlier
-    // response must not overwrite the report now selected.
+    // A newer choice supersedes this one: a slow earlier answer must not overwrite it.
     let cancelled = false;
     setLoading(true);
     setError("");
+    const e = encodeURIComponent(entityParam);
     void (async () => {
       try {
         if (view === "pnl") {
-          const res = await authFetch(`/api/books/data?report=pnl&entity=${encodeURIComponent(entityParam)}&year=${year}`);
-          const data = await res.json().catch(() => ({}));
-          if (cancelled) return;
-          if (!res.ok) throw new Error(data?.message || "Couldn't build the P&L.");
-          setPnl(data);
+          const data = readPnl(await getJson(`/api/books/data?report=pnl&entity=${e}&year=${year}`, "Couldn't build revenue and expenses."));
+          if (!cancelled) setPnl(data);
         } else if (view === "balance") {
-          const res = await authFetch(`/api/books/data?report=balance-sheet&entity=${encodeURIComponent(entityParam)}`);
-          const data = await res.json().catch(() => ({}));
-          if (cancelled) return;
-          if (!res.ok) throw new Error(data?.message || "Couldn't build the balance sheet.");
-          setSheet(data);
+          const data = readSheet(await getJson(`/api/books/data?report=balance-sheet&entity=${e}${asOf !== "latest" ? `&as_of=${asOf}` : ""}`, "Couldn't load the connected balances."));
+          if (!cancelled) setSheet(data);
         } else {
-          const [sRes, tRes] = await Promise.all([
-            authFetch(`/api/books/data?report=statements&entity=${encodeURIComponent(entityParam)}&year=${year}`),
-            authFetch(`/api/books/data?report=tax1099&entity=${encodeURIComponent(entityParam)}&year=${year}`),
+          const [s, t] = await Promise.all([
+            getJson(`/api/books/data?report=statements&entity=${e}&year=${year}`, "Couldn't build the statements."),
+            getJson(`/api/books/data?report=tax1099&entity=${e}&year=${year}`, "").catch(() => null),
           ]);
-          const sData = await sRes.json().catch(() => ({}));
-          const tData = tRes.ok ? await tRes.json().catch(() => null) : null;
-          if (cancelled) return;
-          if (!sRes.ok) throw new Error(sData?.message || "Couldn't build the statements.");
-          setStatements(sData);
-          setTax1099(tData);
+          if (!cancelled) {
+            setStatements(readStatements(s));
+            setWorksheet(readWorksheet(t));
+          }
         }
       } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Couldn't build that report.");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Couldn't build that report.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -200,743 +136,283 @@ export default function BooksReports() {
     return () => {
       cancelled = true;
     };
-  }, [entityParam, year, view]);
+  }, [entityParam, year, view, asOf, attempt]);
 
-  const subtle = "text-gray-500";
-  const border = isDark ? "border-white/10" : "border-gray-200";
-  const rowBorder = isDark ? "border-white/5" : "border-gray-100";
-  const card = isDark ? "glass-card" : "glass-card";
-  const stickyBg = isDark ? "bg-[#0b0b0b]" : "bg-white";
-  const faint = isDark ? "text-gray-700" : "text-gray-300";
-  const colHi = isDark ? "bg-white/[0.035]" : "bg-black/[0.02]";
-  const futureCol = isDark ? "bg-white/[0.012]" : "bg-black/[0.012]";
-  const bandBg = isDark ? "bg-white/[0.025]" : "bg-gray-50/80";
-  const hoverRow = isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50/70";
-  const thisYear = Number(year) === new Date().getFullYear();
-  const curMonth = thisYear ? new Date().getMonth() : -1;
-  const sectionKeys = ["revenue", "operating", "other", "transfers", "intercompany"];
-  const allCollapsed = sectionKeys.every((k) => collapsed.has(k));
-  const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(sectionKeys));
-
-  const colShadow = isDark ? "books-col-shadow-dark" : "books-col-shadow";
-
-  const num = "px-3 py-2 text-right whitespace-nowrap tabular-nums";
-  const sectionHead = `px-3 py-2.5 text-xs font-semibold ${subtle}`;
-
-  /** Walk into the transactions behind one cell. */
-  function drill(section: string, rowLabel: string | null, monthIndex: number | null) {
-    const params = new URLSearchParams({ entity: entityParam, year, section });
-    if (rowLabel != null) params.set("label", rowLabel);
-    if (monthIndex != null) params.set("month", String(monthIndex + 1));
-    navigate(`/books/reports/cell?${params}`);
+  /** Into the transactions behind one figure. */
+  function drill(section: string, label: string | null, column: { month?: number | null; col?: string | null } = {}) {
+    const q = new URLSearchParams({ entity: entityParam, year, section });
+    if (label != null) q.set("label", label);
+    if (column.month) q.set("month", String(column.month));
+    if (column.col) q.set("col", column.col);
+    if (view !== "pnl") q.set("view", view);
+    navigate(`/books/reports/cell?${q}`);
   }
 
-  // The button fills its cell (padding given back with negative margin), so
-  // a tap anywhere in the cell opens it.
-  const cellBtn = `block w-full text-right cursor-pointer rounded px-1 -mx-1 py-2 -my-2 transition-colors hover:underline decoration-dotted decoration-1 underline-offset-[3px] ${
-    isDark ? "hover:bg-white/10" : "hover:bg-black/5"
-  }`;
+  // ── Exports: the same scope line as the screen at the top of each file ──
 
-  function bodyRow(
-    rowLabel: string,
-    monthly: number[],
-    total: number,
-    section: string,
-    opts?: { bold?: boolean; headline?: boolean; color?: string; signColor?: boolean; indent?: boolean; drillLabel?: string | null },
-  ) {
-    // Per-cell colour by that cell's own sign (green up, red down) — so a
-    // negative year never paints a profitable month red.
-    const signTone = (v: number) => (v === 0 ? faint : v < 0 ? "text-rose-400" : "text-emerald-500");
-    const drillLabel = opts?.drillLabel === undefined ? rowLabel : opts.drillLabel;
-    const topBorder = opts?.headline ? `border-t-2 ${border}` : `border-t ${rowBorder}`;
-    const emphasis = opts?.headline || opts?.bold ? bandBg : `group ${hoverRow}`;
-    return (
-      <tr key={`${section}-${rowLabel}`} className={`${topBorder} ${opts?.bold || opts?.headline ? "font-semibold" : ""} ${emphasis}`}>
-        <td
-          className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r transition-colors ${rowBorder} ${stickyBg} ${isDark ? "group-hover:bg-[#101010]" : "group-hover:bg-gray-50"} ${opts?.indent ? "pl-6" : ""}`}
-        >
-          {(() => {
-            // "4000 Rental Income" → muted code, emphasized name. A plain
-            // account row's name walks to its full-year transaction list.
-            const m = /^(\d{4})\s+(.+)$/.exec(rowLabel);
-            const plain = !opts?.bold && !opts?.headline;
-            const inner =
-              m && plain ? (
-                <>
-                  <span className={`tabular-nums text-[11px] mr-1.5 ${faint}`}>{m[1]}</span>
-                  {m[2]}
-                </>
-              ) : (
-                rowLabel
-              );
-            if (!plain || !drillLabel) return inner;
-            return (
-              <button
-                className="block w-full py-2 -my-2 cursor-pointer hover:underline decoration-dotted underline-offset-2 text-left"
-                title={`Open ${rowLabel}`}
-                onClick={() => drill(section, drillLabel, null)}
-              >
-                {inner}
-              </button>
-            );
-          })()}
-        </td>
-        {monthly.map((v, i) => {
-          const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
-          const tone = opts?.signColor ? signTone(v) : (opts?.color ?? (v === 0 ? faint : v < 0 ? "text-rose-400" : ""));
-          return (
-            <td key={i} className={`${num} ${colBg} ${tone}`}>
-              {v === 0 ? (
-                // A month that hasn't happened yet stays blank, not dashed.
-                thisYear && i > curMonth ? (
-                  ""
-                ) : (
-                  money(v)
-                )
-              ) : (
-                <button className={cellBtn} title="View underlying transactions" aria-label={`${rowLabel}, ${MONTHS[i]}: view transactions`} onClick={() => drill(section, drillLabel, i)}>
-                  {money(v)}
-                </button>
-              )}
-            </td>
-          );
-        })}
-        <td className={`${num} font-semibold border-l ${border} ${colHi} ${opts?.signColor ? signTone(total) : (opts?.color ?? (total < 0 ? "text-rose-400" : ""))}`}>
-          {total === 0 ? (
-            money(total)
-          ) : (
-            <button className={cellBtn} title="View underlying transactions" aria-label={`${rowLabel}, full year: view transactions`} onClick={() => drill(section, drillLabel, null)}>
-              {money(total)}
-            </button>
-          )}
-        </td>
-      </tr>
-    );
-  }
+  const scopeLines = (what: string, period: string) => [
+    `${what}`,
+    `${scope} · ${period} · Cash basis · unaudited, prepared from bank feeds for internal use`,
+    `Exported ${format.dateTime(new Date())}`,
+  ];
 
-  /** Clickable section band — folds its line items. When folded and given
-   *  totals, the band itself carries the numbers (no separate total row). */
-  function sectionHeaderRow(id: string, label: string, extra?: string, totals?: { monthly: number[]; total: number; tone?: string }) {
-    const isCollapsed = collapsed.has(id);
-    const showInline = isCollapsed && !!totals;
-    return (
-      <tr
-        key={`head-${id}`}
-        onClick={() => toggleSection(id)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            toggleSection(id);
+  async function exportLedger() {
+    setExporting(true);
+    setError("");
+    try {
+      const e = encodeURIComponent(entityParam);
+      const res = await authFetch(`/api/books/data?report=ledger&year=${year}&entity=${e}`);
+      type LedgerRow = {
+        date: string;
+        transaction_id: string;
+        entity: string | null;
+        bank_account: string | null;
+        mask: string | null;
+        description: string | null;
+        vendor: string | null;
+        account: string;
+        statement_line: string;
+        type: string;
+        status: string;
+        bank_category: string | null;
+        amount: number;
+        receipts: number;
+      };
+      let rows: LedgerRow[];
+      let period = year;
+      if (res.ok) {
+        const data = (await res.json()) as { rows: LedgerRow[]; period?: { from: string; to: string | null } };
+        rows = data.rows;
+        period = periodText(year, data.period ?? null);
+      } else {
+        // An older server: page through the transactions, posted rows only.
+        rows = [];
+        for (let offset = 0; ; offset += 500) {
+          const r = await authFetch(`/api/books/data?report=transactions&year=${year}&entity=${e}&limit=500&offset=${offset}&summary=0`);
+          if (!r.ok) throw new Error("Couldn't export the general ledger.");
+          const page = ((await r.json()).transactions ?? []) as Array<Record<string, unknown>>;
+          for (const t of page) {
+            if (t.pending) continue;
+            rows.push({
+              date: String(t.date),
+              transaction_id: String(t.transaction_id),
+              entity: cleanName(t.entity_name as string) || null,
+              bank_account: null,
+              mask: null,
+              description: (t.name as string) ?? null,
+              vendor: (t.merchant_name as string) ?? null,
+              account: (t.book_category as string) ?? "Uncategorized",
+              statement_line: "",
+              type: String(t.type_override ?? t.txn_type ?? ""),
+              status: "posted",
+              bank_category: (t.plaid_category as string) ?? null,
+              amount: Number(t.amount),
+              receipts: 0,
+            });
           }
-        }}
-        tabIndex={0}
-        aria-expanded={!isCollapsed}
-        className={`border-t ${border} cursor-pointer select-none ${bandBg} ${isDark ? "hover:bg-white/[0.05]" : "hover:bg-black/[0.04]"}`}
-      >
-        <td colSpan={showInline ? 1 : 14} className={`${sectionHead} sticky left-0 border-r ${rowBorder} ${bandBg} whitespace-nowrap`}>
-          <span className="inline-flex items-center gap-1.5">
-            <svg className={`w-3 h-3 transition-transform duration-150 ${isCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-            </svg>
-            {label}
-            {extra && <span className="normal-case font-normal tracking-normal opacity-60">{extra}</span>}
-          </span>
-        </td>
-        {showInline && (
-          <>
-            {totals!.monthly.map((v, i) => {
-              const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
-              return (
-                <td key={i} className={`${num} font-semibold ${colBg} ${v === 0 ? faint : (totals!.tone ?? (v < 0 ? "text-rose-400" : ""))}`}>
-                  {v === 0 && thisYear && i > curMonth ? "" : money(v)}
-                </td>
-              );
-            })}
-            <td className={`${num} font-semibold border-l ${border} ${colHi} ${totals!.tone ?? (totals!.total < 0 ? "text-rose-400" : "")}`}>{money(totals!.total)}</td>
-          </>
-        )}
-      </tr>
-    );
+          if (page.length < 500) break;
+        }
+      }
+      downloadCsv(
+        `bfo-general-ledger-${year}.csv`,
+        [...scopeLines(`General ledger, ${year}`, period), "Amount: money out positive, money in negative, as the bank reports it. Posted transactions only."],
+        ["Date", "Transaction ID", "Entity", "Bank account", "Last four", "Description", "Vendor", "Account", "Statement line", "Type", "Status", "Bank category", "Amount", "Receipts"],
+        rows.map((t) => [
+          t.date,
+          t.transaction_id,
+          t.entity,
+          t.bank_account,
+          t.mask,
+          t.description,
+          t.vendor,
+          t.account,
+          t.statement_line,
+          t.type,
+          t.status,
+          t.bank_category,
+          t.amount,
+          String(t.receipts),
+        ]),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't export the general ledger.");
+    } finally {
+      setExporting(false);
+    }
   }
 
-  // The last two years, plus whatever year the URL opened on, so the picker
-  // always names the year on screen.
-  const years = [...new Set([year, ...[0, 1].map((d) => String(new Date().getFullYear() - d))])].sort().reverse();
-  const pickerLabel = selected.size === 0 ? "All entities" : selected.size === 1 ? (entities.find((e) => selected.has(e.id))?.name ?? "1 entity") : `${selected.size} entities`;
+  async function exportTrialBalance() {
+    setExporting(true);
+    try {
+      const s = statements ?? readStatements(await getJson(`/api/books/data?report=statements&entity=${encodeURIComponent(entityParam)}&year=${year}`, "Couldn't build the trial balance."));
+      downloadCsv(
+        `bfo-trial-balance-${year}.csv`,
+        [
+          ...scopeLines(`Trial balance, period activity, ${year}`, periodText(year, s.period)),
+          "Each bank and card account shows its net movement for the period, not its balance. Before eliminations.",
+        ],
+        ["Group", "Account", "Detail", "Debit", "Credit"],
+        [...s.trial_balance.rows.map((r) => [r.group, r.account, r.detail, r.debit, r.credit]), ["", "Totals", "", s.trial_balance.totals.debit, s.trial_balance.totals.credit]],
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't export the trial balance.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function exportPnl() {
+    setExporting(true);
+    try {
+      const p = pnl ?? readPnl(await getJson(`/api/books/data?report=pnl&entity=${encodeURIComponent(entityParam)}&year=${year}`, "Couldn't build revenue and expenses."));
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const rows: Array<Array<string | number | null>> = [];
+      const fig = (section: string, label: string, f: { monthly: number[]; total: number }) => rows.push([section, label, ...f.monthly, f.total]);
+      for (const b of p.sections) {
+        for (const l of b.lines) fig(b.title, l.label, l.figures);
+        if (b.rounding) fig(b.title, "Rounding", b.rounding);
+        fig(b.title, `Total ${b.title.toLowerCase()}`, b.total);
+        if (b.key === "operating") fig("", "Operating income", p.operating_income);
+      }
+      fig("", "Excess of receipts over disbursements", p.net);
+      for (const l of p.uncategorized.lines) fig("Uncategorized, needs review (outside the totals)", l.label, l.figures);
+      for (const b of p.flows) for (const l of b.lines) fig(`Outside the statement: ${b.title}`, l.label, l.figures);
+      downloadCsv(
+        `bfo-revenue-and-expenses-${year}.csv`,
+        [
+          ...scopeLines(`Revenue and expenses, cash basis, ${year}`, periodText(year, p.period)),
+          "Whole dollars. Revenue, other income and personal items read money in as positive; operating expenses read money out as positive.",
+        ],
+        ["Section", "Account", ...months, "Total"],
+        rows.map((r) => r.map((c) => (typeof c === "number" ? Math.round(c) : c))).map((r) => r.map((c) => (typeof c === "number" ? String(c) : c))),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't export revenue and expenses.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const exportItems: MenuItem[] = [
+    { label: "General ledger (CSV)", hint: "Every posted transaction", onSelect: () => void exportLedger(), disabled: exporting, disabledReason: "Exporting…" },
+    { label: "Revenue and expenses (CSV)", onSelect: () => void exportPnl(), disabled: exporting, disabledReason: "Exporting…" },
+    { label: "Trial balance (CSV)", onSelect: () => void exportTrialBalance(), disabled: exporting, disabledReason: "Exporting…" },
+  ];
+
+  // ── The pickers ──
+
+  const years = useMemo(() => {
+    const now = Number(thisYear());
+    return [...new Set([year, ...[0, 1, 2].map((d) => String(now - d))])].sort().reverse();
+  }, [year]);
+
+  const asOfOptions = useMemo(() => {
+    const opts = [{ value: "latest", label: "Latest reading" }];
+    const from = sheet?.history_from;
+    if (from) {
+      const now = new Date();
+      for (let i = 1; i <= 24; i++) {
+        const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 0));
+        const iso = end.toISOString().slice(0, 10);
+        if (iso < from) break;
+        opts.push({ value: iso, label: `End of ${format.date(iso, "medium")}` });
+      }
+    }
+    if (asOf !== "latest" && !opts.some((o) => o.value === asOf)) opts.push({ value: asOf, label: format.date(asOf, "medium") });
+    return opts;
+  }, [sheet?.history_from, asOf]);
+
+  const context =
+    view === "balance"
+      ? `${scope} · ${sheet?.as_of && !loading ? (sheet.requested_as_of ? `Balances at the end of ${format.date(sheet.requested_as_of, "medium")}` : format.asOf(sheet.as_of, { time: true })) : "Latest reading"}`
+      : `${scope} · ${periodText(year, view === "pnl" ? (pnl?.period ?? null) : (statements?.period ?? null))} · Cash basis`;
+
+  const legend = view === "balance" ? "Unaudited · prepared from connected accounts for internal use; not a GAAP financial statement." : BASIS_LEGEND;
 
   return (
-    <div className="w-full">
-      <h1 className="sr-only">Reports</h1>
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
-        <div className={`inline-flex rounded-full border p-0.5 ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white"}`}>
-          {(
-            [
-              ["pnl", "Profit & loss"],
-              ["balance", "Balance sheet"],
-              ["statements", "Statements"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              onClick={() => setView(value)}
-              aria-pressed={view === value}
-              className={`px-3.5 sm:px-4 h-[40px] sm:h-auto sm:py-1.5 rounded-full text-sm font-medium transition-all cursor-pointer ${
-                view === value ? (isDark ? "bg-white text-black" : "bg-gray-900 text-white") : isDark ? "text-gray-500 hover:text-white" : "text-gray-500 hover:text-black"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Entity multi-select */}
-          <div className="relative" ref={pickerRef}>
-            <button
-              onClick={() => setPickerOpen((v) => !v)}
-              aria-expanded={pickerOpen}
-              aria-haspopup="true"
-              className={`pl-4 pr-3 h-[40px] sm:h-auto sm:py-2 rounded-full text-sm border cursor-pointer flex items-center gap-2 max-w-[280px] ${
-                isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-              }`}
-            >
-              <span className="truncate">{pickerLabel}</span>
-              <svg className="w-3.5 h-3.5 opacity-60 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
-            </button>
-            {pickerOpen &&
-              (() => {
-                const allMode = selected.size === 0;
-                const isChecked = (id: string) => allMode || selected.has(id);
-                const toggle = (id: string) => {
-                  setSelected((prev) => {
-                    // From the all-entities view, a click isolates just that one
-                    // (select one — not "everything except this").
-                    if (prev.size === 0) return new Set([id]);
-                    const base = new Set(prev);
-                    base.has(id) ? base.delete(id) : base.add(id);
-                    // Everything checked collapses back to the all-entities view.
-                    return base.size === entities.length ? new Set() : base;
-                  });
-                };
-                const box = (on: boolean) => (
-                  <span
-                    className={`w-4 h-4 rounded-[5px] border shrink-0 flex items-center justify-center ${on ? "bg-emerald-500 border-emerald-500" : isDark ? "border-white/25" : "border-gray-300"}`}
-                  >
-                    {on && (
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
-                    )}
-                  </span>
-                );
-                // Wide mega layout: entities spread across columns so nothing
-                // scrolls. ~5 per column, capped at 3 columns.
-                const cols = Math.min(3, Math.max(1, Math.ceil(entities.length / 5)));
-                return (
-                  <div
-                    className={`absolute left-0 sm:left-auto sm:right-0 mt-2 w-[min(680px,calc(100vw-2rem))] max-h-[72vh] overflow-y-auto rounded-2xl border shadow-xl z-30 p-2 ${
-                      isDark ? "bg-[#161616] border-white/10" : "bg-white border-gray-200"
-                    }`}
-                  >
-                    {/* Select all / clear, side by side and full width. */}
-                    <div className="flex items-center gap-1.5 px-1 pb-1.5">
-                      <button
-                        onClick={() => setSelected(new Set())}
-                        className={`flex-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer ${allMode ? "font-semibold" : ""} ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
-                      >
-                        {box(allMode)}
-                        <span>All entities</span>
-                      </button>
-                      {!allMode && (
-                        <button
-                          onClick={() => setSelected(new Set())}
-                          className={`px-3 py-2 rounded-lg text-xs cursor-pointer ${isDark ? "text-gray-400 hover:bg-white/5 hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-black"}`}
-                        >
-                          Reset
-                        </button>
-                      )}
-                    </div>
-                    <div className={`mb-1 border-t ${rowBorder}`} />
-                    <div className="grid gap-x-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                      {entities.map((en) => {
-                        const on = isChecked(en.id);
-                        return (
-                          <button
-                            key={en.id}
-                            onClick={() => toggle(en.id)}
-                            title={en.name}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer text-left ${isDark ? "hover:bg-white/5" : "hover:bg-gray-50"}`}
-                          >
-                            {box(on)}
-                            <span className="truncate">{en.name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
+    <Page
+      width={view === "pnl" ? "full" : "reading"}
+      header={
+        <PageHeader
+          title="Reports"
+          context={context}
+          secondary={
+            <Menu
+              label="Export"
+              align="end"
+              items={exportItems}
+              trigger={
+                <Button icon="download" size="sm">
+                  {exporting ? "Exporting…" : "Export"}
+                </Button>
+              }
+            />
+          }
+        />
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Segmented label="Report" value={view} onChange={setView} full={phone} options={VIEWS.map((v) => ({ value: v.value, label: phone ? v.short : v.label }))} />
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+            <div className="min-w-0 sm:w-[240px]">
+              <MultiSelect
+                label="Entities"
+                placeholder="All entities"
+                size="sm"
+                value={selected}
+                onChange={(v) => setSelected(v.length === entities.length ? [] : v)}
+                options={entities.map((e) => ({ value: e.id, label: e.name }))}
+                footnote="Choose none for all entities."
+              />
+            </div>
+            <div className="min-w-0 sm:w-[180px]">
+              {view === "balance" ? (
+                <Select
+                  label="As of"
+                  size="sm"
+                  value={asOf}
+                  onChange={setAsOf}
+                  options={asOfOptions}
+                  footnote={sheet?.history_from ? `Daily balances are kept from ${format.date(sheet.history_from, "medium")}.` : "Past month-ends appear once daily balances are kept."}
+                />
+              ) : (
+                <Select label="Year" size="sm" value={year} onChange={setYear} options={years.map((y) => ({ value: y, label: y }))} />
+              )}
+            </div>
           </div>
-
-          {view !== "balance" && (
-            <span className="relative inline-flex items-center">
-              <select
-                aria-label="Year"
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-                className={`appearance-none pl-4 pr-8 h-[40px] sm:h-auto sm:py-2 rounded-full text-sm tabular-nums border cursor-pointer ${
-                  isDark ? "bg-white/[0.04] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"
-                }`}
-              >
-                {years.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-              <svg className="w-3.5 h-3.5 absolute right-3 pointer-events-none opacity-60" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
-            </span>
-          )}
         </div>
+        <p className="text-small text-ink-2">{legend}</p>
       </div>
 
-      {error && <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${isDark ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>{error}</div>}
-
-      {view === "statements" ? (
-        !loading && !statements ? null : loading || !statements ? (
-          <div className={`rounded-2xl border p-4 max-w-3xl space-y-2.5 rise-in ${card}`}>
-            {Array.from({ length: 8 }, (_, i) => (
-              <div key={i} className="shimmer h-4" style={{ width: `${95 - (i % 3) * 10}%` }} />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-6 max-w-3xl">
-            {/* Cash-flow summary */}
-            <div className={`rounded-2xl border overflow-hidden rise-in ${card}`}>
-              <div className={`px-4 py-2.5 border-b ${border} flex items-center justify-between`}>
-                <span className="text-sm font-semibold">Cash flow · {statements.year}</span>
-                <button
-                  onClick={() => void downloadCsv()}
-                  disabled={exporting}
-                  className={`px-3 h-[40px] sm:h-auto sm:py-1.5 rounded-lg text-xs cursor-pointer disabled:opacity-50 ${isDark ? "bg-white/10 hover:bg-white/15 text-white" : "bg-gray-900 text-white hover:bg-gray-800"}`}
-                >
-                  {exporting ? "Exporting…" : "Export CSV"}
-                </button>
-              </div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {(
-                    [
-                      ["Operating activities", statements.cash_flow.operating],
-                      ["Financing activities (transfers, loans, draws)", statements.cash_flow.financing],
-                      ["Uncategorized", statements.cash_flow.uncategorized],
-                    ] as const
-                  ).map(([k, v]) => (
-                    <tr key={k} className={`border-t ${rowBorder}`}>
-                      <td className="px-4 py-2">{k}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(v)}</td>
-                    </tr>
-                  ))}
-                  <tr className={`border-t ${border} font-semibold`}>
-                    <td className="px-4 py-2">Net change in cash</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{money(statements.cash_flow.net_change)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Trial balance */}
-            <div className={`rounded-2xl border overflow-hidden rise-in ${card}`}>
-              <div className={`px-4 py-2.5 border-b ${border} text-sm font-semibold`}>Trial balance</div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className={`text-xs ${subtle} border-b ${border}`}>
-                    <th className="px-4 py-2 text-left font-medium">Account</th>
-                    <th className="px-4 py-2 text-right font-medium">Debit</th>
-                    <th className="px-4 py-2 text-right font-medium">Credit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {statements.trial_balance.map((r: any) => (
-                    <tr key={r.account} className={`border-t ${rowBorder}`}>
-                      <td className="px-4 py-2">{r.account}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{r.debit ? money(r.debit) : "—"}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{r.credit ? money(r.credit) : "—"}</td>
-                    </tr>
-                  ))}
-                  <tr className={`border-t ${border} font-semibold`}>
-                    <td className="px-4 py-2">Totals</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{money(statements.totals.debit)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{money(statements.totals.credit)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* 1099 vendor totals */}
-            {tax1099 && tax1099.vendors.length > 0 && (
-              <div className={`rounded-2xl border overflow-hidden rise-in ${card}`}>
-                <div className={`px-4 py-2.5 border-b ${border} text-sm font-semibold`}>
-                  1099 candidates · paid ≥ ${tax1099.threshold} in {tax1099.year}
-                </div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {tax1099.vendors.map((v: any) => (
-                      <tr key={`${v.entity ?? ""}|${v.vendor}`} className={`border-t ${rowBorder}`}>
-                        <td className="pl-4 pr-2 py-2 w-full max-w-0" title={v.vendor}>
-                          <span className="block truncate">{v.vendor}</span>
-                          {/* A 1099 is per payer: name it when more than one entity is in view. */}
-                          {selected.size !== 1 && v.entity && <span className={`block truncate text-xs ${subtle}`}>Paid by {v.entity}</span>}
-                          <span className={`block truncate text-xs sm:hidden ${subtle}`}>{v.account.replace(/^\d{4}\s+/, "")}</span>
-                        </td>
-                        <td className={`hidden sm:table-cell px-4 py-2 text-xs whitespace-nowrap ${subtle}`}>{v.account.replace(/^\d{4}\s+/, "")}</td>
-                        <td className="pl-2 pr-4 py-2 text-right tabular-nums whitespace-nowrap">{money(v.paid)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )
-      ) : view === "balance" ? (
-        loading ? (
-          <div className={`rounded-2xl border p-4 max-w-3xl space-y-2.5 rise-in ${card}`}>
-            {Array.from({ length: 8 }, (_, i) => (
-              <div key={i} className="shimmer h-4" style={{ width: `${95 - (i % 3) * 10}%` }} />
-            ))}
-          </div>
-        ) : !sheet ? null : (
-          <>
-            <div className={`rounded-2xl border overflow-hidden max-w-3xl rise-in ${card}`}>
-              <table className="w-full text-sm">
-                <tbody>
-                  {(
-                    [
-                      ["Cash & banks", sheet.sections.cash],
-                      ["Investments", sheet.sections.investments],
-                      ["Loans receivable", sheet.sections.loans],
-                    ] as const
-                  ).map(([title, section]) =>
-                    section.rows.length === 0 ? null : (
-                      <Fragment key={title}>
-                        <tr className={`border-t first:border-t-0 ${border}`}>
-                          <td colSpan={2} className={sectionHead}>
-                            {title}
-                          </td>
-                        </tr>
-                        {section.rows.map((r, i) => (
-                          <tr key={`${title}-${i}`} className={`border-t ${rowBorder}`}>
-                            <td className="px-4 py-2">
-                              {r.label}
-                              {r.detail && <span className={`ml-2 text-xs ${subtle}`}>{r.detail}</span>}
-                            </td>
-                            <td className="px-4 py-2 text-right tabular-nums">{moneyFull(r.balance)}</td>
-                          </tr>
-                        ))}
-                        <tr className={`border-t font-semibold ${rowBorder}`}>
-                          <td className="px-4 py-2">Total {title.toLowerCase()}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{moneyFull(section.total)}</td>
-                        </tr>
-                      </Fragment>
-                    ),
-                  )}
-
-                  <tr className={`border-t font-semibold ${border}`}>
-                    <td className="px-4 py-2.5">Total assets</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-emerald-500">{moneyFull(sheet.total_assets)}</td>
-                  </tr>
-
-                  {sheet.sections.credit.rows.length > 0 && (
-                    <>
-                      <tr className={`border-t ${border}`}>
-                        <td colSpan={2} className={sectionHead}>
-                          Liabilities
-                        </td>
-                      </tr>
-                      {sheet.sections.credit.rows.map((r, i) => (
-                        <tr key={`credit-${i}`} className={`border-t ${rowBorder}`}>
-                          <td className="px-4 py-2">
-                            {r.label}
-                            {r.detail && <span className={`ml-2 text-xs ${subtle}`}>{r.detail}</span>}
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums text-rose-400">({moneyFull(r.balance)})</td>
-                        </tr>
-                      ))}
-                      <tr className={`border-t font-semibold ${rowBorder}`}>
-                        <td className="px-4 py-2">Total liabilities</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-rose-400">({moneyFull(sheet.total_liabilities)})</td>
-                      </tr>
-                    </>
-                  )}
-
-                  <tr className={`border-t-2 font-bold ${border}`}>
-                    <td className="px-4 py-3">Net worth</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-lg">{moneyFull(sheet.net_worth)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p className={`mt-3 text-xs ${subtle}`}>
-              {sheet.as_of
-                ? `As of ${new Date(sheet.as_of).toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}`
-                : ""}
-            </p>
-          </>
-        )
-      ) : loading ? (
-        <div className="rise-in">
-          <div className="flex flex-wrap gap-x-16 gap-y-4 mb-7">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i}>
-                <div className="shimmer h-3 w-20 mb-2" />
-                <div className="shimmer h-7 w-28" />
-              </div>
-            ))}
-          </div>
-          <div className={`rounded-2xl border p-4 space-y-2.5 ${card}`}>
-            <div className="shimmer h-8 mb-3" />
-            {Array.from({ length: 10 }, (_, i) => (
-              <div key={i} className="shimmer h-4" style={{ width: `${95 - (i % 4) * 8}%` }} />
-            ))}
-          </div>
-        </div>
-      ) : !pnl ? null : pnl.transaction_count === 0 ? (
-        <div className={`rounded-2xl border border-dashed px-6 py-14 text-center rise-in ${isDark ? "border-white/15" : "border-gray-300"}`}>
-          <p className="text-sm font-medium mb-1">Nothing booked for {pnl.year}</p>
-          <p className={`text-sm ${subtle}`}>Sync transactions or widen the entity selection.</p>
-        </div>
-      ) : (
-        <>
-          {/* The year in five quiet figures. */}
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap mb-7 rise-in">
-            {(() => {
-              const sum = (a: number[] | undefined) => (a ?? []).reduce((s, v) => s + v, 0);
-              const rev = sum(pnl.revenue_monthly);
-              const opInc = sum(pnl.operating_income_monthly);
-              const opMargin = rev !== 0 ? (opInc / rev) * 100 : 0;
-              const kpis: Array<[string, string, string]> = [
-                ["Revenue", money(rev), ""],
-                ["Operating expenses", money(sum(pnl.operating_monthly)), ""],
-                ["Operating income", money(opInc), opInc < 0 ? "text-rose-400" : ""],
-                ["Operating margin", `${opMargin.toFixed(1)}%`, opMargin < 0 ? "text-rose-400" : ""],
-                ["Net income", money(pnl.net_total), pnl.net_total >= 0 ? "text-emerald-500" : "text-rose-400"],
-              ];
-              return kpis.map(([label, display, tone]) => (
-                <div key={label} className={`min-w-0 sm:px-8 sm:first:pl-0 sm:last:pr-0 sm:border-l sm:first:border-l-0 ${border}`}>
-                  <p className={`text-xs mb-1 ${subtle}`}>{label}</p>
-                  <p className={`text-2xl font-semibold tabular-nums tracking-tight ${tone}`}>{display}</p>
-                </div>
-              ));
-            })()}
-          </div>
-          <div className={`rounded-2xl border overflow-x-auto rise-in ${card} ${pnlXScrolled ? colShadow : ""}`} onScroll={(e) => setPnlXScrolled(e.currentTarget.scrollLeft > 2)}>
-            <table className="text-sm min-w-[1100px] w-full">
-              <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
-                <tr className={`text-xs ${subtle} border-b ${border}`}>
-                  <th className={`px-3 py-3 text-left font-medium sticky left-0 z-10 border-r ${rowBorder} ${stickyBg}`}>
-                    <button onClick={toggleAll} title={allCollapsed ? "Expand all" : "Collapse all"} className="inline-flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity">
-                      <svg className={`w-3 h-3 transition-transform duration-150 ${allCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                      </svg>
-                      {pickerLabel} · {pnl.year}
-                    </button>
-                  </th>
-                  {MONTHS.map((m, i) => (
-                    <th
-                      key={m}
-                      className={`px-3 py-3 text-right min-w-[68px] ${
-                        i === curMonth ? `${colHi} font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}` : thisYear && i > curMonth ? `${futureCol} font-medium` : "font-medium"
-                      }`}
-                    >
-                      {m}
-                    </th>
-                  ))}
-                  <th className={`px-3 py-3 text-right font-medium min-w-[80px] border-l ${border} ${colHi}`}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sectionHeaderRow("revenue", "Revenue", undefined, {
-                  monthly: pnl.revenue_monthly,
-                  total: pnl.revenue_monthly.reduce((a, b) => a + b, 0),
-                  tone: "text-emerald-500",
-                })}
-                {!collapsed.has("revenue") && (
-                  <>
-                    {pnl.revenue.map((r) => bodyRow(r.label, r.monthly, r.total, "revenue", { indent: true }))}
-                    {bodyRow(
-                      "Total revenue",
-                      pnl.revenue_monthly,
-                      pnl.revenue_monthly.reduce((a, b) => a + b, 0),
-                      "revenue",
-                      {
-                        bold: true,
-                        color: "text-emerald-500",
-                        drillLabel: null,
-                      },
-                    )}
-                  </>
-                )}
-
-                {sectionHeaderRow("operating", "Operating expenses", undefined, {
-                  monthly: pnl.operating_monthly,
-                  total: pnl.operating_monthly.reduce((a, b) => a + b, 0),
-                })}
-                {!collapsed.has("operating") && (
-                  <>
-                    {pnl.operating.map((r) => bodyRow(r.label, r.monthly, r.total, "operating", { indent: true }))}
-                    {bodyRow(
-                      "Total operating expenses",
-                      pnl.operating_monthly,
-                      pnl.operating_monthly.reduce((a, b) => a + b, 0),
-                      "operating",
-                      {
-                        bold: true,
-                        drillLabel: null,
-                      },
-                    )}
-                  </>
-                )}
-
-                {(pnl.other.length > 0 || pnl.other_monthly.some((v) => v !== 0)) && (
-                  <>
-                    {sectionHeaderRow("other", "Other income / (expense)", undefined, {
-                      monthly: pnl.other_monthly,
-                      total: pnl.other_monthly.reduce((a, b) => a + b, 0),
-                    })}
-                    {!collapsed.has("other") && (
-                      <>
-                        {pnl.other.map((r) => bodyRow(r.label, r.monthly, r.total, "other", { indent: true }))}
-                        {bodyRow(
-                          "Total other",
-                          pnl.other_monthly,
-                          pnl.other_monthly.reduce((a, b) => a + b, 0),
-                          "other",
-                          {
-                            bold: true,
-                            drillLabel: null,
-                          },
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
-
-                {bodyRow("Net income", pnl.net_monthly, pnl.net_total, "net", {
-                  headline: true,
-                  signColor: true,
-                  drillLabel: null,
-                })}
-
-                {/* Operating margin = operating income ÷ revenue, per month. */}
-                {(() => {
-                  const marginMonthly = pnl.operating_income_monthly.map((v, i) => (pnl.revenue_monthly[i] ? (v / pnl.revenue_monthly[i]) * 100 : 0));
-                  const revTotal = pnl.revenue_monthly.reduce((a, b) => a + b, 0);
-                  const opTotal = pnl.operating_income_monthly.reduce((a, b) => a + b, 0);
-                  const marginTotal = revTotal ? (opTotal / revTotal) * 100 : 0;
-                  const fmt = (p: number) => (p === 0 ? "—" : `${Math.round(p)}%`);
-                  return (
-                    <tr className={`border-t ${border} ${bandBg}`}>
-                      <td className={`px-3 py-2 sticky left-0 whitespace-nowrap border-r text-xs ${rowBorder} ${stickyBg} ${subtle}`}>Operating margin</td>
-                      {marginMonthly.map((p, i) => {
-                        const colBg = i === curMonth ? colHi : thisYear && i > curMonth ? futureCol : "";
-                        return (
-                          <td key={i} className={`${num} text-xs ${colBg} ${p === 0 ? faint : p < 0 ? "text-rose-400" : subtle}`}>
-                            {p === 0 && thisYear && i > curMonth ? "" : fmt(p)}
-                          </td>
-                        );
-                      })}
-                      <td className={`${num} text-xs font-semibold border-l ${border} ${colHi} ${marginTotal === 0 ? faint : marginTotal < 0 ? "text-rose-400" : subtle}`}>{fmt(marginTotal)}</td>
-                    </tr>
-                  );
-                })()}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Transfers & intercompany live in their own table — cash movements,
-            not part of the income statement. */}
-          {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0 || pnl.intercompany.total !== 0 || pnl.intercompany.in.some((v) => v !== 0) || pnl.intercompany.out.some((v) => v !== 0)) && (
-            <div className={`rounded-2xl border overflow-x-auto rise-in mt-6 ${card} ${flowXScrolled ? colShadow : ""}`} onScroll={(e) => setFlowXScrolled(e.currentTarget.scrollLeft > 2)}>
-              <table className="text-sm min-w-[1100px] w-full">
-                <thead className={`sticky top-0 z-20 ${stickyBg} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}>
-                  <tr className={`text-xs ${subtle} border-b ${border}`}>
-                    <th className={`px-3 py-3 text-left font-medium sticky left-0 z-10 border-r ${rowBorder} ${stickyBg}`}>Transfers & flow</th>
-                    {MONTHS.map((m, i) => (
-                      <th
-                        key={m}
-                        className={`px-3 py-3 text-right min-w-[68px] ${
-                          i === curMonth ? `${colHi} font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}` : thisYear && i > curMonth ? `${futureCol} font-medium` : "font-medium"
-                        }`}
-                      >
-                        {m}
-                      </th>
-                    ))}
-                    <th className={`px-3 py-3 text-right font-medium min-w-[80px] border-l ${border} ${colHi}`}>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(pnl.transfers.rows.length > 0 || pnl.transfers.total !== 0) && (
-                    <>
-                      {sectionHeaderRow("transfers", "Transfers", undefined, {
-                        monthly: pnl.transfers.net,
-                        total: pnl.transfers.total,
-                      })}
-                      {!collapsed.has("transfers") && (
-                        <>
-                          {pnl.transfers.rows.map((r) => bodyRow(r.label, r.monthly, r.total, "transfers", { indent: true }))}
-                          {bodyRow("Net transfers", pnl.transfers.net, pnl.transfers.total, "transfers", {
-                            bold: true,
-                            drillLabel: null,
-                          })}
-                        </>
-                      )}
-                    </>
-                  )}
-
-                  {(pnl.intercompany.total !== 0 || pnl.intercompany.in.some((v) => v !== 0) || pnl.intercompany.out.some((v) => v !== 0)) && (
-                    <>
-                      {sectionHeaderRow("intercompany", "Intercompany", undefined, {
-                        monthly: pnl.intercompany.net,
-                        total: pnl.intercompany.total,
-                      })}
-                      {!collapsed.has("intercompany") && (
-                        <>
-                          {bodyRow(
-                            "In",
-                            pnl.intercompany.in,
-                            pnl.intercompany.in.reduce((a, b) => a + b, 0),
-                            "intercompany",
-                            { indent: true, drillLabel: null },
-                          )}
-                          {bodyRow(
-                            "Out",
-                            pnl.intercompany.out.map((v) => -v),
-                            -pnl.intercompany.out.reduce((a, b) => a + b, 0),
-                            "intercompany",
-                            { indent: true, drillLabel: null },
-                          )}
-                          {bodyRow("Net", pnl.intercompany.net, pnl.intercompany.total, "intercompany", { bold: true, drillLabel: null })}
-                        </>
-                      )}
-                    </>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className={`mt-3 text-xs ${subtle}`}>Cash basis{pnl.eliminated_count > 0 && ` · ${pnl.eliminated_count} eliminated`}</p>
-        </>
+      {error && (
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+              Try again
+            </Button>
+          }
+          onDismiss={() => setError("")}
+        >
+          {error}
+        </Banner>
       )}
-    </div>
+
+      {loading ? (
+        <div className="flex flex-col gap-6" aria-busy="true">
+          <KpiStrip label="Loading" items={[0, 1, 2].map((i) => ({ label: ["Receipts", "Disbursements", "Net"][i], value: <Skeleton kind="line" /> }))} />
+          <div className="overflow-hidden rounded-card border border-line bg-raised">
+            <Skeleton kind="table" rows={10} columns={view === "pnl" && !phone ? ["24%", ...Array<string>(6).fill("12%")] : ["70%", "30%"]} />
+          </div>
+        </div>
+      ) : view === "pnl" ? (
+        pnl && <PnlView pnl={pnl} entityCount={entityCount} scope={scope} drill={drill} />
+      ) : view === "balance" ? (
+        sheet && <BalanceView sheet={sheet} />
+      ) : (
+        statements && <StatementsView statements={statements} worksheet={worksheet} drill={(section, label) => drill(section, label)} />
+      )}
+    </Page>
   );
 }

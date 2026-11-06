@@ -53,4 +53,6 @@ export type Pref = {
   account_name?: string | null;
   mask?: string | null;
   institution_name?: string | null;
+  /** Plaid's account subtype ("checking", "credit card", "ira"). */
+  subtype?: string | null;
 };

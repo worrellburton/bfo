@@ -1,33 +1,50 @@
 import { useEffect, useRef, useState } from "react";
 import { brandCall, loadStudio, setLogoNow, type Logo, type ModelState, type SheetEntry, type Studio } from "./brand";
-import { BTN_BASE, ghostBtn, primaryBtn, tiers } from "./books-shared";
 import { Logo3D } from "./logo-3d";
 import { loadBrandFont } from "./brand-lockup";
+import { Badge, Banner, Button, Card, Dialog, Field, IconButton, Menu, Segmented, Skeleton, Spinner, Textarea, confirm, cx, format, toast, type MenuItem } from "./ui";
 
 /**
- * The logo studio on Settings (owners and admins): OpenAI draws a reference
- * sheet of six "Burton Family Office / BFO" lockups, each in its own typeface.
- * "Use this logo" sets the site's logo in that typeface (live type, not the
- * picture); Meshy can still turn any of them into a 3D model to use instead.
+ * The logo studio on Settings (principals and admins). Six ways to set the
+ * office's name, each in its own typeface: before anything is drawn each
+ * shows as live type; "Draw all six" has a picture drawn of each (a paid
+ * call, priced and confirmed first). "Use this" sets the logo across BFO in
+ * that typeface; a picture can also become a 3D model for the front door.
+ * Every change and every paid call is recorded by api/brand.ts, and the last
+ * change shows at the foot of the card.
  */
-export function BrandStudio({ isDark }: { isDark: boolean }) {
-  const { t1, t2, t3 } = tiers(isDark);
-  const [studio, setStudio] = useState<Studio | null>(null);
+
+type StudioMore = Studio & {
+  /** About what one drawing and one 3D model cost, in cents (api/brand.ts); absent from an older server. */
+  costCents?: { draw: number; model: number };
+  lastChange?: { at: string; by: string | null; summary: string } | null;
+};
+
+/** What a person is told when a call fails: plain, no provider names. */
+function plain(e: unknown): string {
+  const msg = e instanceof Error ? e.message : "";
+  return /fetch|network/i.test(msg) || !msg || /openai|meshy|api|key|5\d\d/i.test(msg) ? "That didn’t go through. Try again in a moment." : msg;
+}
+
+const about = (cents: number) => `about ${format.money(cents / 100)}`;
+
+export function BrandStudio() {
+  const [studio, setStudio] = useState<StudioMore | null>(null);
   const [error, setError] = useState("");
   const [drawing, setDrawing] = useState<Set<string>>(new Set());
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [using, setUsing] = useState<string | null>(null);
   const [view, setView] = useState<Record<string, "picture" | "model">>({});
-  const [tweak, setTweak] = useState<Record<string, string>>({});
-  const [adjusting, setAdjusting] = useState<string | null>(null);
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     loadStudio()
       .then((st) => {
         st.styles.forEach((s) => loadBrandFont(s.font));
-        setStudio(st);
+        setStudio(st as StudioMore);
       })
-      .catch((e) => setError((e as Error).message));
+      .catch((e) => setError(plain(e)));
   }, []);
 
   const mark = (set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string, on: boolean) =>
@@ -40,18 +57,19 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
 
   const patchModel = (id: string, model: ModelState | null) => setStudio((s) => (s ? { ...s, models: { ...s.models, [id]: model } } : s));
   const patchEntry = (id: string, entry: SheetEntry) => setStudio((s) => (s ? { ...s, sheet: { ...s.sheet, styles: { ...s.sheet.styles, [id]: entry } } } : s));
+  const cost = studio?.costCents;
 
-  async function draw(id: string) {
+  async function draw(id: string, tweak?: string) {
     if (drawing.has(id)) return;
     mark(setDrawing, id, true);
     setError("");
     try {
-      const r = await brandCall<{ entry: SheetEntry }>("generate", { styleId: id, tweak: tweak[id] || undefined });
+      const r = await brandCall<{ entry: SheetEntry }>("generate", { styleId: id, tweak: tweak || undefined });
       patchEntry(id, r.entry);
       patchModel(id, null);
       setView((v) => ({ ...v, [id]: "picture" }));
     } catch (e) {
-      setError((e as Error).message);
+      setError(plain(e));
     } finally {
       mark(setDrawing, id, false);
     }
@@ -59,38 +77,67 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
 
   async function drawAll() {
     if (!studio) return;
+    const n = studio.styles.length;
+    const ok = await confirm({
+      title: `Draw all ${n} logos?`,
+      message: "Each one is drawn as a picture, in its own typeface. It takes about a minute, and the pictures replace any drawn before.",
+      receipt: cost ? { lines: [{ label: `${n} drawings`, cents: n * cost.draw, estimate: true }], mode: "live" } : undefined,
+      confirmLabel: cost ? `Draw for ${about(n * cost.draw)}` : `Draw all ${n}`,
+      tone: "commit",
+    });
+    if (!ok) return;
     await Promise.all(studio.styles.map((s) => draw(s.id)));
   }
 
-  async function build(id: string) {
+  async function redraw(id: string, name: string, tweak?: string) {
+    const ok = await confirm({
+      title: `Redraw ${name}?`,
+      message: tweak ? `Drawn again with your note: “${tweak}”. The new picture replaces this one.` : "The new picture replaces this one.",
+      receipt: cost ? { lines: [{ label: "1 drawing", cents: cost.draw, estimate: true }], mode: "live" } : undefined,
+      confirmLabel: cost ? `Redraw for ${about(cost.draw)}` : "Redraw",
+      tone: "commit",
+    });
+    if (ok) await draw(id, tweak);
+  }
+
+  async function build(id: string, name: string) {
     if (starting.has(id)) return;
+    const ok = await confirm({
+      title: `Make ${name} in 3D?`,
+      message: "The picture becomes a 3D model the front door can show. It takes a few minutes; you can leave this page.",
+      receipt: cost ? { lines: [{ label: "1 model", cents: cost.model, estimate: true }], mode: "live" } : undefined,
+      confirmLabel: cost ? `Make it for ${about(cost.model)}` : "Make it 3D",
+      tone: "commit",
+    });
+    if (!ok) return;
     mark(setStarting, id, true);
     setError("");
     try {
       const r = await brandCall<{ model: ModelState }>("model", { styleId: id });
       patchModel(id, r.model);
     } catch (e) {
-      setError((e as Error).message);
+      setError(plain(e));
     } finally {
       mark(setStarting, id, false);
     }
   }
 
-  async function use(id: string | null, as: "lockup" | "3d" = "lockup") {
+  async function applyLogo(id: string | null, as: "lockup" | "3d" = "lockup", name?: string) {
     setUsing(id ?? "none");
     setError("");
     try {
       const r = await brandCall<{ logo: Logo | null }>("use", { styleId: id, as });
       setStudio((s) => (s ? { ...s, logo: r.logo } : s));
       setLogoNow(r.logo);
+      toast({ message: id ? `The logo is now ${name ?? "this style"}${as === "3d" ? " in 3D" : ""}` : "The logo is back to the wordmark" });
     } catch (e) {
-      setError((e as Error).message);
+      setError(plain(e));
     } finally {
       setUsing(null);
     }
   }
 
-  // Models under way at Meshy: ask every few seconds until they finish.
+  // Models under way: ask every few seconds until they finish.
   const pending = studio
     ? Object.entries(studio.models)
         .filter(([, m]) => m && (m.status === "PENDING" || m.status === "IN_PROGRESS"))
@@ -110,7 +157,7 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
           patchModel(id, r.model);
           if (r.model.status === "SUCCEEDED") setView((v) => ({ ...v, [id]: "model" }));
         } catch (e) {
-          if (live) setError((e as Error).message);
+          if (live) setError(plain(e));
         }
       }
     };
@@ -122,53 +169,57 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
     };
   }, [pendingKey]);
 
-  const card = `rounded-xl border p-6 ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white"}`;
-  const btn = `${BTN_BASE} h-[40px] sm:h-8 px-3 text-xs`;
   const anyDrawing = drawing.size > 0;
   const hasAny = !!studio && Object.keys(studio.sheet.styles).length > 0;
+  const ready = !!studio?.configured.openai;
+  const noteStyle = studio?.styles.find((s) => s.id === noteFor);
+
+  const header = studio && ready && (
+    <Button variant={hasAny ? "secondary" : "primary"} size="sm" onClick={() => void drawAll()} disabled={anyDrawing} busy={anyDrawing} busyLabel="Drawing…">
+      {hasAny ? "Redraw all" : "Draw all six"}
+    </Button>
+  );
 
   return (
-    <section className={`${card} mt-6`}>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${isDark ? "bg-indigo-500/10" : "bg-indigo-50"}`}>
-            <svg className={`h-5 w-5 ${isDark ? "text-indigo-400" : "text-indigo-600"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-            </svg>
-          </div>
-          <div>
-            <h2 className={`text-sm font-semibold ${t1}`}>Logo</h2>
-            <p className={`text-xs ${t2}`}>A reference sheet: six "Burton Family Office / BFO" lockups drawn by OpenAI, each in its own typeface. Use one and the site sets its logo in that type.</p>
-          </div>
+    <Card
+      title="Logo"
+      action={header || undefined}
+      menu={studio?.logo ? [{ label: "Go back to the wordmark", onSelect: () => void applyLogo(null) }] : undefined}
+      footer={
+        <div className="flex w-full flex-col gap-1 text-small text-ink-2">
+          <p>
+            Each picture takes about a minute to draw{cost ? `, ${about(cost.draw)} each` : ""}. Pictures drawn by AI can’t be copyrighted; the logo BFO uses is set in type. Clear any new mark before
+            using it outside BFO.
+          </p>
+          {studio?.lastChange && (
+            <p>
+              {studio.lastChange.summary}
+              {studio.lastChange.by ? `, by ${studio.lastChange.by}` : ""}, {format.date(studio.lastChange.at, "medium")}.
+            </p>
+          )}
         </div>
-        {studio && (
-          <div className="flex items-center gap-2">
-            {studio.logo && (
-              <button type="button" onClick={() => void use(null)} disabled={using !== null} className={`${btn} ${ghostBtn(isDark)}`}>
-                {using === "none" ? "Switching…" : "Back to the wordmark"}
-              </button>
-            )}
-            <button type="button" onClick={() => void drawAll()} disabled={anyDrawing || !studio.configured.openai} className={`${btn} ${primaryBtn(isDark)}`}>
-              {anyDrawing ? `Drawing ${drawing.size}…` : hasAny ? "Redraw all six" : "Draw the style sheet"}
-            </button>
-          </div>
-        )}
-      </div>
+      }
+    >
+      <p className="max-w-[68ch] text-body text-ink-2">Six ways to set the name. Pick one and it becomes the logo across BFO.</p>
 
-      {!studio && !error && <p className={`text-xs ${t2}`}>Loading…</p>}
-      {studio && !studio.configured.openai && (
-        <p className={`mb-4 rounded-lg border px-3 py-2 text-xs ${isDark ? "border-amber-400/30 bg-amber-400/5 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
-          Add OPENAI_API_KEY in Vercel to draw the lockups.
-        </p>
+      {!studio && !error && (
+        <div className="mt-4">
+          <Skeleton kind="card" />
+        </div>
+      )}
+      {studio && !ready && (
+        <Banner tone="info" className="mt-4">
+          Drawing isn’t set up yet. You can still use any style as live type once it has a picture.
+        </Banner>
       )}
       {error && (
-        <p role="alert" className={`mb-4 text-xs ${isDark ? "text-red-300" : "text-red-600"}`}>
+        <Banner tone="negative" className="mt-4" onDismiss={() => setError("")}>
           {error}
-        </p>
+        </Banner>
       )}
 
       {studio && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {studio.styles.map((s) => {
             const entry = studio.sheet.styles[s.id];
             const model = studio.models[s.id];
@@ -178,132 +229,146 @@ export function BrandStudio({ isDark }: { isDark: boolean }) {
             const building = !!model && (model.status === "PENDING" || model.status === "IN_PROGRESS");
             const built = model?.status === "SUCCEEDED" && !!model.glbUrl;
             const showModel = built && (view[s.id] ?? "picture") === "model";
+            const font = { fontFamily: `"${s.font.family}", Georgia, serif`, fontWeight: s.font.weight };
+            const more: MenuItem[] = entry
+              ? [
+                  { label: "Redraw", hint: cost ? about(cost.draw) : undefined, onSelect: () => void redraw(s.id, s.name), disabled: !ready || isDrawing },
+                  {
+                    label: "Redraw with a note…",
+                    onSelect: () => {
+                      setNote("");
+                      setNoteFor(s.id);
+                    },
+                    disabled: !ready || isDrawing,
+                  },
+                  { divider: true },
+                  ...(!built
+                    ? [
+                        {
+                          label: model?.status === "FAILED" ? "Try 3D again" : "Make it 3D",
+                          hint: cost ? about(cost.model) : undefined,
+                          onSelect: () => void build(s.id, s.name),
+                          disabled: building || starting.has(s.id) || !studio.configured.meshy,
+                          disabledReason: studio.configured.meshy ? undefined : "3D isn’t set up yet",
+                        },
+                      ]
+                    : [
+                        ...(!inUse3D ? [{ label: "Use in 3D on the front door", onSelect: () => void applyLogo(s.id, "3d", s.name), disabled: using !== null }] : []),
+                        {
+                          label: "Make the 3D model again",
+                          hint: cost ? about(cost.model) : undefined,
+                          onSelect: () => void build(s.id, s.name),
+                          disabled: starting.has(s.id) || !studio.configured.meshy,
+                        },
+                      ]),
+                ]
+              : [];
             return (
-              <div
-                key={s.id}
-                className={`overflow-hidden rounded-xl border ${inUse ? "ring-2 ring-indigo-500 ring-offset-2 " + (isDark ? "ring-offset-black border-transparent" : "ring-offset-white border-transparent") : isDark ? "border-white/10" : "border-gray-200"}`}
-              >
-                <div className={`relative aspect-square ${isDark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
+              <li key={s.id} className={cx("flex flex-col overflow-hidden rounded-card border bg-raised", inUse ? "border-accent ring-1 ring-accent" : "border-line")}>
+                <div className="relative aspect-[3/2] bg-sunken">
                   {showModel && model?.glbUrl ? (
                     <Logo3D src={model.glbUrl} poster={model.posterUrl} className="h-full w-full" interactive />
                   ) : entry ? (
-                    <img src={entry.imageUrl} alt={`${s.name} logo`} className="h-full w-full object-cover" draggable={false} />
+                    <img src={entry.imageUrl} alt={`The ${s.name} logo, as drawn`} className="h-full w-full object-cover" draggable={false} />
                   ) : (
-                    <div className={`flex h-full w-full items-center justify-center text-[12px] ${t3}`}>{isDrawing ? "" : "Not drawn yet"}</div>
+                    // Before anything is drawn: the real thing, set live in the typeface.
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-ink" style={font} aria-label={`${s.name}: BFO set in ${s.font.family}`} role="img">
+                      <span className="text-display leading-none tracking-[0.06em]" style={font}>
+                        BFO
+                      </span>
+                      <span className="text-caption tracking-[0.2em]" style={font}>
+                        Burton Family Office
+                      </span>
+                    </div>
                   )}
                   {isDrawing && (
-                    <div className={`absolute inset-0 flex items-center justify-center backdrop-blur-sm ${isDark ? "bg-black/40" : "bg-white/60"}`}>
-                      <span className={`inline-flex items-center gap-2 text-xs font-medium ${t1}`}>
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-sunken">
+                      <span className="inline-flex items-center gap-2 text-small font-medium text-ink" role="status">
+                        <Spinner />
                         Drawing…
                       </span>
                     </div>
                   )}
-                  {building && model && (
-                    <div className={`absolute inset-x-0 bottom-0 px-3 py-2 text-[11px] ${isDark ? "bg-black/55 text-gray-200" : "bg-white/80 text-gray-700"}`}>
-                      <div className="mb-1 flex justify-between">
-                        <span>Meshy is building the model</span>
-                        <span className="tabular-nums">{model.progress}%</span>
-                      </div>
-                      <div className={`h-1 overflow-hidden rounded-full ${isDark ? "bg-white/10" : "bg-gray-200"}`}>
-                        <div className="h-full rounded-full bg-indigo-500 transition-[width]" style={{ width: `${Math.max(3, model.progress)}%` }} />
-                      </div>
-                    </div>
-                  )}
-                  {inUse && <span className="absolute left-2 top-2 rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold text-white">{inUse3D ? "On the site · 3D" : "On the site"}</span>}
-                  {built && (
-                    <div className={`absolute right-2 top-2 inline-flex rounded-full p-0.5 text-[10px] ${isDark ? "bg-black/55" : "bg-white/85 shadow-sm"}`}>
-                      {(["picture", "model"] as const).map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => setView((v) => ({ ...v, [s.id]: k }))}
-                          className={`cursor-pointer rounded-full px-2 py-0.5 font-medium ${(view[s.id] ?? "picture") === k ? (isDark ? "bg-white/15 text-white" : "bg-gray-900 text-white") : t2}`}
-                        >
-                          {k === "picture" ? "Picture" : "3D"}
-                        </button>
-                      ))}
-                    </div>
+                  {inUse && (
+                    <span className="absolute top-3 left-3">
+                      <Badge icon="check">{inUse3D ? "In use, 3D" : "In use"}</Badge>
+                    </span>
                   )}
                 </div>
-                <div className={`px-3.5 py-3 ${isDark ? "bg-white/[0.02]" : "bg-white"}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className={`text-xs font-semibold ${t1}`}>{s.name}</div>
-                      <div className={`text-[11px] ${t2}`}>{s.blurb}</div>
-                      <div
-                        className={`mt-1.5 truncate text-[15px] leading-tight ${t1}`}
-                        style={{ fontFamily: `"${s.font.family}", Georgia, serif`, fontWeight: s.font.weight }}
-                        title={`Typeface: ${s.font.family}`}
-                      >
-                        {s.font.family} <span className={t3}>· Burton Family Office</span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAdjusting(adjusting === s.id ? null : s.id)}
-                      className={`shrink-0 cursor-pointer text-[11px] font-medium ${isDark ? "text-indigo-300 hover:underline" : "text-indigo-600 hover:underline"}`}
-                    >
-                      {adjusting === s.id ? "Done" : "Adjust"}
-                    </button>
+                <div className="flex flex-1 flex-col gap-3 p-4">
+                  <div className="min-w-0">
+                    <h3 className="text-small font-medium text-ink">{s.name}</h3>
+                    <p className="mt-1 text-caption text-ink-2">{s.blurb}</p>
+                    <p className="mt-2 truncate text-title font-normal text-ink" style={font} title={`Typeface: ${s.font.family}`}>
+                      {s.font.family}
+                    </p>
                   </div>
-                  {adjusting === s.id && (
-                    <textarea
-                      rows={2}
-                      value={tweak[s.id] ?? ""}
-                      onChange={(e) => setTweak((t) => ({ ...t, [s.id]: e.target.value }))}
-                      placeholder="e.g. warmer gold, thinner letters, more rounded"
-                      className={`mt-2 w-full resize-none rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${isDark ? "border-white/10 bg-white/[0.04] text-gray-100 placeholder:text-gray-600" : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"}`}
+                  {built && (
+                    <Segmented
+                      label={`Show ${s.name} as`}
+                      value={view[s.id] ?? "picture"}
+                      onChange={(v) => setView((cur) => ({ ...cur, [s.id]: v }))}
+                      options={[
+                        { value: "picture", label: "Picture" },
+                        { value: "model", label: "3D" },
+                      ]}
                     />
                   )}
-                  {model?.status === "FAILED" && <p className={`mt-1.5 text-[11px] ${isDark ? "text-red-300" : "text-red-600"}`}>{model.error ?? "Meshy couldn't build this one."}</p>}
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    <button type="button" onClick={() => void draw(s.id)} disabled={isDrawing || !studio.configured.openai} className={`${btn} ${ghostBtn(isDark)}`}>
-                      {entry ? "Redraw" : "Draw"}
-                    </button>
-                    {entry && (!inUse || inUse3D) && (
-                      <button type="button" onClick={() => void use(s.id)} disabled={using !== null} className={`${btn} ${primaryBtn(isDark)}`}>
-                        {using === s.id ? "Switching…" : "Use this logo"}
-                      </button>
-                    )}
-                    {entry && !built && (
-                      <button
-                        type="button"
-                        onClick={() => void build(s.id)}
-                        disabled={building || starting.has(s.id) || !studio.configured.meshy}
-                        title={studio.configured.meshy ? undefined : "Add MESHY_API_KEY in Vercel to build 3D models."}
-                        className={`${btn} ${ghostBtn(isDark)}`}
-                      >
-                        {building ? "Building…" : starting.has(s.id) ? "Starting…" : model?.status === "FAILED" ? "Try 3D again" : "Make it 3D"}
-                      </button>
-                    )}
-                    {built && (
-                      <button
-                        type="button"
-                        onClick={() => void build(s.id)}
-                        disabled={starting.has(s.id) || !studio.configured.meshy}
-                        className={`${btn} ${ghostBtn(isDark)}`}
-                        title="Build a fresh model from the same picture"
-                      >
-                        Rebuild
-                      </button>
-                    )}
-                    {built && !inUse3D && (
-                      <button type="button" onClick={() => void use(s.id, "3d")} disabled={using !== null} className={`${btn} ${ghostBtn(isDark)}`}>
-                        {using === s.id ? "Switching…" : "Use in 3D"}
-                      </button>
-                    )}
-                  </div>
+                  {building && model && (
+                    <div role="status">
+                      <div className="flex justify-between text-small text-ink-2">
+                        <span>Making the 3D model</span>
+                        <span className="tabular-nums">{format.percent(model.progress, { decimals: 0 })}</span>
+                      </div>
+                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-sunken">
+                        <div className="h-full rounded-full bg-accent transition-[width] duration-(--dur-3)" style={{ width: `${Math.max(3, model.progress)}%` }} />
+                      </div>
+                    </div>
+                  )}
+                  {model?.status === "FAILED" && <p className="text-small text-negative">The 3D model didn’t work out. Try again from the menu.</p>}
+                  {entry && (
+                    <div className="mt-auto flex items-center gap-2">
+                      {(!inUse || inUse3D) && (
+                        <Button variant="primary" size="sm" onClick={() => void applyLogo(s.id, "lockup", s.name)} disabled={using !== null} busy={using === s.id} busyLabel="Switching…">
+                          Use this
+                        </Button>
+                      )}
+                      <Menu label={`More for ${s.name}`} align="end" items={more} trigger={<IconButton icon="more" label={`More for ${s.name}`} className="ml-auto" />} />
+                    </div>
+                  )}
                 </div>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
-      <p className={`mt-4 text-[11px] ${t3}`}>
-        Drawing takes about a minute per lockup; Meshy takes a few minutes per model. The site sets the chosen logo as live type in its Google font; pictures and models are kept in the brand bucket,
-        so the site never depends on OpenAI or Meshy being up.
-      </p>
-    </section>
+
+      <Dialog
+        open={!!noteFor}
+        onClose={() => setNoteFor(null)}
+        title={`Redraw ${noteStyle?.name ?? ""} with a note`}
+        dirty={!!note.trim()}
+        footer={
+          <>
+            <Button onClick={() => setNoteFor(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={!note.trim()}
+              onClick={() => {
+                const id = noteFor;
+                setNoteFor(null);
+                if (id && noteStyle) void redraw(id, noteStyle.name, note.trim());
+              }}
+            >
+              Redraw with this note
+            </Button>
+          </>
+        }
+      >
+        <Field label="What to change" hint="For example: warmer gold, thinner letters, more rounded.">
+          <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+        </Field>
+      </Dialog>
+    </Card>
   );
 }

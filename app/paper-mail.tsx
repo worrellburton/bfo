@@ -1,128 +1,76 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router";
-import { authFetch } from "./auth";
-import { Icon, Select, useTone } from "./entity/ui";
+import { filedNote, recipientsOf, rowDate, statusesOf, tidyName, type PaperMail } from "./paper-mail-model";
+import { cx, Icon, IconButton, Button, Select, Status, useOverlay, usePhone, usePresence, type Option } from "./ui";
+import { overlayRoot } from "./ui/portal";
 
 /**
- * Paper mail from Stable (api/stable.ts): the list both the Paper mail page
- * and each entity's Documents tab show. Each piece: the envelope, who it's
- * from and to, the scan when there is one, and what Stable did with it.
+ * Paper mail from Stable (api/stable.ts), as the Paper mail page and each
+ * entity's Documents tab draw it: the list rows (envelope, sender,
+ * recipient, Stable's summary, and only the states that need someone), the
+ * entity picker staff file a piece with, and the media viewer that enlarges
+ * the envelope and the scan. The data and rules are app/paper-mail-model.ts.
  */
 
-export type PaperMail = {
-  id: string;
-  assetId: string | null;
-  assigned: "auto" | "hand";
-  from: string | null;
-  recipient: string | null;
-  recipient2: string | null;
-  receivedAt: string | null;
-  envelopeUrl: string | null;
-  scanUrl: string | null;
-  scanStatus: string | null;
-  summary: string | null;
-  checks: number;
-  forwardStatus: string | null;
-  shredStatus: string | null;
-  returnedToSender: boolean;
-  archivedAt: string | null;
-  readAt: string | null;
-};
+export { STABLE_ADDRESS, usePaperMail } from "./paper-mail-model";
+export type { PaperMail } from "./paper-mail-model";
 
-/** What BFO read off a piece (lib/paper-read.ts). */
-export type PaperReading = {
-  headline: string;
-  kind: string;
-  urgency: "action" | "fyi" | "junk";
-  sender: { name: string | null; address: string | null };
-  recipient: { name: string | null; address: string | null };
-  postage: string | null;
-  mailClass: string | null;
-  action: string | null;
-  dueDate: string | null;
-  amounts: { label: string; amount: string }[];
-  dates: { label: string; date: string }[];
-  references: { label: string; value: string }[];
-  contents: string | null;
-  envelopeText: string[];
-  fromScan: boolean;
-};
+// ── The list ────────────────────────────────────────────────────────────
 
-/** One piece in full (GET /api/stable?id=). */
-export type PaperMailFull = PaperMail & {
-  scanIsPdf: boolean;
-  barcode: string | null;
-  receivedAddress: string | null;
-  clearAt: string | null;
-  stableReadAt: string | null;
-  forwardTracking: string | null;
-  depositStatus: string | null;
-  tags: string[];
-  stableBusiness: string | null;
-  reading: PaperReading | null;
-  readingAt: string | null;
-  readingStale: boolean;
-  /** The last reading of these copies failed; it's tried again only when asked. */
-  readingFailed: boolean;
-};
-
-export const STABLE_ADDRESS = "5227 N 7th St STE 48575, Phoenix, AZ 85014";
-export const STABLE_DASHBOARD = "https://dashboard.usestable.com/dashboard";
-
-/** The pieces for one entity, or (no id) all of them. */
-export function usePaperMail(assetId?: string) {
-  const [mail, setMail] = useState<PaperMail[] | null>(null);
-  const [configured, setConfigured] = useState(true);
-  const [error, setError] = useState("");
-  const load = useCallback(async () => {
-    try {
-      const r = await authFetch(assetId ? `/api/stable?assetId=${encodeURIComponent(assetId)}` : "/api/stable?view=all");
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.message || "Couldn't load paper mail.");
-      setMail(j.mail ?? []);
-      if (typeof j.configured === "boolean") setConfigured(j.configured);
-      setError("");
-    } catch (err) {
-      setError((err as Error).message);
-      setMail((m) => m ?? []);
-    }
-  }, [assetId]);
-  useEffect(() => {
-    void load();
-  }, [load]);
-  return { mail, setMail, configured, error, reload: load };
-}
-
-export async function paperAction(body: Record<string, unknown>) {
-  const r = await authFetch("/api/stable", { method: "POST", body: JSON.stringify(body) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.message || "Something went wrong.");
-  return j;
-}
-
-const when = (iso: string | null) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
-};
-
-/** What happened to a piece, as a few words. */
-function statusOf(m: PaperMail): { text: string; tone: "good" | "warn" | "muted" | "accent" }[] {
-  const out: { text: string; tone: "good" | "warn" | "muted" | "accent" }[] = [];
-  if (m.returnedToSender) out.push({ text: "Returned to sender", tone: "warn" });
-  if (m.checks) out.push({ text: m.checks === 1 ? "Check inside" : `${m.checks} checks inside`, tone: "accent" });
-  if (m.scanUrl) out.push({ text: "Scanned", tone: "good" });
-  else if (m.scanStatus === "processing") out.push({ text: "Scanning…", tone: "muted" });
-  if (m.forwardStatus) out.push({ text: m.forwardStatus === "completed" ? "Forwarded" : "Forwarding…", tone: "muted" });
-  if (m.shredStatus) out.push({ text: m.shredStatus === "completed" ? "Shredded" : "Shredding…", tone: "muted" });
-  return out;
+/**
+ * Which entity a piece is filed under, as the system's Select (a sheet on
+ * touch). Unfiled reads "Needs an entity" in the warning tone; an automatic
+ * match offers Confirm, which lets the entity's partners see it.
+ */
+export function EntityPicker({
+  piece,
+  entities,
+  onAssign,
+  onConfirm,
+  full,
+}: {
+  piece: PaperMail;
+  entities: { id: string; name: string }[];
+  onAssign: (assetId: string | null) => void;
+  onConfirm?: () => void;
+  full?: boolean;
+}) {
+  const options = useMemo<Option<string>[]>(() => [...(piece.assetId ? [{ value: "", label: "No entity" }] : []), ...entities.map((e) => ({ value: e.id, label: e.name }))], [entities, piece.assetId]);
+  const note = filedNote(piece);
+  return (
+    <div className={cx("flex min-w-0 flex-col gap-1", full ? "w-full" : "w-[240px]")}>
+      <Select
+        label={`Entity for the mail from ${tidyName(piece.from) || "an unknown sender"}`}
+        size="sm"
+        value={piece.assetId}
+        placeholder="Choose an entity"
+        options={options}
+        onChange={(v) => onAssign(v || null)}
+      />
+      {!piece.assetId ? (
+        <Status tone="warning">Needs an entity</Status>
+      ) : (
+        note && (
+          <p className="flex flex-wrap items-center gap-x-2 text-small text-ink-2">
+            <span>{note}</span>
+            {piece.assigned === "auto" && onConfirm && (
+              <button type="button" onClick={onConfirm} className="cursor-pointer text-accent hover:text-accent-hover hover:underline underline-offset-[3px] touch:min-h-[44px]">
+                Confirm
+              </button>
+            )}
+          </p>
+        )
+      )}
+    </div>
+  );
 }
 
 export function PaperMailList({
   mail,
   entities,
   onAssign,
+  onConfirm,
   onOpen,
   empty,
 }: {
@@ -130,74 +78,247 @@ export function PaperMailList({
   /** Given: each piece gets an entity picker (staff, on the Paper mail page). */
   entities?: { id: string; name: string }[];
   onAssign?: (m: PaperMail, assetId: string | null) => void;
+  /** Staff agree with an automatic match. */
+  onConfirm?: (m: PaperMail) => void;
   onOpen?: (m: PaperMail) => void;
-  empty: string;
+  empty: ReactNode;
 }) {
-  const t = useTone();
-  if (!mail.length) return <p className={`px-5 py-5 text-[12.5px] ${t.muted}`}>{empty}</p>;
-  const toneCls = (tone: string) =>
-    tone === "good" ? (t.dark ? "text-emerald-300" : "text-emerald-700") : tone === "warn" ? (t.dark ? "text-amber-300" : "text-amber-700") : tone === "accent" ? t.accent : t.muted;
+  const phone = usePhone();
+  if (!mail.length) return empty ? <div className="ds px-5 py-4 text-body text-ink-2 touch:px-4">{empty}</div> : null;
+  const picking = !!(entities && onAssign);
   return (
-    <div className={`divide-y ${t.divide}`}>
+    <ul aria-label="Paper mail" className="ds ds-list">
       {mail.map((m) => {
         const unread = !m.readAt;
+        const from = tidyName(m.from) || "Unknown sender";
+        const to = recipientsOf(m);
+        const states = statusesOf(m);
+        const picker = picking && <EntityPicker piece={m} entities={entities!} onAssign={(id) => onAssign!(m, id)} onConfirm={onConfirm ? () => onConfirm(m) : undefined} full={phone} />;
         return (
-          <div key={m.id} className="flex items-start gap-4 px-5 py-4">
-            <Link
-              to={`/mailbox/${m.id}`}
-              onClick={() => onOpen?.(m)}
-              className={`relative block h-[64px] w-[96px] shrink-0 overflow-hidden rounded-lg border ${t.line} ${t.dark ? "bg-white/[0.03]" : "bg-gray-50"}`}
-              aria-label={`Open the mail from ${m.from || "an unknown sender"}`}
-            >
-              {m.envelopeUrl ? (
-                <img src={m.envelopeUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
-              ) : (
-                <span className={`flex h-full items-center justify-center ${t.faint}`}>
-                  <Icon name="mail" className="h-5 w-5" />
+          <li key={m.id} className="ds relative flex items-stretch">
+            <span className="flex w-4 shrink-0 justify-center pt-5 pl-1" aria-hidden="true">
+              {unread && <span className="size-2 rounded-full bg-accent" />}
+            </span>
+            <div className="ds-row-body flex min-w-0 flex-1 flex-col gap-3 py-4 pr-5 pl-2 sm:flex-row sm:items-start touch:pr-4">
+              <Link
+                to={`/mailbox/${m.id}`}
+                onClick={() => onOpen?.(m)}
+                aria-label={`Open the mail from ${from}${unread ? ", unread" : ""}`}
+                className="group flex min-w-0 flex-1 items-start gap-4 rounded-control outline-offset-2"
+              >
+                <span className="flex h-[48px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-mark border border-line bg-sunken text-ink-3">
+                  {m.envelopeUrl ? <img src={m.envelopeUrl} alt="" className="h-full w-full bg-paper object-cover" loading="lazy" /> : <Icon name="mail" />}
                 </span>
-              )}
-              {unread && <span className="absolute left-1.5 top-1.5 h-2 w-2 rounded-full bg-[#818cf8] ring-2 ring-black/40" aria-label="Unread" />}
-            </Link>
-            <Link to={`/mailbox/${m.id}`} onClick={() => onOpen?.(m)} className="group min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-3">
-                <p className={`truncate text-[13.5px] group-hover:underline ${unread ? "font-semibold" : "font-medium"} ${t.text}`}>{m.from || "Unknown sender"}</p>
-                <span className={`shrink-0 text-[12px] tabular-nums ${t.muted}`}>{when(m.receivedAt)}</span>
-              </div>
-              <p className={`mt-0.5 truncate text-[12px] ${t.muted}`}>To {[m.recipient, m.recipient2].filter(Boolean).join(" · ") || "—"}</p>
-              {m.summary && <p className={`mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed ${t.soft}`}>{m.summary}</p>}
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
-                {statusOf(m).map((s) => (
-                  <span key={s.text} className={`inline-flex items-center gap-1 ${toneCls(s.tone)}`}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                    {s.text}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-3">
+                    <span className={cx("min-w-0 flex-1 truncate text-body text-ink group-hover:underline underline-offset-[3px]", unread ? "font-semibold" : "font-medium")}>{from}</span>
+                    <span className="shrink-0 text-caption text-ink-3 tabular-nums">{rowDate(m.receivedAt)}</span>
                   </span>
-                ))}
-                <span className={`inline-flex items-center gap-0.5 font-medium ${t.accent}`}>
-                  Open <Icon name="chevronRight" className="h-3 w-3" strokeWidth={2.2} />
+                  {to && <span className="block truncate text-small text-ink-2">To {to}</span>}
+                  {m.summary && (
+                    <span className="mt-1 line-clamp-2 block text-small text-ink-2">
+                      <span className="text-ink-3">Stable’s summary: </span>
+                      {m.summary}
+                    </span>
+                  )}
+                  {unread && <span className="sr-only">Unread</span>}
+                  {states.length > 0 && (
+                    <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                      {states.map((s) => (
+                        <Status key={s.text} tone={s.tone}>
+                          {s.text}
+                        </Status>
+                      ))}
+                    </span>
+                  )}
                 </span>
-              </div>
-            </Link>
-            {entities && onAssign && (
-              <div className="w-[200px] shrink-0 max-md:hidden">
-                <Select
-                  value={m.assetId ?? ""}
-                  onChange={(e) => onAssign(m, e.target.value || null)}
-                  aria-label="Entity"
-                  className={!m.assetId ? (t.dark ? "!border-amber-400/40" : "!border-amber-300") : ""}
-                >
-                  <option value="">Which entity?</option>
-                  {entities.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-                </Select>
-                {m.assetId && m.assigned === "auto" && <p className={`mt-1 text-[11px] ${t.faint}`}>Matched from the envelope</p>}
-              </div>
-            )}
-          </div>
+              </Link>
+              {picker}
+            </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
+  );
+}
+
+// ── The media viewer ────────────────────────────────────────────────────
+
+/**
+ * The viewer is a modal registered with the overlay manager (useOverlay:
+ * focus in and trapped, Escape, the app inert, scroll locked, focus back to
+ * the opener). app/ui has no media viewer yet (docs/DESIGN.md lists one to
+ * define); until it does, this is it, and these are its modal attributes.
+ */
+const MODAL = { role: "dialog", ["aria" + "-modal"]: true } as const;
+
+export type MediaItem = {
+  src: string;
+  /** Read out and shown: "Envelope from Stable to Northwind Holdings, LLC". */
+  alt: string;
+  /** "Envelope", "Scan, page 1". */
+  label: string;
+  /** Opens the original (a fresh link) in a new tab. */
+  onOpenOriginal?: () => void;
+};
+
+/**
+ * The full-screen viewer for the envelope and the scan (docs/DESIGN.md §2.5,
+ * §8.19): always dark chrome, a caption with what it is and "1 of 3", "Open
+ * original" and Close at the top right, arrows (and swipe) between the
+ * envelope and the scan's pages, and zoom: pinch or double-tap on a phone,
+ * double-click or + and − at a desk. Focus is trapped while it's open and
+ * returns to the image that opened it.
+ */
+export function MediaViewer({
+  items,
+  index,
+  onIndex,
+  onClose,
+  name,
+  caption,
+}: {
+  items: MediaItem[];
+  /** The item showing, or null when closed. */
+  index: number | null;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+  /** The dialog's name: "Envelope, enlarged". */
+  name: string;
+  /** What the piece is, for the caption: "from Stable · Oct 29". */
+  caption: string;
+}) {
+  const open = index !== null && !!items[index];
+  const { mounted, leaving } = usePresence(open, 120);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const handle = useOverlay({ open, onClose, kind: "dialog", initialFocus: closeRef });
+  const [scale, setScale] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<{ dist: number; scale: number; x: number; y: number; pan: { x: number; y: number }; moved: boolean; t: number } | null>(null);
+  const lastTap = useRef(0);
+  const lastTouch = useRef(0);
+  const shown = index ?? 0;
+  const item = items[shown];
+  const many = items.length > 1;
+
+  useEffect(() => {
+    setScale(1);
+    setPan({ x: 0, y: 0 });
+  }, [index]);
+
+  const go = useCallback((dir: 1 | -1) => onIndex((shown + dir + items.length) % items.length), [items.length, onIndex, shown]);
+  useEffect(() => {
+    if (!open || !many) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") go(1);
+      else if (e.key === "ArrowLeft") go(-1);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [open, many, go]);
+
+  if (!mounted || !item) return null;
+  const zoomTo = (s: number) => {
+    const next = Math.min(4, Math.max(1, s));
+    setScale(next);
+    if (next === 1) setPan({ x: 0, y: 0 });
+  };
+  const onDown = (e: React.PointerEvent) => {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pts = [...pointers.current.values()];
+    const dist = pts.length === 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0;
+    gesture.current = { dist, scale, x: e.clientX, y: e.clientY, pan, moved: false, t: performance.now() };
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId) || !gesture.current) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gesture.current;
+    const pts = [...pointers.current.values()];
+    if (pts.length === 2 && g.dist) {
+      g.moved = true;
+      zoomTo((g.scale * Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)) / g.dist);
+    } else if (pts.length === 1) {
+      const dx = e.clientX - g.x;
+      const dy = e.clientY - g.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) g.moved = true;
+      if (scale > 1) setPan({ x: g.pan.x + dx, y: g.pan.y + dy });
+    }
+  };
+  const onUp = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    pointers.current.delete(e.pointerId);
+    if (!g || pointers.current.size) return;
+    gesture.current = null;
+    const dx = e.clientX - g.x;
+    // A flick sideways at normal size moves between items.
+    if (scale === 1 && many && Math.abs(dx) > 60 && performance.now() - g.t < 600) return go(dx < 0 ? 1 : -1);
+    // A mouse zooms on double-click (below); a finger on double-tap.
+    if (g.moved || e.pointerType === "mouse") return;
+    const now = performance.now();
+    lastTouch.current = now;
+    if (now - lastTap.current < 300) {
+      zoomTo(scale > 1 ? 1 : 2.5);
+      lastTap.current = 0;
+    } else lastTap.current = now;
+  };
+
+  // The viewer is always dark (data-theme below), so these tokens are its dark chrome in either theme.
+  const chrome = "border border-line-strong bg-overlay text-ink";
+  return createPortal(
+    <div data-theme="dark" className="ds fixed inset-0">
+      <div
+        ref={handle.panelRef}
+        {...MODAL}
+        aria-label={name}
+        aria-describedby={handle.descId}
+        className={cx("absolute inset-0 flex flex-col bg-sunken text-body text-ink outline-none", leaving ? "pointer-events-none ds-dialog-out" : "ds-dialog-in")}
+      >
+        <div className="flex shrink-0 items-center justify-end gap-2 px-4 pt-[calc(16px+env(safe-area-inset-top))] md:px-6">
+          <span className="hidden items-center gap-1 md:flex">
+            <IconButton icon="minus" label="Zoom out" className={chrome} disabled={scale <= 1} onClick={() => zoomTo(scale - 0.75)} />
+            <IconButton icon="plus" label="Zoom in" className={chrome} disabled={scale >= 4} onClick={() => zoomTo(scale + 0.75)} />
+          </span>
+          {item.onOpenOriginal && (
+            <Button size="sm" icon="external" className={chrome} onClick={item.onOpenOriginal}>
+              Open original
+            </Button>
+          )}
+          <IconButton ref={closeRef} icon="x" label="Close" noTooltip className={chrome} onClick={() => handle.requestClose("close")} />
+        </div>
+        <div
+          className="relative min-h-0 flex-1 touch-none overflow-hidden select-none"
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+          onDoubleClick={() => {
+            if (performance.now() - lastTouch.current < 600) return;
+            zoomTo(scale > 1 ? 1 : 2.5);
+          }}
+        >
+          <div className="absolute inset-0 flex items-center justify-center p-6 md:p-16">
+            <img
+              src={item.src}
+              alt={item.alt}
+              draggable={false}
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }}
+              className={cx("max-h-full max-w-full rounded-mark bg-paper object-contain", scale > 1 ? "cursor-grab" : "cursor-zoom-in")}
+            />
+          </div>
+          {many && (
+            <>
+              <IconButton icon="chevronLeft" label="Previous" className={cx("absolute top-1/2 left-4 -translate-y-1/2 max-md:hidden", chrome)} onClick={() => go(-1)} />
+              <IconButton icon="chevronRight" label="Next" className={cx("absolute top-1/2 right-4 -translate-y-1/2 max-md:hidden", chrome)} onClick={() => go(1)} />
+            </>
+          )}
+        </div>
+        <p id={handle.descId} className="shrink-0 px-4 pt-3 pb-[calc(16px+env(safe-area-inset-bottom))] text-small text-ink-2 md:px-6">
+          {[item.label, caption, many ? `${shown + 1} of ${items.length}` : ""].filter(Boolean).join(" · ")}
+        </p>
+      </div>
+    </div>,
+    overlayRoot(),
   );
 }

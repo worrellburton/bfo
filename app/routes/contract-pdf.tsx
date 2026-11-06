@@ -1,655 +1,346 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
-import { getUser } from "../auth";
-import { signApi, type SignatureRequest } from "../sign/api";
-import { ContractSignature, type SigGeometry } from "../sign/contract-signature";
-import { useTheme } from "../theme";
+/**
+ * A management services agreement: the document as it reads from the
+ * record, its terms at a glance, and its signing.
+ *
+ * The agreement is drawn from the entity's record and the contract's own
+ * fields (app/entity/msa-document.ts): parties, addresses, trade name,
+ * governing law and the Manager's signer all come from there, never from
+ * constants. What the record lacks is listed, and the agreement can't be
+ * sent until it's filled in. The pages are drawn in the app (pdf.js), on
+ * phones too. Once it's out for signature or signed, the request's own copy
+ * is what binds; a banner says so if the record has changed since.
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "react-router";
+import { authFetch, getUser, isAdmin } from "../auth";
+import { Badge, Banner, Button, Card, Empty, Page, PageHeader, Row, Rows, Skeleton, Status, format, useDocumentTitle, type MenuItem } from "../ui";
+import type { Contract, TradeName } from "../entity/agreements";
+import { listRequests } from "../entity/contract-requests";
+import { STAGE, familyEntityNamed, feeShort, periodsElapsed, signedDate, stageOf, todayLocal } from "../entity/contract-terms";
+import type { Asset, CorpData } from "../entity/model";
+import { msaSections, renderMsaPdf, type MsaInput } from "../entity/msa-document";
+import { managersOnRecord, trustPeopleOf } from "../entity/people-model";
+import { ContractSignature, type RecordSigner, type SignerPair } from "../sign/contract-signature";
+import { PdfPages, useFitWidth } from "../sign/pdf-pages";
+import type { SignatureRequest } from "../sign/api";
 
 export function meta() {
-  return [{ title: "BFO - Contract PDF" }];
+  return [{ title: "Agreement · BFO" }];
 }
 
-interface Asset {
-  name: string;
-  type: string;
-  state: string;
-}
+type Rec = Asset & { tradeName?: TradeName | null; corp?: CorpData & { officers?: Record<string, { name: string; title: string; until?: string }> }; trustPeople?: unknown };
 
-interface OperatingContract {
-  counterparty: string;
-  role: string;
-  services: string[];
-  fee: string;
-  frequency: string;
-  effectiveDate: string;
-  term: string;
-  status: string;
-  referralCredit?: boolean;
-  letterhead?: "bfo" | "robert";
-  entityNameOnly?: boolean;
+/** Who may sign for the entity, read from its record (used when the server's list, with emails, isn't available). */
+function signersFrom(a: Rec): RecordSigner[] {
+  if (a.type === "Trust")
+    return trustPeopleOf(a as Parameters<typeof trustPeopleOf>[0])
+      .people.filter((p) => p.role === "trustee")
+      .map((p) => ({ name: p.name, title: "Trustee", email: null, source: "The trust’s people" }));
+  if (a.type === "C-Corp")
+    return Object.values(a.corp?.officers ?? {})
+      .filter((o) => !o.until)
+      .map((o) => ({ name: o.name, title: o.title, email: null, source: "Officers" }));
+  const m = managersOnRecord(a);
+  return m.list.map((x) => ({ name: x.name, title: /managing member/i.test(x.role) ? "Managing member" : "Manager", email: null, source: m.source ?? undefined }));
 }
-
-const isLedgerLouiseName = (name: string) => String(name).toLowerCase().includes("ledger louise");
 
 export default function ContractPDF() {
   const { id, contractId } = useParams();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-  const [asset, setAsset] = useState<Asset | null>(null);
-  const [contract, setContract] = useState<OperatingContract | null>(null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [brand, setBrand] = useState<"bfo" | "robert">("bfo");
-  // The signature request for this contract (Tools › Signatures), if one exists.
-  const [sigReq, setSigReq] = useState<SignatureRequest | null | undefined>(undefined);
-  const [showSigForm, setShowSigForm] = useState(false);
-  // Where the signature block landed in the generated PDF, for placing the fields.
-  const geom = useRef<SigGeometry | null>(null);
-  const pdfBlob = useRef<Blob | null>(null);
+  const preview = contractId === "preview";
+  const admin = isAdmin();
+  const [asset, setAsset] = useState<Rec | null>(null);
+  const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
+  const [contract, setContract] = useState<Contract | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [pdf, setPdf] = useState<{ bytes: Uint8Array; url: string; pages: number } | null>(null);
+  const [drawError, setDrawError] = useState("");
+  const [request, setRequest] = useState<SignatureRequest | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [signers, setSigners] = useState<RecordSigner[] | null>(null);
+  const [meEmail, setMeEmail] = useState<string | null>(getUser()?.email ?? null);
+  const [fitRef, width] = useFitWidth(760, 0);
+  const formRef = useRef<HTMLDivElement | null>(null);
 
+  // The entity and the contract, live from the store.
   useEffect(() => {
     let unsub1: (() => void) | undefined;
     let unsub2: (() => void) | undefined;
-
-    async function setup() {
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, onValue } = await import("../store");
-
-      unsub1 = onValue(ref(db, `assets/${id}`), (snapshot) => {
-        const data = snapshot.val();
-        if (data) setAsset(data as Asset);
+    let alive = true;
+    (async () => {
+      const { db, onValue, ref } = await import("../store");
+      unsub1 = onValue(ref(db, "assets"), (snap) => {
+        const all = (snap.val() ?? {}) as Record<string, Rec>;
+        if (!alive) return;
+        setAsset(all[id ?? ""] ?? null);
+        setEntities(
+          Object.entries(all)
+            .filter(([k, a]) => k !== id && a?.name)
+            .map(([k, a]) => ({ id: k, name: a.name })),
+        );
+        if (preview) setLoaded(true);
       });
-
-      // A preview of an unsaved form (app/entity/agreements.tsx PREVIEW_KEY): no record, no signatures.
-      if (contractId === "preview") {
+      if (preview) {
         try {
-          const draft = JSON.parse(sessionStorage.getItem("bfo.contract.preview") ?? "null") as OperatingContract | null;
-          if (draft) setContract(draft);
+          const draft = JSON.parse(sessionStorage.getItem("bfo.contract.preview") ?? "null") as Contract | null;
+          if (draft) setContract({ ...draft, id: "preview" });
         } catch {
           /* nothing to preview */
         }
-        setLoading(false);
         return;
       }
-
-      unsub2 = onValue(ref(db, `assets/${id}/contracts/${contractId}`), (snapshot) => {
-        const data = snapshot.val();
-        if (data) setContract(data as OperatingContract);
-        setLoading(false);
+      unsub2 = onValue(ref(db, `assets/${id}/contracts/${contractId}`), (snap) => {
+        if (!alive) return;
+        const data = snap.val();
+        setContract(data ? ({ ...data, id: contractId } as Contract) : null);
+        setLoaded(true);
       });
-    }
-
-    setup();
+    })();
     return () => {
+      alive = false;
       unsub1?.();
       unsub2?.();
     };
-  }, [id, contractId]);
+  }, [id, contractId, preview]);
 
-  // The contract's signature request, newest first.
+  // The contract's signature request: the newest that wasn't voided or declined.
   useEffect(() => {
-    if (!id || !contractId || contractId === "preview") return;
+    if (!id || !contractId || preview) return;
     let alive = true;
-    signApi
-      .list()
-      // The newest live request; a voided or declined one doesn't stop the contract going out again.
-      .then((all) => alive && setSigReq(all.find((r) => r.asset_id === id && r.contract_id === contractId && r.status !== "voided" && r.status !== "declined") ?? null))
-      .catch(() => alive && setSigReq(null));
+    listRequests()
+      .then((all) => {
+        const mine = all
+          .filter((r) => r.asset_id === id && r.contract_id === contractId && r.status !== "voided" && r.status !== "declined")
+          .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        if (alive) setRequest(mine[0] ?? null);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
-  }, [id, contractId]);
+  }, [id, contractId, preview]);
 
-  // Seed the letterhead toggle from the contract's saved choice
+  // Who may sign for the entity, with their own emails (owners and admins).
   useEffect(() => {
-    if (contract) setBrand(contract.letterhead ?? "bfo");
-  }, [contract?.letterhead]);
-
-  // Generate PDF once data is loaded
-  useEffect(() => {
-    if (!asset || !contract) return;
-    // Non-null locals: narrowing doesn't survive into the nested helpers below.
-    const assetNN = asset;
-    const contractNN = contract;
-
-    (async () => {
-      const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ unit: "pt", format: "letter" });
-      // Client-ready document title — shown in the PDF viewer and used by
-      // modern browsers as the suggested filename on save.
-      doc.setProperties({
-        title: `Management Services Agreement - ${contract.counterparty}`,
-        subject: "Management Services Agreement",
-        author: contract.entityNameOnly ? String(asset.name) : "Burton Family Office",
-      });
-      const pw = doc.internal.pageSize.getWidth();
-      const ph = doc.internal.pageSize.getHeight();
-      const ml = 78;
-      const mr = pw - 78;
-      const tw = mr - ml;
-
-      // Editorial palette — warm ink on ivory
-      const ink: [number, number, number] = [34, 30, 26];
-      const muted: [number, number, number] = [148, 140, 128];
-      const paper: [number, number, number] = [250, 248, 242];
-
-      const topY = 116;
-      const bottomLimit = ph - 84;
-      let y = topY;
-      let pageNum = 1;
-
-      // Manager (Ledger Louise) is a Nevada LLC d/b/a Burton Family Office;
-      // reconcile the party block, governing law, venue, and signatory to the
-      // Nevada operating agreement when Ledger Louise is the Manager.
-      const isLedgerLouise = String(asset.name).toLowerCase().includes("ledger louise");
-      const managerState = isLedgerLouise ? "Nevada" : asset.state || "Arizona";
-      // The d/b/a can be left off (the contract's "Entity name only" switch).
-      const showDba = isLedgerLouise && !contract.entityNameOnly;
-      const dba = showDba ? " doing business as Burton Family Office" : "";
-      const officeSentence = isLedgerLouise
-        ? "Manager's principal office is 401 Ryland Street, Suite 200-A, Reno, NV 89502; its notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028."
-        : "Manager's notice address is 11201 N Tatum Blvd, Ste 300, PMB 44879, Phoenix, AZ 85028.";
-      const venue = isLedgerLouise ? "the state or federal courts located in Washoe County, Nevada" : `the state or federal courts located in ${managerState}`;
-
-      // Letterhead identity — toggled in the UI: present as BFO or Robert Burton.
-      // With "Entity name only" the entity speaks for itself: no BFO, no Burton
-      // Family Office, anywhere in the document.
-      const isRobert = brand === "robert";
-      const unbranded = !!contractNN.entityNameOnly;
-      const wordmark = isRobert ? "Robert Burton" : unbranded ? String(assetNN.name) : "BFO";
-      const brandLine = isRobert ? "ROBERT BURTON" : unbranded ? "" : "BURTON FAMILY OFFICE";
-
-      function paintPage() {
-        doc.setFillColor(...paper);
-        doc.rect(0, 0, pw, ph, "F");
-      }
-
-      function header() {
-        doc.setTextColor(...ink);
-        doc.setFont("times", "bold");
-        doc.setFontSize(13);
-        doc.text(wordmark, ml, 60);
-        const wmW = doc.getTextWidth(wordmark);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7);
-        doc.setCharSpace(2);
-        doc.setTextColor(...muted);
-        doc.text("MANAGEMENT SERVICES AGREEMENT", ml + wmW + 10, 60);
-        doc.text(String(pageNum).padStart(2, "0"), mr, 60, { align: "right" });
-        doc.setCharSpace(0);
-        doc.setDrawColor(...ink);
-        doc.setLineWidth(0.5);
-        doc.line(ml, 74, mr, 74);
-        doc.setTextColor(...ink);
-      }
-
-      function footer() {
-        const fy = ph - 50;
-        doc.setDrawColor(...ink);
-        doc.setLineWidth(0.5);
-        doc.line(ml, fy, mr, fy);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(6.5);
-        doc.setCharSpace(1.4);
-        doc.setTextColor(...muted);
-        doc.text(`${String(assetNN.name).toUpperCase()}  ·  ${String(contractNN.counterparty).toUpperCase()}`, ml, fy + 14);
-        if (brandLine) doc.text(brandLine, mr, fy + 14, { align: "right" });
-        doc.setCharSpace(0);
-        doc.setTextColor(...ink);
-      }
-
-      function newPage() {
-        doc.addPage();
-        pageNum += 1;
-        paintPage();
-        header();
-        footer();
-        y = topY;
-      }
-
-      function ensure(space: number) {
-        if (y + space > bottomLimit) newPage();
-      }
-
-      // Tracked uppercase section kicker with a hairline rule beneath
-      function kicker(text: string) {
-        ensure(48);
-        y += 10;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(8);
-        doc.setCharSpace(1.6);
-        doc.setTextColor(...ink);
-        doc.text(text.toUpperCase(), ml, y);
-        doc.setCharSpace(0);
-        y += 9;
-        doc.setDrawColor(...ink);
-        doc.setLineWidth(0.5);
-        doc.line(ml, y, mr, y);
-        y += 18;
-      }
-
-      // Serif body paragraph
-      function body(text: string, opts?: { indent?: number; size?: number }) {
-        const size = opts?.size ?? 10.5;
-        const indent = opts?.indent ?? 0;
-        const lead = size * 1.6;
-        doc.setFont("times", "normal");
-        doc.setFontSize(size);
-        const lines = doc.splitTextToSize(text, tw - indent);
-        for (const line of lines) {
-          ensure(lead);
-          // Re-apply the body style on every line — a page break runs the
-          // header/footer, which leave a different (small, sans) font active.
-          doc.setFont("times", "normal");
-          doc.setFontSize(size);
-          doc.setTextColor(...ink);
-          doc.text(line, ml + indent, y);
-          y += lead;
-        }
-      }
-
-      function gap(n = 10) {
-        y += n;
-      }
-
-      // ── Page 1 ───────────────────────────────────────────────
-      paintPage();
-      header();
-      footer();
-
-      // Title block — tracked kicker + serif display title
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setCharSpace(2);
-      doc.setTextColor(...muted);
-      doc.text("SERVICE AGREEMENT", ml, y);
-      doc.setCharSpace(0);
-      y += 32;
-
-      doc.setFont("times", "bold");
-      doc.setTextColor(...ink);
-      let titleSize = 30;
-      doc.setFontSize(titleSize);
-      while (titleSize > 16 && doc.getTextWidth("Management Services Agreement") > tw) {
-        titleSize -= 1;
-        doc.setFontSize(titleSize);
-      }
-      doc.text("Management Services Agreement", ml, y);
-      y += 28;
-
-      doc.setFont("times", "italic");
-      doc.setFontSize(12);
-      doc.setTextColor(...muted);
-      doc.text(`${asset.name}  &  ${contract.counterparty}`, ml, y);
-      y += 16;
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.setCharSpace(1.3);
-      doc.text(
-        `EFFECTIVE ${String(contract.effectiveDate).toUpperCase()}     ${String(contract.fee).toUpperCase()} / ${String(contract.frequency).toUpperCase()}     TERM ${String(contract.term).toUpperCase()}`,
-        ml,
-        y,
-      );
-      doc.setCharSpace(0);
-      y += 14;
-      doc.setDrawColor(...ink);
-      doc.setLineWidth(1.4);
-      doc.line(ml, y, mr, y);
-      doc.setLineWidth(0.5);
-      y += 30;
-
-      // Recitals — drop-cap opening paragraph
-      const recital = `This Management Services Agreement ("Agreement") is made and entered into as of ${contract.effectiveDate} (the "Effective Date") by and between ${asset.name}, a ${managerState} limited liability company${dba} ("Manager"), and ${contract.counterparty} ("Client"). ${officeSentence} Manager is engaged in the business of providing management, administrative, and advisory services to affiliated entities, and Client desires to retain Manager to provide the services described herein. In consideration of the mutual covenants set forth below, the parties agree as follows.`;
-
-      {
-        ensure(90);
-        const cap = recital.charAt(0);
-        const rest = recital.slice(1).replace(/^\s+/, "");
-        doc.setFont("times", "bold");
-        doc.setFontSize(38);
-        doc.setTextColor(...ink);
-        const capW = doc.getTextWidth(cap) + 8;
-        doc.text(cap, ml, y + 27);
-        doc.setFont("times", "normal");
-        doc.setFontSize(10.5);
-        const lead = 10.5 * 1.6;
-        const narrow = doc.splitTextToSize(rest, tw - capW);
-        const head = narrow.slice(0, 3);
-        for (let i = 0; i < head.length; i++) {
-          doc.text(head[i], ml + capW, y + (i + 1) * lead);
-        }
-        let yy = y + Math.max(head.length, 1) * lead;
-        const leftover = narrow.slice(3).join(" ");
-        if (leftover) {
-          const wide = doc.splitTextToSize(leftover, tw);
-          for (const line of wide) {
-            yy += lead;
-            doc.text(line, ml, yy);
-          }
-        }
-        y = yy + 16;
-      }
-
-      // ── Articles ─────────────────────────────────────────────
-      kicker("Article I · Scope of Services");
-      body("1.1  Manager shall provide the following services to Client:");
-      gap(6);
-      const SERVICE_ALIASES: Record<string, string> = {
-        "AI & Technology Management": "AI, Automation & Technology Management",
-        "AI Agent & Automation Development": "AI, Automation & Technology Management",
-      };
-      const seenSvc = new Set<string>();
-      const services = (contract.services || []).map((s) => SERVICE_ALIASES[s] || s).filter((s) => (seenSvc.has(s) ? false : (seenSvc.add(s), true)));
-      services.forEach((s: string) => {
-        body(`—   ${s}`, { indent: 16 });
-      });
-      gap(6);
-      body("1.2  Manager shall perform the Services in a professional and workmanlike manner consistent with generally accepted industry standards.");
-
-      kicker("Article II · Compensation");
-      body(`2.1  Client shall pay Manager a management fee of ${contract.fee} per ${contract.frequency.toLowerCase()} (the "Management Fee") for services rendered under this Agreement.`);
-      gap(6);
-      body("2.2  Payment shall be due within thirty (30) days following the end of each billing period.");
-      if (contract.referralCredit) {
-        gap(6);
-        body(
-          "2.3  Referral Credit. If Client refers a prospective client to Manager and such referral results in an executed engagement between Manager and the referred party, Manager shall credit the referral fee otherwise payable in respect of that referral against Client’s Management Fee, in lieu of any cash payment. The credit shall be applied to successive Management Fee invoices until the full amount of the referral fee has been exhausted. By way of illustration, if Client’s Management Fee is $5,000 per month and a qualifying referral generates a $10,000 referral fee, Manager shall waive Client’s Management Fee for the period(s) necessary to apply the full $10,000 credit (e.g., two (2) months), after which the Management Fee shall resume.",
-        );
-      }
-
-      kicker("Article III · Term and Termination");
-      const termText = String(contract.term || "").toLowerCase();
-      const autoRenew = termText.includes("auto-renew");
-      const monthToMonth = termText.includes("month");
-      body(
-        monthToMonth
-          ? "3.1  This Agreement shall commence on the Effective Date and shall continue on a month-to-month basis until terminated. Either party may terminate this Agreement for any reason upon thirty (30) days’ written notice to the other party."
-          : autoRenew
-            ? '3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the "Initial Term"), and shall automatically renew for successive periods of equal duration unless either party provides written notice of non-renewal at least thirty (30) days prior to the expiration of the then-current term.'
-            : '3.1  This Agreement shall commence on the Effective Date and shall continue for an initial term of one (1) year (the "Initial Term"). This Agreement shall not automatically renew; any renewal shall require the written agreement of both parties prior to the expiration of the Initial Term.',
-      );
-      gap(6);
-      body(
-        "3.2  Either party may terminate this Agreement for cause upon thirty (30) days’ written notice to the other party specifying the nature of the breach, provided that the breaching party fails to cure such breach within such thirty-day period.",
-      );
-      gap(6);
-      body("3.3  Upon termination, Manager shall deliver to Client all documents, records, and materials relating to Client’s business within fifteen (15) business days.");
-
-      kicker("Article IV · Confidentiality");
-      body(
-        "4.1  Each party acknowledges that in the course of performing its obligations under this Agreement, it may receive or have access to confidential and proprietary information of the other party. Each party agrees to maintain the confidentiality of such information and not to disclose it to any third party without the prior written consent of the disclosing party.",
-      );
-
-      kicker("Article V · Indemnification");
-      body(
-        "5.1  Each party shall indemnify, defend, and hold harmless the other party from and against any and all claims, damages, losses, and expenses arising out of or resulting from any breach of this Agreement or any negligent or wrongful act or omission of the indemnifying party.",
-      );
-
-      kicker("Article VI · Governing Law");
-      body(`6.1  This Agreement shall be governed by and construed in accordance with the laws of the State of ${managerState}, without regard to its conflict of law provisions.`);
-      gap(6);
-      body(`6.2  Any dispute arising under this Agreement shall be resolved in ${venue}.`);
-
-      kicker("Article VII · Miscellaneous");
-      body("7.1  This Agreement constitutes the entire agreement between the parties and supersedes all prior agreements and understandings, whether written or oral.");
-      gap(6);
-      body("7.2  This Agreement may not be amended or modified except by a written instrument signed by both parties.");
-      gap(6);
-      body("7.3  Neither party may assign this Agreement without the prior written consent of the other party.");
-
-      // ── Signature block — always anchored to the bottom of the page ──
-      doc.setFont("times", "italic");
-      doc.setFontSize(10.5);
-      const witnessLines = doc.splitTextToSize("IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.", tw);
-      const witnessH = witnessLines.length * 10.5 * 1.6;
-      const sigBlockH = witnessH + 26 + 138; // witness + gap + columns/lines/fields
-      // Keep the whole block together; move to a fresh page only if it won't fit.
-      if (y + sigBlockH > bottomLimit) newPage();
-      // Push the block down so it sits at the bottom margin, above the footer.
-      y = bottomLimit - sigBlockH;
-      doc.setFont("times", "italic");
-      doc.setFontSize(10.5);
-      doc.setTextColor(...ink);
-      for (const line of witnessLines) {
-        doc.text(line, ml, y);
-        y += 10.5 * 1.6;
-      }
-      gap(26);
-
-      const colW = 220;
-      const leftX = ml;
-      const rightX = mr - colW;
-      const rowY = y;
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7);
-      doc.setCharSpace(1.4);
-      doc.setTextColor(...muted);
-      doc.text("MANAGER", leftX, rowY);
-      doc.text("CLIENT", rightX, rowY);
-      doc.setCharSpace(0);
-
-      doc.setFont("times", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(...ink);
-      doc.text(asset.name, leftX, rowY + 18);
-      doc.text(contract.counterparty, rightX, rowY + 18);
-      if (showDba) {
-        doc.setFont("times", "italic");
-        doc.setFontSize(9);
-        doc.setTextColor(...muted);
-        doc.text("d/b/a Burton Family Office", leftX, rowY + 32);
-        doc.setTextColor(...ink);
-      }
-
-      const sigLineY = rowY + 68;
-      doc.setDrawColor(...ink);
-      doc.setLineWidth(0.5);
-      doc.line(leftX, sigLineY, leftX + colW - 20, sigLineY);
-      doc.line(rightX, sigLineY, rightX + colW - 20, sigLineY);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setCharSpace(1.4);
-      doc.setTextColor(...muted);
-      doc.text("AUTHORIZED SIGNATURE", leftX, sigLineY + 11);
-      doc.text("AUTHORIZED SIGNATURE", rightX, sigLineY + 11);
-      doc.setCharSpace(0);
-
-      doc.setFont("times", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(...ink);
-      // Manager side is pre-filled from the operating agreement (executed by
-      // Robert W. Burton, Manager). Client side stays blank for fill-in.
-      const managerFill = isLedgerLouise ? ["Robert W. Burton", "Manager", ""] : ["", "", ""];
-      ["Name:", "Title:", "Date:"].forEach((f, i) => {
-        const fyy = sigLineY + 30 + i * 16;
-        doc.setFont("times", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(...ink);
-        doc.text(f, leftX, fyy);
-        doc.text(f, rightX, fyy);
-        doc.setDrawColor(...muted);
-        doc.setLineWidth(0.4);
-        doc.line(leftX + 30, fyy + 1, leftX + colW - 20, fyy + 1);
-        doc.line(rightX + 30, fyy + 1, rightX + colW - 20, fyy + 1);
-        if (managerFill[i]) {
-          doc.text(managerFill[i], leftX + 34, fyy - 1);
-        }
-      });
-
-      doc.setTextColor(...ink);
-      doc.setDrawColor(...ink);
-      doc.setLineWidth(0.5);
-
-      // Where the signatures go, for the signature request's fields (fractions of the page, y from the top).
-      geom.current = {
-        page: pageNum,
-        pw,
-        ph,
-        left: { x: leftX, line: sigLineY, date: sigLineY + 30 + 2 * 16 },
-        right: { x: rightX, line: sigLineY, date: sigLineY + 30 + 2 * 16 },
-        colW,
-      };
-
-      // Convert to blob URL for embedding
-      const blob = doc.output("blob");
-      pdfBlob.current = blob;
-      const url = URL.createObjectURL(blob);
-      setPdfUrl(url);
-    })();
-  }, [asset, contract, brand]);
-
-  // Cleanup blob URL
-  useEffect(() => {
+    if (!id || !admin || preview) return;
+    let alive = true;
+    authFetch(`/api/members?assetId=${encodeURIComponent(id)}&view=signers`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!alive || !j) return;
+        if (Array.isArray(j.signers)) setSigners(j.signers);
+        if (j.me?.email) setMeEmail(j.me.email);
+      })
+      .catch(() => {});
     return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      alive = false;
     };
-  }, [pdfUrl]);
+  }, [id, admin, preview]);
 
-  function handleDownload() {
-    if (!pdfUrl || !asset || !contract) return;
-    const a = document.createElement("a");
-    a.href = pdfUrl;
-    a.download = `Management Services Agreement - ${contract.counterparty}.pdf`
-      .replace(/[^a-zA-Z0-9 .\-&]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    a.click();
-  }
+  const input: MsaInput | null = useMemo(() => {
+    if (!asset || !contract) return null;
+    const legal = contract.masthead === "legal" || (!contract.masthead && !!contract.entityNameOnly);
+    const trade = !legal && asset.tradeName?.name ? asset.tradeName.name : null;
+    const affiliate = contract.counterpartyType ? contract.counterpartyType === "affiliate" : !!familyEntityNamed(contract.counterparty, entities);
+    return {
+      manager: { name: asset.name, type: asset.type, state: asset.state, principalOffice: asset.address ?? null, noticeAddress: asset.mailingAddress || asset.address || null, tradeName: trade },
+      client: { name: contract.counterparty, state: contract.counterpartyState ?? null, form: contract.counterpartyForm ?? null, affiliate },
+      contract: { ...contract, services: contract.services ?? [], masthead: trade ? "trade" : "legal" },
+      governingLaw: asset.state ?? "",
+      signers: { manager: (signers ?? signersFrom(asset))[0] ?? null, client: null },
+    };
+  }, [asset, contract, entities, signers]);
+  const sections = useMemo(() => (input ? msaSections(input) : null), [input]);
 
-  if (loading) {
-    return <p className="text-gray-500">Loading...</p>;
-  }
+  // Draw the agreement as it reads now.
+  useEffect(() => {
+    if (!input || !sections) return;
+    let alive = true;
+    renderMsaPdf(input, sections)
+      .then(async ({ blob, pages }) => {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (!alive) return;
+        setPdf({ bytes, url: URL.createObjectURL(blob), pages });
+        setDrawError("");
+      })
+      .catch(() => alive && setDrawError("The agreement couldn’t be drawn. Reload the page to try again."));
+    return () => {
+      alive = false;
+    };
+  }, [input, sections]);
+  useEffect(() => () => void (pdf && URL.revokeObjectURL(pdf.url)), [pdf]);
 
-  if (!asset || !contract) {
+  // A request that completed: the contract is signed, as of then.
+  useEffect(() => {
+    if (!admin || preview || !contract || !request || request.status !== "completed" || contract.signedOn) return;
+    const on = signedDate(contract, request);
+    if (!on) return;
+    void import("../store").then(({ db, ref, update }) => update(ref(db, `assets/${id}/contracts/${contractId}`), { signedOn: on, status: "active", signatureRequestId: request.id }).catch(() => {}));
+  }, [admin, preview, contract, request, id, contractId]);
+
+  const counterparty = contract?.counterparty ?? "";
+  useDocumentTitle(counterparty ? `MSA with ${counterparty}` : "Agreement", asset?.name, "Entities");
+
+  const back = { to: `/assets/${encodeURIComponent(id ?? "")}/agreements`, label: asset?.name ?? "Contracts" };
+  if (!loaded) {
     return (
-      <div>
-        <Link to={`/assets/${id}/agreements`} className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm mb-4 inline-block`}>
-          &larr; Back to Entity
-        </Link>
-        <p className="text-gray-500">Contract not found.</p>
-      </div>
+      <Page header={<PageHeader title="Management services agreement" back={back} />}>
+        <Skeleton kind="card" />
+      </Page>
+    );
+  }
+  if (!asset || !contract || !input || !sections) {
+    return (
+      <Page width="reading" header={<PageHeader title="Management services agreement" back={back} />}>
+        <Empty size="page" title={preview ? "Nothing to preview" : "We couldn’t find that agreement"}>
+          {preview ? "Open the preview from the contract form, with a counterparty filled in." : "It may have been deleted, or the link is from another entity."}
+        </Empty>
+      </Page>
     );
   }
 
+  const stage = preview ? "draft" : stageOf(contract, request);
+  const signed = signedDate(contract, request);
+  const elapsed = !signed ? periodsElapsed(contract, todayLocal()) : null;
+  const trade = asset.tradeName;
+  const tradeUnfiled = input.manager.tradeName && !trade?.filedOn;
+  const sentTerms = (contract as Contract & { sentTerms?: Record<string, unknown> }).sentTerms;
+  const changedSinceSent = !!request && !!sentTerms && JSON.stringify(sentTerms) !== JSON.stringify(termsOf(contract));
+  const allSigners = signers ?? signersFrom(asset);
+  const canSend = admin && !preview && !request && (stage === "draft" || stage === "unsigned-active");
+  const filename = `Management Services Agreement - ${counterparty}.pdf`.replace(/[^a-zA-Z0-9 .\-&]/g, "").replace(/\s+/g, " ");
+  const download = () => {
+    if (!pdf) return;
+    const a = document.createElement("a");
+    a.href = pdf.url;
+    a.download = filename;
+    a.click();
+  };
+  const menu: MenuItem[] = pdf ? [{ label: "Open the PDF in a new tab", icon: "external", onSelect: () => window.open(pdf.url, "_blank", "noopener") }] : [];
+  const openForm = () => {
+    setShowForm(true);
+    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const build = async (pair: SignerPair) => renderMsaPdf({ ...input, signers: { manager: pair.manager, client: pair.client } });
+  const afterSend = (r: SignatureRequest) => {
+    void import("../store").then(({ db, ref, update }) =>
+      update(ref(db, `assets/${id}/contracts/${contractId}`), { sentAt: Date.now(), sentTerms: termsOf(contract), signatureRequestId: r.id }).catch(() => {}),
+    );
+  };
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Header bar */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          <Link
-            to={`/assets/${id}/agreements`}
-            className={`${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"} text-sm inline-flex shrink-0 items-center gap-1 max-sm:min-h-[40px] max-sm:pr-1`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </Link>
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold break-words">
-              MSA — {asset.name} &rarr; {contract.counterparty}
-            </h1>
-            <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-              {contract.fee}/{contract.frequency} &middot; {contract.status}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className={`flex rounded-lg overflow-hidden border mr-1 ${isDark ? "border-white/10" : "border-gray-200"}`}>
-            <button
-              onClick={() => setBrand("bfo")}
-              title={contract.entityNameOnly ? `Present the document as ${asset.name}` : "Present the document as Burton Family Office"}
-              aria-pressed={brand === "bfo"}
-              className={`px-3 py-2 max-sm:min-h-[40px] max-sm:min-w-[48px] text-sm cursor-pointer transition-colors ${brand === "bfo" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}
-            >
-              {contract.entityNameOnly ? "Entity" : "BFO"}
-            </button>
-            <button
-              onClick={() => setBrand("robert")}
-              title="Present the document as Robert Burton"
-              aria-pressed={brand === "robert"}
-              className={`px-3 py-2 max-sm:min-h-[40px] text-sm cursor-pointer transition-colors ${brand === "robert" ? (isDark ? "bg-white/10 text-white" : "bg-black/10 text-gray-900") : isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}`}
-            >
-              Robert Burton
-            </button>
-          </div>
-          {contractId !== "preview" && !sigReq && (
-            <button
-              onClick={() => setShowSigForm(!showSigForm)}
-              aria-expanded={showSigForm}
-              className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm inline-flex items-center gap-2 ${
-                isDark ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-              Request Signature
-            </button>
-          )}
-          <button
-            onClick={handleDownload}
-            disabled={!pdfUrl}
-            className={`px-4 py-2 max-sm:min-h-[40px] font-medium rounded-lg transition-colors cursor-pointer text-sm disabled:opacity-50 inline-flex items-center gap-2 ${
-              isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download PDF
-          </button>
-        </div>
-      </div>
-
-      {contractId !== "preview" && (showSigForm || sigReq) && (
-        <ContractSignature
-          isDark={isDark}
-          request={sigReq ?? null}
-          open={showSigForm}
-          onClose={() => setShowSigForm(false)}
-          onChange={setSigReq}
-          title={`Management Services Agreement - ${contract.counterparty}`}
-          assetId={id ?? ""}
-          contractId={contractId ?? ""}
-          manager={{ name: isLedgerLouiseName(asset.name) ? "Robert W. Burton" : (getUser()?.name ?? ""), email: getUser()?.email ?? "", entity: asset.name }}
-          client={{ name: contract.counterparty }}
-          pdf={() => pdfBlob.current}
-          geometry={() => geom.current}
-          brand={contract.entityNameOnly ? String(asset.name) : null}
+    <Page
+      header={
+        <PageHeader
+          title="Management services agreement"
+          back={back}
+          context={[`${asset.name} and ${counterparty}`, feeShort(contract) || "No fee yet", preview ? "Preview of an unsaved draft" : STAGE[stage].label].join(" · ")}
+          primary={
+            canSend && !showForm ? (
+              <Button variant="primary" onClick={openForm}>
+                Send for signature
+              </Button>
+            ) : undefined
+          }
+          secondary={
+            <Button icon="download" onClick={download} disabled={!pdf}>
+              Download PDF
+            </Button>
+          }
+          menu={menu}
         />
-      )}
-
-      {/* PDF Viewer */}
-      {pdfUrl && (
-        <div className={`sm:hidden flex flex-col items-center gap-3 rounded-lg border px-5 py-8 text-center ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}>
-          <p className={`text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>Phones can't preview the agreement inline.</p>
-          <a
-            href={pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`inline-flex min-h-[40px] items-center rounded-lg px-4 text-sm font-medium ${isDark ? "bg-white text-black" : "bg-gray-900 text-white"}`}
-          >
-            Open PDF
-          </a>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {sections.gaps.length > 0 && !preview && (
+          <Banner tone="warning">
+            The record is missing {format.list(sections.gaps)}.{" "}
+            {sections.gaps.some((g) => g.includes("principal office") || g.includes("governing law")) ? "Add it on the entity’s Overview" : "Add it in the contract’s terms"}; the agreement can’t go
+            out until it’s there.
+          </Banner>
+        )}
+        {changedSinceSent && (
+          <Banner tone="warning">
+            The terms on record changed after this was sent for signature. The pages below are drawn from today’s record; the copy that was sent (and signed) is the one that binds.
+          </Banner>
+        )}
+        {tradeUnfiled && <Banner tone="info">The trade name {trade?.name} has no filing date on record. Confirm it’s filed with the state before the agreement says “doing business as”.</Banner>}
+      </div>
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="order-2 min-w-0 lg:order-1">
+          <div ref={fitRef} className="rounded-card bg-sunken p-4 touch:p-2">
+            {drawError ? <Banner tone="negative">{drawError}</Banner> : pdf && width ? <PdfPages src={pdf.bytes} width={width} /> : <Skeleton kind="card" />}
+          </div>
+          {pdf && <p className="mt-2 text-small text-ink-2">{format.count(pdf.pages, "page")}, as it reads from the record today.</p>}
         </div>
-      )}
-      {pdfUrl ? (
-        // Fills the window below the header (the page's padding and the header bar come off the height) so the viewer scrolls the pages, not the page.
-        <div className={`max-sm:hidden h-[calc(100dvh-10.5rem)] min-h-[480px] rounded-lg overflow-hidden border ${isDark ? "border-white/10" : "border-gray-200"}`}>
-          <iframe src={`${pdfUrl}#view=FitH&navpanes=0`} className="block h-full w-full" title="Contract PDF" />
-        </div>
-      ) : (
-        <div
-          className={`flex items-center justify-center rounded-lg border min-h-[240px] sm:h-[calc(100dvh-10.5rem)] sm:min-h-[480px] ${isDark ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50"}`}
-        >
-          <p className="text-gray-500">Generating PDF...</p>
-        </div>
-      )}
-    </div>
+        <aside className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
+          <Card title="Terms">
+            <Rows>
+              <Row label="Manager">
+                {asset.name}
+                {input.manager.tradeName ? <span className="block text-small text-ink-2">d/b/a {input.manager.tradeName}</span> : null}
+              </Row>
+              <Row label="Client">
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  {counterparty}
+                  {input.client.affiliate && <Badge>Related party</Badge>}
+                </span>
+              </Row>
+              <Row label="Fee">{feeShort(contract) || undefined}</Row>
+              <Row label="Effective">{contract.effectiveDate ? format.date(contract.effectiveDate, "medium") : undefined}</Row>
+              <Row label="Term">{contract.term || undefined}</Row>
+              <Row label="Governing law">{asset.state || undefined}</Row>
+              <Row label="Status">
+                <Status tone={STAGE[stage].tone}>{preview ? "Preview" : STAGE[stage].label}</Status>
+                {signed && <span className="block text-small text-ink-2">Signed {format.date(signed, "medium")}</span>}
+              </Row>
+            </Rows>
+          </Card>
+          {!preview && (
+            <div ref={formRef}>
+              <ContractSignature
+                request={request}
+                open={showForm}
+                onClose={() => setShowForm(false)}
+                onChange={setRequest}
+                title={`Management Services Agreement - ${counterparty}`}
+                assetId={id ?? ""}
+                contractId={contractId ?? ""}
+                managerEntity={asset.name}
+                client={{ name: counterparty }}
+                signers={allSigners}
+                me={{ name: getUser()?.name ?? null, email: meEmail }}
+                build={build}
+                brand={input.manager.tradeName ? null : asset.name}
+                blockers={sections.gaps.filter((g) => !g.includes("signs for"))}
+                note={
+                  elapsed && elapsed.periods > 0 && contract.effectiveDate
+                    ? `Effective ${format.date(contract.effectiveDate, "medium")}: signing now makes ${format.count(elapsed.periods, elapsed.unit)} of fees due${elapsed.amount !== null ? ` (${format.money(elapsed.amount)})` : ""}.`
+                    : null
+                }
+                onSent={afterSend}
+              />
+            </div>
+          )}
+        </aside>
+      </div>
+    </Page>
   );
+}
+
+/** The terms as sent, to tell later whether the record moved away from the copy that went out. */
+function termsOf(c: Contract) {
+  return {
+    counterparty: c.counterparty,
+    amount: c.amount ?? null,
+    fee: c.fee ?? null,
+    frequency: c.frequency ?? null,
+    effectiveDate: c.effectiveDate ?? null,
+    term: c.term ?? null,
+    services: c.services ?? [],
+    referralCredit: !!c.referralCredit,
+    referralTerms: c.referralTerms ?? null,
+    masthead: c.masthead ?? null,
+  };
 }

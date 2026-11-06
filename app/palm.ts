@@ -5,7 +5,14 @@
  */
 
 import { authFetch } from "./auth";
-import { stateCode } from "./entity-paperwork";
+import { obligations, stateCode, type PaperworkInput } from "./entity-paperwork";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-08-31" → "Aug 31, 2026". */
+const shortDay = (iso: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : iso;
+};
 import type { FormationState } from "./formation";
 import type { RaSnapshot } from "../lib/palm-agent";
 import {
@@ -74,7 +81,8 @@ export type Finding = { tone: "bad" | "warn" | "info"; text: string };
 
 export function stateFindings(
   palmRec: StateRecord,
-  asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string; stateConfirmed?: StateConfirmation | null },
+  asset: { name?: string; registeredAgent?: string; registeredAgentAddress?: string; formationDate?: string; address?: string; stateConfirmed?: StateConfirmation | null } & Omit<PaperworkInput, "stateRecord" | "stateConfirmed">,
+  today = new Date(),
 ): Finding[] {
   const out: Finding[] = [];
   // Palm's copy lagging the state's own site, as someone confirmed: judged as the state has it.
@@ -90,7 +98,15 @@ export function stateFindings(
   }
   if (rec.status && rec.status !== "active") out.push({ tone: "bad", text: `The state lists it as ${rec.status}, not active.` });
   const s = rec.standing ?? {};
-  if (s.registration === "not_compliant") out.push({ tone: "bad", text: "Not in good standing: a required state filing or fee is outstanding." });
+  if (s.registration === "not_compliant") {
+    // Name the filing the rule book says is behind, when it can; the state's record says only that something is.
+    const annual = obligations({ ...asset, stateRecord: palmRec, stateConfirmed: asset.stateConfirmed }, today).find((o) => o.key === "state-annual");
+    const p = annual?.last?.status === "overdue" ? annual.last : null;
+    out.push({
+      tone: "bad",
+      text: p && annual ? `Not in good standing: the ${p.label} ${annual.title} looks unfiled (due ${shortDay(p.due)}).` : "Not in good standing: a required state filing or fee is outstanding.",
+    });
+  }
   if (s.tax === "not_compliant") out.push({ tone: "bad", text: "Not compliant on state tax." });
   if (s.agent === "not_compliant") out.push({ tone: "bad", text: "The registered agent on file isn't valid." });
   if (rec.agent && asset.registeredAgent && normalizeName(rec.agent) !== normalizeName(asset.registeredAgent)) {
@@ -105,7 +121,8 @@ export function stateFindings(
     out.push({ tone: "warn", text: `The state has ${rec.address} as its address; our record says ${asset.address}.` });
   }
   if (rec.name && asset.name && normalizeName(rec.name) !== normalizeName(asset.name)) {
-    out.push({ tone: "info", text: `The state's legal name is “${rec.name}”.` });
+    // Contracts, filings and bank accounts go in the legal name: a different one on record is a real risk.
+    out.push({ tone: "warn", text: `The state's legal name is “${rec.name}”; our record says “${asset.name}”. Contracts and filings should use the state's name.` });
   }
   return out;
 }

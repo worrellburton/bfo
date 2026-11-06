@@ -1,39 +1,35 @@
 import type { MailFilter, MailFolder } from "../mail-client";
 
+/**
+ * Mail's folders, as one name each everywhere (the tabs, the phone's folder
+ * sheet, the empty states). "Inbox" is the conversation view (received and
+ * sent together, by latest activity); "Received" is every message that came
+ * in, one row each.
+ */
 export const FOLDERS: { key: MailFolder; label: string }[] = [
-  { key: "active", label: "Active" },
-  { key: "inbox", label: "In" },
-  { key: "sent", label: "Out" },
+  { key: "active", label: "Inbox" },
+  { key: "inbox", label: "Received" },
+  { key: "sent", label: "Sent" },
   { key: "archive", label: "Archive" },
-  { key: "other", label: "Other" },
+  { key: "trash", label: "Trash" },
+  { key: "other", label: "Other addresses" },
 ];
 
-export const EMPTY: Record<MailFolder, string> = {
-  active: "No conversations yet.",
-  inbox: "No mail yet.",
-  sent: "Nothing sent yet.",
-  archive: "Nothing archived.",
-  other: "Nothing here.",
+export const folderLabel = (f: MailFolder) => FOLDERS.find((x) => x.key === f)?.label ?? "Mail";
+
+/** What each folder holds when it's empty, and who can see it (§8.13). */
+export const EMPTY: Record<MailFolder, { title: string; body: string }> = {
+  active: { title: "No conversations yet", body: "Mail you receive and send shows here, one row per conversation. Only you can see your mailbox." },
+  inbox: { title: "Nothing received yet", body: "Every message sent to your address shows here, newest first." },
+  sent: { title: "Nothing sent yet", body: "Messages you send show here." },
+  archive: { title: "Nothing archived", body: "Archived mail is kept here, out of your inbox. A reply to it brings the conversation back." },
+  trash: { title: "Trash is empty", body: "Deleted mail stays here for 30 days, then it's removed for good with its attachments." },
+  other: { title: "No mail to other addresses", body: "Mail sent to an address no one has lands here. Owners and admins can see it." },
 };
 
 /** Table: one row per message, every field in its own column. Columns: the list beside the open message. */
 export type View = "table" | "columns";
 export const VIEW_KEY = "bfo-mail-view";
-
-/**
- * How long each loader stays once shown, so its scene plays to the end rather
- * than being cut off by a quick answer: the list's constellation assembling,
- * a search's sweep, the envelope opening (its one-shot animation is 1.5 s).
- * A cached message skips the envelope altogether.
- */
-export const LIST_LOADER_MS = 1300;
-export const SEARCH_LOADER_MS = 1000;
-/** The envelope: the message is revealed as the letter comes toward you (its animation is 1.5 s; the reveal starts at 1.25 s). */
-export const ENVELOPE_MS = 1250;
-/** The loader's fade before the rows take its place. */
-export const LOADER_OUT_MS = 240;
-export const holdFor = (shownAt: number, min: number) => new Promise<void>((r) => setTimeout(r, Math.max(0, min - (performance.now() - shownAt))));
-export const MAIL_THEME_KEY = "bfo-mail-theme";
 
 export function savedView(): View {
   try {
@@ -43,11 +39,34 @@ export function savedView(): View {
   }
 }
 
-export const FILTERS: { key: MailFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "unread", label: "Unread" },
-  { key: "starred", label: "Starred" },
-  { key: "unread-starred", label: "Unread ★" },
-];
+/** The list's narrowing: any mix of unread, starred and with attachments. */
+export type Narrow = { unread: boolean; starred: boolean; attachments: boolean };
+export type NarrowKey = keyof Narrow;
 
-export const NOTHING: Record<MailFilter, string> = { all: "", unread: "Nothing unread.", starred: "Nothing starred.", "unread-starred": "Nothing both unread and starred." };
+export const NARROW_LABELS: Record<NarrowKey, string> = { unread: "Unread", starred: "Starred", attachments: "With attachments" };
+
+/** The server's filter word for unread and starred. */
+export function filterFor(n: Pick<Narrow, "unread" | "starred">): MailFilter {
+  return n.unread && n.starred ? "unread-starred" : n.unread ? "unread" : n.starred ? "starred" : "all";
+}
+
+export function narrowOf(filter: MailFilter, attachments: boolean): Narrow {
+  return { unread: filter === "unread" || filter === "unread-starred", starred: filter === "starred" || filter === "unread-starred", attachments };
+}
+
+/** "unread and starred mail" for a filtered-to-nothing line. */
+export function narrowWords(n: Narrow): string {
+  const parts = [n.unread && "unread", n.starred && "starred"].filter(Boolean) as string[];
+  const base = parts.length ? `${parts.join(" and ")} mail` : "mail";
+  return n.attachments ? `${base} with attachments` : base;
+}
+
+/** Turning the keys off: a per-device setting (WCAG 2.1.4), honoured by useMailShortcuts. */
+export const SHORTCUTS_KEY = "bfo-shortcuts";
+export function shortcutsOn(): boolean {
+  try {
+    return localStorage.getItem(SHORTCUTS_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}

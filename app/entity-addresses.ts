@@ -13,7 +13,7 @@
  */
 
 import { addressState, agentTerm, entityType, hostState, stateCode, stateName } from "./entity-paperwork";
-import { sameAddressText, type StateRecord } from "./palm";
+import { normalizeName, sameAddressText, type StateRecord } from "./palm";
 
 /** A state the entity is registered in as a foreign entity, keyed by its two-letter code. */
 export type ForeignRegistration = {
@@ -26,6 +26,10 @@ export type ForeignRegistration = {
   notNeeded?: boolean;
   /** Someone said it does business here, so it must register. */
   confirmed?: boolean;
+  /** Why it was decided either way, by whom and when (in Activity too). */
+  decisionReason?: string | null;
+  decidedBy?: string | null;
+  decidedAt?: number;
 };
 
 type AddressInput = {
@@ -102,13 +106,38 @@ const MAILBOX = /\b(pmb|#\s*\d{5,}|ste\.?\s*\d{5,}|suite\s*\d{5,})\b/i;
 const norm = (s?: string | null) =>
   (s ?? "")
     .toLowerCase()
-    .replace(/[.,]/g, "")
-    .replace(/\b(llc|inc|corp|corporation|company|co|ltd)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(llc|l l c|inc|corp|corporation|company|co|ltd)\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-/** The states that need a foreign registration: where it's run from, plus any already on record. */
-export function foreignStates(a: AddressInput): string[] {
+/**
+ * The same agent, however the state writes it: "NORTHWEST REGISTERED AGENT
+ * LLC*" is "Northwest Registered Agent, LLC" (case, punctuation, a trailing
+ * mark and the legal suffix aside), as lib/registry.ts compares names.
+ */
+export function sameAgentName(a?: string | null, b?: string | null): boolean {
+  if (!a?.trim() || !b?.trim()) return false;
+  return normalizeName(a) === normalizeName(b) || norm(a) === norm(b);
+}
+
+/** Whether someone has decided a foreign state: it does business there, or it's registered (an agent, a file number or the state's record). */
+export function foreignDecided(f?: ForeignRegistration | null): boolean {
+  return !!(f?.confirmed || f?.agent?.trim() || f?.fileNumber?.trim() || f?.record);
+}
+
+/** Why the question about a state is asked, in plain words (the (i) beside it). */
+export function foreignAskWhy(stateLabel: string, what: "LLC" | "corporation", term: string): string {
+  return `Its address is in ${stateLabel}. If it does business there (an office, staff, patients or customers, operating property), it must register there as a foreign ${what}, with a ${term.toLowerCase()} in ${stateLabel}. If ${stateLabel} is only where its mail goes, it doesn't.`;
+}
+
+/**
+ * The states that need a foreign registration: where it's run from, plus any
+ * already on record. `decided` leaves out a state nobody has answered for yet
+ * (its address is there, no more): it isn't counted until someone says it
+ * does business there.
+ */
+export function foreignStates(a: AddressInput, opts: { decided?: boolean } = {}): string[] {
   const home = stateCode(a.state);
   const out = new Set(
     Object.entries(a.foreign ?? {})
@@ -117,7 +146,7 @@ export function foreignStates(a: AddressInput): string[] {
   );
   const host = hostState(a);
   if (home && host && host !== home) out.add(host);
-  return [...out].sort();
+  return [...out].filter((c) => !opts.decided || foreignDecided(a.foreign?.[c])).sort();
 }
 
 function agentChecks(line: Omit<AgentLine, "checks">): Check[] {
@@ -139,8 +168,8 @@ function agentChecks(line: Omit<AgentLine, "checks">): Check[] {
   }
   const rec = line.record;
   if (rec) {
-    if (rec.agent && line.name && norm(rec.agent) !== norm(line.name) && !(line.palm && /palm/i.test(rec.agent))) {
-      out.push({ tone: "warn", text: `${where}'s record names ${rec.agent} as agent.` });
+    if (rec.agent && line.name && !sameAgentName(rec.agent, line.name) && !(line.palm && /palm/i.test(rec.agent))) {
+      out.push({ tone: "warn", text: `${where}'s record names “${rec.agent.replace(/[*\s]+$/, "")}” as agent.` });
     } else if (rec.agentAddress && line.address && !sameAddressText(rec.agentAddress, line.address)) {
       out.push({ tone: "warn", text: `${where}'s record has the agent at ${rec.agentAddress}.` });
     } else if (rec.agent && line.name) {
@@ -179,7 +208,7 @@ export function entityAddresses(a: AddressInput): Addresses {
       address:
         (a.registeredAgentAddress ?? "").trim() ||
         (palmActive ? a.palm?.live?.ra?.address?.trim() : null) ||
-        (rec?.agentAddress && (!a.registeredAgent?.trim() || norm(rec.agent) === norm(a.registeredAgent) || (palmActive && /palm/i.test(rec.agent ?? ""))) ? rec.agentAddress : null) ||
+        (rec?.agentAddress && (!a.registeredAgent?.trim() || sameAgentName(rec.agent, a.registeredAgent) || (palmActive && /palm/i.test(rec.agent ?? ""))) ? rec.agentAddress : null) ||
         null,
       palm: palmActive,
       fileNumber: null,
@@ -216,7 +245,7 @@ export function entityAddresses(a: AddressInput): Addresses {
         palm: /palm/i.test(f.agent ?? ""),
         fileNumber: (f.fileNumber ?? "").trim() || null,
         record: f.record ?? null,
-        ask: !f.confirmed && !f.agent?.trim() && !f.fileNumber?.trim() && !f.record,
+        ask: !foreignDecided(f),
       };
       const miss = !f.record && !forming ? a.registryMiss?.[code] : undefined;
       const when = miss ? new Date(miss.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
@@ -234,12 +263,7 @@ export function entityAddresses(a: AddressInput): Addresses {
       agents.push({
         ...line,
         checks: line.ask
-          ? [
-              {
-                tone: "warn",
-                text: `Its address is in ${line.stateLabel}. If it does business there (an office, staff, patients or customers, operating property), it must register there as a foreign ${what}, with a ${line.term.toLowerCase()} in ${line.stateLabel}. If ${line.stateLabel} is only where its mail goes, it doesn't.`,
-              },
-            ]
+          ? [{ tone: "warn", text: `Does it do business in ${line.stateLabel}? ${foreignAskWhy(line.stateLabel, what, line.term)}` }]
           : [...lead, ...agentChecks(line)],
       });
     }

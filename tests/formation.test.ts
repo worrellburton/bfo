@@ -64,7 +64,7 @@ describe("formation draft", () => {
 
   it("asks for the agent and every EIN answer when chosen", () => {
     const d = fullDraft();
-    d.agent = { provider: "own", kind: "organization", name: person("", ""), entityName: "", address: { ...EMPTY_ADDRESS, region: "AZ" }, mailing: null, email: "", phone: "" };
+    d.agent = { provider: "own", kind: "organization", name: person("", ""), entityName: "", address: { ...EMPTY_ADDRESS, region: "AZ" }, mailing: null, email: "", phone: "", consent: false };
     d.ein = {
       ...emptyEin(),
       responsible: { first: "", middle: "", last: "", ssn: "123-45" },
@@ -74,6 +74,7 @@ describe("formation draft", () => {
     const texts = draftProblems(d).map((p) => p.text);
     expect(texts).toContain("Name the registered agent.");
     expect(texts).toContain("The registered office must be in the state of formation.");
+    expect(texts).toContain("Confirm the agent has agreed to serve.");
     expect(texts).toContain("The responsible party's SSN or ITIN is needed.");
     expect(texts).toContain("When will wages first be paid?");
     expect(texts).toContain("Principal activity: what it rents");
@@ -87,7 +88,7 @@ describe("formation draft", () => {
     expect(texts).toEqual(["Principal office: county (Nevada asks for it)", "The organizer: email (the state asks for it)", "Management is required in Nevada."]);
   });
 
-  it("asks a two-member LLC in a community-property state whether the members are married", () => {
+  it("asks an LLC whose two members are people whether they're spouses holding it as community property", () => {
     const d = fullDraft();
     d.owners = [
       { ...emptyOwner("person", "50"), name: person("Robert", "Burton") },
@@ -102,7 +103,11 @@ describe("formation draft", () => {
     expect(draftProblems(d)).toEqual([]);
     const body = buildFormationRequest(d, "a") as any;
     expect(body.ein).toMatchObject({ llc_member_count: 2, members_are_married_couple: true, llc_classification: "single_member" });
+    // It turns on the spouses' home state, not the office's: still asked with the office elsewhere.
     d.principal.region = "NY";
+    expect(asksMarried(d)).toBe(true);
+    // Two companies are never spouses.
+    d.owners = d.owners.map((o) => ({ ...o, kind: "entity" as const, entityName: "Example Co, LLC" }));
     expect(asksMarried(d)).toBe(false);
     expect((buildFormationRequest(d, "a") as any).ein.members_are_married_couple).toBeUndefined();
   });
@@ -284,6 +289,7 @@ describe("formation request", () => {
       mailing: null,
       email: "ann@example.com",
       phone: "",
+      consent: true,
     };
     d.owners = [{ ...emptyOwner("person", "100"), name: person("Jane", "Doe"), ssn: "111-22-3333" }];
     d.ein = fullEin();
@@ -368,7 +374,9 @@ describe("filing → entity record", () => {
     expect(donePatch.status).toBe("Active");
     expect(donePatch.fileNumber).toBe("E123");
     expect(donePatch.formationDate).toBe("2026-10-20");
-    expect(donePatch.registeredAgent).toBe("Palm");
+    // The agent's legal name comes from Palm's agent service, never "Palm" stamped here.
+    expect(donePatch.registeredAgent).toBeUndefined();
+    expect(donePatch.registeredAgentSource).toBe("Palm, pending");
 
     const ein = einPatch({ id: "ein1", status: "completed", result: { ein_number: "93-1234567" } }, "live", done);
     expect(ein.ein).toBe("93-1234567");

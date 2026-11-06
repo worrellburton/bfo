@@ -1,35 +1,24 @@
-import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useEffect, useState, type Ref } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
+import { Count, Menu, Tooltip, cx, type MenuItem } from "./ui";
+import { Glyph } from "./shell-icons";
+import { activeGroup, leafActive, type NavEntry } from "./shell-model";
 
 /**
- * The rail's main nav. Leaves link straight through; groups (Mail, Books)
- * open in place into a tree: the group's row lights up, a chevron turns, and
- * its pages hang off a thin line with a rounded elbow each (app.css
- * .nav-tree). The group holding the current page opens on its own, and which
- * groups are open is remembered. On the collapsed rail a group is just its
- * icon and goes to its first page.
+ * The nav's rows (docs/DESIGN.md §9.1–9.3), drawn from the model in
+ * app/shell-model.ts.
+ *
+ * - NavList: the expanded sidebar and the drawer. Rows 32px (44 on touch),
+ *   an icon and the label in ink-2; the current page is the `selected` fill
+ *   with its label in ink at 500, and nothing else marks it. A group (Mail,
+ *   Books, Tools) opens in place; its pages are label-only rows indented to
+ *   the parent's label, with no tree lines. The group holding the current
+ *   page opens by itself; on desktop the other open groups are remembered,
+ *   in the drawer they aren't.
+ * - RailNav: the collapsed 64px rail. 44px icon buttons, each with a tooltip
+ *   naming it and its count; a count is an 8px accent dot. A group's icon
+ *   opens a menu of its pages.
  */
-
-export type NavChild = {
-  to: string;
-  label: string;
-  icon?: React.ReactNode;
-  badge?: number;
-  /** When the plain path prefix isn't enough (Mail's folders share /inbox). */
-  match?: (pathname: string, search: URLSearchParams) => boolean;
-};
-
-export type NavItem = {
-  to: string;
-  label: string;
-  icon: React.ReactNode;
-  badge?: number;
-  /** Starts the second half of the nav, after a little air. */
-  breakBefore?: boolean;
-  /** A heading over this item and the ones after it, in the phone drawer ("The office"). */
-  section?: string;
-  children?: NavChild[];
-};
 
 const OPEN_KEY = "bfo.nav.open";
 
@@ -42,168 +31,164 @@ function readOpen(): string[] {
   }
 }
 
-function childActive(c: NavChild, pathname: string, search: URLSearchParams): boolean {
-  if (c.match) return c.match(pathname, search);
-  return pathname === c.to || pathname.startsWith(`${c.to}/`);
-}
+const countLabel = (label: string, n: number | undefined) => (n ? `${label}, ${n} new` : label);
 
-function Badge({ n, tone, isDark }: { n: number; tone: "accent" | "quiet"; isDark: boolean }) {
-  if (n <= 0) return null;
-  // A quiet count: tinted, not a solid disc.
-  const cls = tone === "accent" ? (isDark ? "bg-[#818cf8]/20 text-[#c7d2fe]" : "bg-[#4f46e5]/10 text-[#4338ca]") : isDark ? "bg-white/10 text-gray-300" : "bg-black/[0.06] text-gray-600";
-  return <span className={`ml-auto min-w-[18px] h-[16px] px-1 rounded-full text-[10px] font-semibold tabular-nums flex items-center justify-center ${cls}`}>{n > 99 ? "99+" : n}</span>;
-}
+const ROW = "flex min-h-(--row-menu) w-full items-center gap-2 rounded-control px-3 text-left text-body transition-colors duration-(--dur-1)";
+const IDLE = "text-ink-2 hover:bg-hover hover:text-ink";
+const CURRENT = "bg-selected font-medium text-ink";
 
-export function SidebarNav({
-  items,
-  isDark,
-  showLabels,
-  labelsVisible,
-  phone = false,
+export function NavList({
+  nav,
   onNavigate,
+  remember = true,
 }: {
-  items: NavItem[];
-  isDark: boolean;
-  /** The phone drawer: section headings over the groups of rows. */
-  phone?: boolean;
-  /** The desktop rail is expanded. */
-  showLabels: boolean;
-  /** Labels show (expanded rail, or the phone drawer). */
-  labelsVisible: boolean;
-  onNavigate: () => void;
+  nav: NavEntry[];
+  onNavigate?: () => void;
+  /** Restore and save which groups are open (desktop); the drawer opens only the current one. */ remember?: boolean;
 }) {
-  const location = useLocation();
-  const search = new URLSearchParams(location.search);
-  const [open, setOpen] = useState<Set<string>>(() => new Set(typeof window === "undefined" ? [] : readOpen()));
-
-  const groupOf = (item: NavItem) => !!item.children?.some((c) => childActive(c, location.pathname, search));
+  const { pathname, search } = useLocation();
+  const here = activeGroup(nav, pathname, search);
+  const [open, setOpen] = useState<Set<string>>(() => new Set([...(remember && typeof window !== "undefined" ? readOpen() : []), ...(here ? [here] : [])]));
 
   // Landing on a group's page opens that group.
   useEffect(() => {
-    const here = items.find((i) => i.children && groupOf(i));
-    if (here && !open.has(here.to)) setOpen((s) => new Set(s).add(here.to));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, location.search]);
-
+    if (here) setOpen((s) => (s.has(here) ? s : new Set(s).add(here)));
+  }, [here]);
   useEffect(() => {
+    if (!remember) return;
     try {
       localStorage.setItem(OPEN_KEY, JSON.stringify([...open]));
     } catch {
       // Remembering is a nicety.
     }
-  }, [open]);
+  }, [open, remember]);
 
-  const toggle = (to: string) =>
+  const toggle = (id: string) =>
     setOpen((s) => {
       const n = new Set(s);
-      if (n.has(to)) n.delete(to);
-      else n.add(to);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
       return n;
     });
 
-  // Compact rows: 30px, 13px type, 16px icons, a soft fill for the current page. In the phone drawer and on a touch
-  // iPad, thumb-sized (44px): sizes are px because the root font is 11.9px, so rem classes come out at 74% (app/app.css).
-  const rowBase = "nav-row group/row relative flex items-center rounded-lg text-[13px] transition-colors duration-150 h-[30px] px-2 max-md:h-[44px] max-md:text-[15px] md:pointer-coarse:h-[44px]";
-  const idle = isDark ? "text-gray-300/90 hover:text-white hover:bg-white/[0.05]" : "text-gray-600 hover:text-black hover:bg-black/[0.04]";
-  const lit = isDark ? "bg-white/[0.08] text-white" : "bg-black/[0.06] text-black";
-  const on = `nav-row-on ${lit}`;
-  const collapsed = showLabels ? "" : "md:justify-center md:px-0";
-
   return (
-    <nav className="flex flex-col gap-px flex-1 px-2 pb-3 overflow-y-auto overscroll-contain" aria-label="Main">
-      {items.map((item) => {
-        const kids = item.children;
-        const active = kids ? groupOf(item) : childActive({ to: item.to, label: item.label }, location.pathname, search);
-        const gap = item.breakBefore ? (labelsVisible ? "mt-4" : "mt-3") : "";
-        const total = item.badge ?? kids?.reduce((s, c) => s + (c.badge ?? 0), 0) ?? 0;
-        const heading = phone && item.section ? <p className="nav-eyebrow">{item.section}</p> : null;
-
-        const iconWithDot = (
-          <span className="relative inline-flex shrink-0">
-            {item.icon}
-            {/* On the collapsed rail, a dot (a number would cover the icon); the count is in the label and tooltip. */}
-            {total > 0 && !showLabels && (
-              <span
-                aria-hidden="true"
-                className={`absolute -top-[2px] -right-[3px] h-[7px] w-[7px] rounded-full ring-2 ${labelsVisible ? "hidden" : ""} ${isDark ? "bg-[#818cf8] ring-black" : "bg-[#4f46e5] ring-white"}`}
-              />
-            )}
-          </span>
-        );
-
-        // A leaf, or a group on the collapsed rail: one link.
-        if (!kids || !labelsVisible) {
+    <ul className="flex flex-col gap-[2px]">
+      {nav.map((e) => {
+        const gap = e.gapBefore ? "mt-4" : "";
+        if (!e.children) {
+          const on = leafActive(e, pathname, search);
           return (
-            <div key={item.to} className={gap}>
-              {heading}
-              <Link
-                to={kids ? kids[0].to : item.to}
-                onClick={onNavigate}
-                title={showLabels ? undefined : `${item.label}${total ? ` · ${total} new` : ""}`}
-                aria-label={showLabels ? undefined : `${item.label}${total ? `, ${total} new` : ""}`}
-                aria-current={active ? "page" : undefined}
-                className={`${rowBase} ${collapsed} ${active ? on : idle}`}
-              >
-                {iconWithDot}
-                <span className={`ml-2 flex-1 truncate ${showLabels ? "" : "md:hidden"}`}>{item.label}</span>
-                {showLabels || labelsVisible ? <Badge n={total} tone="accent" isDark={isDark} /> : null}
+            <li key={e.id} className={gap}>
+              <Link to={e.to} onClick={onNavigate} aria-current={on ? "page" : undefined} className={cx(ROW, on ? CURRENT : IDLE)}>
+                <Glyph name={e.glyph} />
+                <span className="min-w-0 flex-1 truncate">{e.label}</span>
+                <Count n={e.count ?? 0} label={e.count ? `${e.count} new` : undefined} />
               </Link>
-            </div>
+            </li>
           );
         }
-
-        const isOpen = open.has(item.to);
-        const panel = `nav-panel-${item.to.replace(/\W+/g, "-")}`;
+        const isOpen = open.has(e.id);
+        const holds = here === e.id;
+        const panel = `nav-group-${e.id}`;
         return (
-          <div key={item.to} className={gap}>
-            {heading}
-            <button type="button" onClick={() => toggle(item.to)} aria-expanded={isOpen} aria-controls={panel} className={`${rowBase} w-full cursor-pointer ${active && !isOpen ? on : idle}`}>
-              {iconWithDot}
-              <span className="ml-2 flex-1 truncate text-left">{item.label}</span>
-              {!isOpen && <Badge n={total} tone="accent" isDark={isDark} />}
+          <li key={e.id} className={gap}>
+            <button type="button" onClick={() => toggle(e.id)} aria-expanded={isOpen} aria-controls={panel} className={cx(ROW, "cursor-pointer", holds && !isOpen ? CURRENT : IDLE)}>
+              <Glyph name={e.glyph} />
+              <span className="min-w-0 flex-1 truncate">{e.label}</span>
+              {!isOpen && <Count n={e.count ?? 0} label={e.count ? `${e.count} new` : undefined} />}
               <svg
-                className={`ml-2 h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""} ${isDark ? "text-gray-500" : "text-gray-400"}`}
+                className={cx("size-[16px] shrink-0 text-ink-3 transition-transform duration-(--dur-3)", isOpen && "rotate-180")}
                 fill="none"
                 stroke="currentColor"
-                strokeWidth={2}
+                strokeWidth={1.75}
                 viewBox="0 0 24 24"
-                aria-hidden
+                aria-hidden="true"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
-            <div id={panel} className={`nav-collapse ${isOpen ? "nav-collapse-open" : ""}`} inert={!isOpen}>
-              <ul className={`nav-tree ${isDark ? "nav-tree-dark" : "nav-tree-light"}`}>
-                {kids.map((c) => {
-                  const here = childActive(c, location.pathname, search);
-                  return (
-                    <li key={c.to} className="nav-branch">
-                      <Link
-                        to={c.to}
-                        onClick={onNavigate}
-                        aria-current={here ? "page" : undefined}
-                        className={`flex items-center gap-2 rounded-lg h-7 px-2 text-[12.5px] transition-colors duration-150 max-md:h-[40px] max-md:text-[14px] md:pointer-coarse:h-[40px] ${
-                          here
-                            ? isDark
-                              ? "bg-white/[0.08] text-white font-medium"
-                              : "bg-black/[0.05] text-black font-medium"
-                            : isDark
-                              ? "text-gray-400 hover:text-white hover:bg-white/[0.05]"
-                              : "text-gray-500 hover:text-black hover:bg-black/[0.04]"
-                        }`}
-                      >
-                        {c.icon && <span className={`inline-flex shrink-0 ${here ? "" : "opacity-80"}`}>{c.icon}</span>}
-                        <span className="flex-1 truncate">{c.label}</span>
-                        <Badge n={c.badge ?? 0} tone="quiet" isDark={isDark} />
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </div>
+            <ul id={panel} hidden={!isOpen} className="mt-[2px] flex flex-col gap-[2px]">
+              {e.children.map((c) => {
+                const on = leafActive(c, pathname, search);
+                return (
+                  <li key={c.to}>
+                    <Link
+                      to={c.to}
+                      onClick={onNavigate}
+                      aria-current={on ? "page" : undefined}
+                      aria-label={c.count ? countLabel(c.label, c.count) : undefined}
+                      className={cx(ROW, "pl-[36px] touch:pl-[40px]", on ? CURRENT : IDLE)}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                      <Count n={c.count ?? 0} />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
         );
       })}
-    </nav>
+    </ul>
+  );
+}
+
+/** A 44px square on the rail: an icon, a tooltip naming it, and a dot when it has a count. Takes a Menu's ref and handlers. */
+function RailButton({ entry, current, ref, ...rest }: { entry: NavEntry; current: boolean; ref?: Ref<HTMLButtonElement> } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <Tooltip label={countLabel(entry.label, entry.count)}>
+      <button
+        ref={ref}
+        type="button"
+        aria-label={countLabel(entry.label, entry.count)}
+        className={cx("relative flex size-[44px] cursor-pointer items-center justify-center rounded-control transition-colors duration-(--dur-1)", current ? "bg-selected text-ink" : IDLE)}
+        {...rest}
+      >
+        <Glyph name={entry.glyph} size={20} />
+        {!!entry.count && <span aria-hidden="true" className="absolute top-[9px] right-[9px] size-2 rounded-full bg-accent" />}
+      </button>
+    </Tooltip>
+  );
+}
+
+export function RailNav({ nav }: { nav: NavEntry[] }) {
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const here = activeGroup(nav, pathname, search);
+  return (
+    <ul className="flex flex-col items-center gap-1">
+      {nav.map((e) => {
+        const gap = e.gapBefore ? "mt-4" : "";
+        if (!e.children) {
+          const on = leafActive(e, pathname, search);
+          return (
+            <li key={e.id} className={gap}>
+              <Tooltip label={countLabel(e.label, e.count)}>
+                <Link
+                  to={e.to}
+                  aria-label={countLabel(e.label, e.count)}
+                  aria-current={on ? "page" : undefined}
+                  className={cx("relative flex size-[44px] items-center justify-center rounded-control transition-colors duration-(--dur-1)", on ? "bg-selected text-ink" : IDLE)}
+                >
+                  <Glyph name={e.glyph} size={20} />
+                  {!!e.count && <span aria-hidden="true" className="absolute top-[9px] right-[9px] size-2 rounded-full bg-accent" />}
+                </Link>
+              </Tooltip>
+            </li>
+          );
+        }
+        const items: MenuItem[] = e.children.map((c) => ({
+          label: c.label,
+          hint: c.count ? String(c.count) : undefined,
+          checked: leafActive(c, pathname, search),
+          onSelect: () => navigate(c.to),
+        }));
+        return (
+          <li key={e.id} className={gap}>
+            <Menu label={e.label} items={items} trigger={<RailButton entry={e} current={here === e.id} />} />
+          </li>
+        );
+      })}
+    </ul>
   );
 }

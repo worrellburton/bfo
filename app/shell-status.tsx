@@ -1,63 +1,146 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useNavigation } from "react-router";
+import { cx, useDelayed } from "./ui";
 
 /**
- * A thin bar across the top while the next page's code loads, so a tap on
- * slow mobile data visibly did something. Waits 120ms before showing, so
- * instant navigations don't flash it.
+ * The shell's two status pieces (docs/DESIGN.md §7.2, §8.14, §8.16, §12.1).
+ *
+ * - RouteProgress: while the next page's code loads, a 2px accent bar along
+ *   the top of the content, shown only after 300ms so quick moves don't
+ *   flash it; it fades when the page arrives.
+ * - OfflineBanner: says so while the device is offline, and that changes
+ *   made now aren't saved (nothing is queued), then briefly when it's back,
+ *   with a way to refresh. It sits where toasts sit: bottom centre of the
+ *   content column, above the Ask button's row on a phone.
+ *
+ * useOnline() lets a page say how old its figures are while offline, and
+ * the `bfo:online` window event tells pages the connection is back.
  */
+
 export function RouteProgress() {
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
-  const [visible, setVisible] = useState(false);
+  const shown = useDelayed(busy, 300);
+  const [grow, setGrow] = useState(false);
   useEffect(() => {
-    if (!busy) {
-      setVisible(false);
+    if (!shown) {
+      setGrow(false);
       return;
     }
-    const t = setTimeout(() => setVisible(true), 120);
-    return () => clearTimeout(t);
-  }, [busy]);
-  if (!visible) return null;
-  return <div role="progressbar" aria-label="Loading page" className="route-progress pointer-events-none fixed inset-x-0 top-0 z-[100] h-[2px]" style={{ marginTop: "env(safe-area-inset-top)" }} />;
+    const t = window.requestAnimationFrame(() => setGrow(true));
+    return () => window.cancelAnimationFrame(t);
+  }, [shown]);
+  if (!shown) return null;
+  return (
+    <div
+      role="progressbar"
+      aria-label="Loading page"
+      className="pointer-events-none fixed top-0 right-0 z-toast h-[2px]"
+      style={{ left: "var(--content-inset, 0px)", marginTop: "env(safe-area-inset-top)" }}
+    >
+      <div className="h-full bg-accent" style={{ width: grow ? "85%" : "8%", transition: "width 6s var(--ease-out)" }} />
+    </div>
+  );
 }
 
-/** Says so when the device drops offline, and briefly when it's back. */
-export function OfflineBanner({ isDark }: { isDark: boolean }) {
-  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+// ── Online and offline ──────────────────────────────────────────────────
+
+let offlineSince: number | null = typeof navigator !== "undefined" && !navigator.onLine ? Date.now() : null;
+const listeners = new Set<() => void>();
+let wired = false;
+function wire() {
+  if (wired || typeof window === "undefined") return;
+  wired = true;
+  window.addEventListener("offline", () => {
+    offlineSince = Date.now();
+    listeners.forEach((f) => f());
+  });
+  window.addEventListener("online", () => {
+    offlineSince = null;
+    listeners.forEach((f) => f());
+    window.dispatchEvent(new CustomEvent("bfo:online"));
+  });
+}
+
+/** Whether the device is online, and since when it hasn't been (ms), for "Figures as of …" while offline. */
+export function useOnline(): { online: boolean; offlineSince: number | null } {
+  wire();
+  const since = useSyncExternalStore(
+    (f) => {
+      listeners.add(f);
+      return () => {
+        listeners.delete(f);
+      };
+    },
+    () => offlineSince,
+    () => null,
+  );
+  return { online: since === null, offlineSince: since };
+}
+
+export function OfflineBanner() {
+  const { online } = useOnline();
   const [back, setBack] = useState(false);
+  const [wasOffline, setWasOffline] = useState(!online);
   useEffect(() => {
-    const up = () => {
-      setOnline(true);
-      setBack(true);
-    };
-    const down = () => {
-      setOnline(false);
+    if (!online) {
+      setWasOffline(true);
       setBack(false);
-    };
-    window.addEventListener("online", up);
-    window.addEventListener("offline", down);
-    return () => {
-      window.removeEventListener("online", up);
-      window.removeEventListener("offline", down);
-    };
-  }, []);
+    } else if (wasOffline) {
+      setWasOffline(false);
+      setBack(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
   useEffect(() => {
     if (!back) return;
-    const t = setTimeout(() => setBack(false), 2500);
+    const t = setTimeout(() => setBack(false), 8000);
     return () => clearTimeout(t);
   }, [back]);
-  if (online && !back) return null;
+  const showing = !online || back;
+  const [leaving, setLeaving] = useState(false);
+  const [mounted, setMounted] = useState(showing);
+  useEffect(() => {
+    if (showing) {
+      setMounted(true);
+      setLeaving(false);
+      return;
+    }
+    if (!mounted) return;
+    setLeaving(true);
+    const t = setTimeout(() => setMounted(false), 160);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showing]);
+
   return (
-    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 z-[95] flex justify-center px-4" style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
-      <div
-        className={`toast-in flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] shadow-lg backdrop-blur-xl ${
-          isDark ? "border-white/10 bg-black/80 text-gray-200" : "border-gray-200 bg-white/90 text-gray-700"
-        }`}
-      >
-        <span className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500" : "bg-amber-500"}`} />
-        {online ? "Back online" : "You're offline — changes won't save until you reconnect"}
-      </div>
+    <div
+      role="status"
+      aria-live="polite"
+      data-floating
+      className="ds pointer-events-none fixed right-0 z-toast flex justify-center px-(--gutter)"
+      style={{ left: "var(--content-inset, 0px)", bottom: "var(--toast-bottom)" }}
+    >
+      {mounted && (
+        <div
+          className={cx(
+            "pointer-events-auto flex min-h-[44px] w-full max-w-[420px] items-center gap-3 rounded-card border border-line-strong bg-overlay py-2 pr-2 pl-4 text-body text-ink shadow-(--elevation-2)",
+            leaving ? "ds-toast-out" : "ds-toast-in",
+          )}
+        >
+          <span aria-hidden="true" className={cx("size-2 shrink-0 rounded-full", online ? "bg-positive" : "bg-warning")} />
+          <span className="min-w-0 flex-1 py-1">{online ? "Back online." : "You’re offline. Changes won’t be saved."}</span>
+          {online && (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-flex h-(--control-sm) shrink-0 cursor-pointer items-center rounded-control px-3 text-body font-medium text-accent hover:bg-hover"
+            >
+              Refresh
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

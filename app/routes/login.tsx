@@ -1,13 +1,24 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, addingAccount, cancelAddAccount, displayName, homePath, isAuthenticated, profileComplete, requestCode, safeNext, verifyCode, type User } from "../auth";
-import { ParticleCanvas } from "../particles";
-import { lockupOf, useBrandLogo } from "../brand";
-import { BrandLockup } from "../brand-lockup";
+import { ApiError, addingAccount, cancelAddAccount, displayName, homePath, isAuthenticated, profileComplete, safeNext, verifyCode, type User } from "../auth";
+import { CodeEntry, DoorButton, DoorError, DoorField, DoorHeading, DoorLink, DoorScreen } from "../sign-in-door";
+import { resendLabel } from "../sign-in-style";
+import { LegalLinks } from "../ui";
+import { needsTerms, RETENTION, SMS_CONSENT_VERSION } from "../../lib/terms";
 
 export function meta() {
-  return [{ title: "Sign in — BFO" }];
+  return [{ title: "Sign in · BFO" }];
 }
+
+/**
+ * Sign-in: a phone number, then the 6-digit code texted to it. The door's
+ * world (app/sign-in-door.tsx): the owner's sky held still, the lockup, one
+ * question, one field, one button. The disclosure about the text and the
+ * Terms and Privacy links sit under the field, where the number is given
+ * (docs/DESIGN.md §11.4); the version shown is sent with the request.
+ * After a right code: Finish setup if the Terms, a name or an email are
+ * still needed, else where the person was going.
+ */
 
 const RESEND_SECONDS = 45;
 const CODE_LEN = 6;
@@ -30,23 +41,25 @@ function isValidPhone(value: string): boolean {
 }
 
 /**
- * The field's text layer: each character rides in on its own little pop, so
- * typing feels like the digits are being dealt onto the glass.
+ * Ask for a code, sending the version of the disclosure on screen so the
+ * server keeps it with the code. (app/auth.ts requestCode doesn't take the
+ * version yet; this is the same call with it.)
  */
-function AnimatedValue({ value, dim }: { value: string; dim?: boolean }) {
-  return (
-    <span aria-hidden className="auth-anim-layer">
-      {value.split("").map((ch, i) => (
-        <span key={`${i}-${ch}`} className={`auth-char ${dim ? "opacity-60" : ""}`}>
-          {ch === " " ? " " : ch}
-        </span>
-      ))}
-    </span>
-  );
+async function requestCode(identifier: string): Promise<{ identifier?: string; masked?: string }> {
+  const res = await fetch("/api/auth/request-code", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier, consent: SMS_CONSENT_VERSION }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data?.error ?? "error", data?.message ?? "Couldn’t send a code. Try again.");
+  return data;
 }
 
-function Spinner() {
-  return <span className="auth-spinner" aria-hidden />;
+/** What the person is told when a request fails; nothing about providers or settings. */
+function plain(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return err.code === "not_configured" || err.status >= 500 ? "Sign-in isn’t available right now. Try again later." : err.message;
+  return fallback;
 }
 
 export default function Login() {
@@ -58,8 +71,6 @@ export default function Login() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [shake, setShake] = useState(false);
-  const lockup = lockupOf(useBrandLogo());
   const [success, setSuccess] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const idInput = useRef<HTMLInputElement>(null);
@@ -91,30 +102,19 @@ export default function Login() {
 
   const valid = useMemo(() => isValidPhone(identifier), [identifier]);
 
-  function shakeOut(message: string) {
-    setError(message);
-    setShake(true);
-    setTimeout(() => setShake(false), 450);
-  }
-
-  function onIdentifierChange(raw: string) {
-    setError("");
-    setIdentifier(formatPhone(raw));
-  }
-
   async function send(value: string) {
     setBusy(true);
     setError("");
     try {
       const res = await requestCode(value);
-      setSentTo(res.identifier);
-      setMasked(res.masked);
+      setSentTo(res.identifier ?? value);
+      setMasked(res.masked ?? "");
       setCode("");
       submittedCode.current = "";
       setCooldown(RESEND_SECONDS);
       setStep("code");
     } catch (err) {
-      shakeOut(err instanceof ApiError ? err.message : "Couldn't send a code. Try again.");
+      setError(plain(err, "Couldn’t send a code. Check your connection and try again."));
     } finally {
       setBusy(false);
     }
@@ -129,212 +129,138 @@ export default function Login() {
       const res = await verifyCode(sentTo, value);
       if (res.token) {
         setSuccess(true);
-        const to = profileComplete(res.user) ? (next ?? homePath(res.user)) : `/complete-profile${next ? `?next=${encodeURIComponent(next)}` : ""}`;
-        setTimeout(() => navigate(to, { replace: true }), 700);
+        const ready = profileComplete(res.user) && !needsTerms(res.user as { termsVersion?: string | null } | undefined);
+        const to = ready ? (next ?? homePath(res.user)) : `/complete-profile${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+        setTimeout(() => navigate(to, { replace: true }), 600);
       } else setStep("pending");
     } catch (err) {
       setCode("");
       submittedCode.current = "";
-      shakeOut(err instanceof ApiError ? err.message : "Couldn't verify that code.");
+      setError(plain(err, "Couldn’t check that code. Check your connection and try again."));
       codeInput.current?.focus();
     } finally {
       setBusy(false);
     }
   }
 
-  const cells = Array.from({ length: CODE_LEN }, (_, i) => code[i] ?? "");
-  const activeCell = Math.min(code.length, CODE_LEN - 1);
+  function startOver() {
+    setStep("identifier");
+    setCode("");
+    setError("");
+  }
+
+  // The number as the person typed it, when the server's masked form isn't there.
+  const shownNumber = masked || identifier || "your phone";
 
   return (
-    <div className="min-h-dvh bg-black relative overflow-hidden flex items-center justify-center">
-      <div aria-hidden className="absolute inset-0">
-        <div className="landing-orb landing-orb-1" />
-        <div className="landing-orb landing-orb-2" />
-        <div className="landing-orb landing-orb-3" />
-      </div>
+    <DoorScreen legalInFooter={step !== "identifier"}>
+      {returnTo && (
+        <p className="mb-8 text-small text-door-ink-2">
+          Adding another account.{" "}
+          <DoorLink
+            className="inline-flex min-h-0 text-small text-door-ink underline underline-offset-[3px]"
+            onClick={() => {
+              if (cancelAddAccount()) window.location.assign(homePath(returnTo));
+            }}
+          >
+            Back to {displayName(returnTo)}
+          </DoorLink>
+        </p>
+      )}
 
-      <ParticleCanvas density={60} speed={0.24} connectionDistance={130} className="absolute inset-0 h-full w-full" />
-
-      {/* No card: the lockup, a hairline and the type, set on the same field as the landing page. */}
-      <div className={`relative z-10 w-full max-w-[21rem] px-6 text-center ${shake ? "landing-shake" : ""}`}>
-        <h1 className="m-0 select-none">
-          <BrandLockup font={lockup.font} finish={lockup.finish} size="compact" />
-        </h1>
-
-        {returnTo && (
-          <p className="auth-in auth-hint mt-8">
-            Adding another account.{" "}
-            <button
-              type="button"
-              onClick={() => {
-                if (cancelAddAccount()) window.location.assign(homePath(returnTo));
+      {step === "identifier" && (
+        <form
+          key="identifier"
+          className="ds-reveal"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (valid) void send(identifier);
+          }}
+        >
+          <DoorHeading step="Sign in" title="Your phone number." />
+          <div className="mt-8">
+            <DoorField
+              ref={idInput}
+              label="Phone number"
+              id="identifier"
+              name="identifier"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              autoFocus
+              required
+              invalid={!!error}
+              value={identifier}
+              onChange={(e) => {
+                setError("");
+                setIdentifier(formatPhone(e.target.value));
               }}
-              className="cursor-pointer text-[#f4ede0]/85 underline-offset-4 hover:underline"
-            >
-              Back to {displayName(returnTo)}
-            </button>
-          </p>
-        )}
+              placeholder="(555) 123-4567"
+              aria-describedby="sms-consent"
+            />
+          </div>
+          <div id="sms-consent" className="mt-4 text-small text-pretty text-door-ink-2">
+            <p>We’ll text a 6-digit code to this number from BFO. Message and data rates may apply. Sending the code confirms the number is yours.</p>
+            <LegalLinks tone="door" className="mt-1 text-small touch:[&_a]:inline-flex touch:[&_a]:min-h-[44px] touch:[&_a]:items-center" />
+          </div>
+          <DoorButton type="submit" className="mt-6" disabled={busy || !valid} busy={busy} busyLabel="Sending…">
+            Send code
+          </DoorButton>
+          <DoorError>{error}</DoorError>
+        </form>
+      )}
 
-        <div className={returnTo ? "mt-6" : "mt-12"}>
-          {step === "identifier" && (
-            <form
-              key="identifier"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (valid) void send(identifier);
+      {step === "code" && (
+        <form
+          key="code"
+          className="ds-reveal"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitCode(code);
+          }}
+        >
+          <DoorHeading step="Sign in" title="Check your phone.">
+            We sent a 6-digit code to <span className="whitespace-nowrap text-door-ink tabular-nums">{shownNumber}</span>. It works for 10 minutes, and you’ll stay signed in on this device for 30
+            days.
+          </DoorHeading>
+          <div className="mt-6">
+            <CodeEntry
+              value={code}
+              inputRef={codeInput}
+              state={success ? "success" : error ? "error" : "idle"}
+              onChange={(v) => {
+                setCode(v);
+                setError("");
               }}
-            >
-              <p className="auth-in auth-eyebrow">Sign in</p>
-              <h2 className="auth-in auth-title mt-2.5">Your phone number.</h2>
+              onComplete={(v) => void submitCode(v)}
+            />
+          </div>
+          <DoorButton type="submit" className="mt-6" disabled={busy || code.length !== CODE_LEN} busy={busy && !success} busyLabel="Checking…" success={success && "You’re in"}>
+            Continue
+          </DoorButton>
+          <DoorError>{error}</DoorError>
+          <div className="mt-4 flex items-center justify-between">
+            <DoorLink onClick={startOver}>Change number</DoorLink>
+            <DoorLink disabled={cooldown > 0 || busy} onClick={() => void send(sentTo)} aria-live="polite">
+              {resendLabel(cooldown)}
+            </DoorLink>
+          </div>
+        </form>
+      )}
 
-              <div className="sign-field-wrap auth-in auth-delay-1 mt-7">
-                <input
-                  ref={idInput}
-                  id="identifier"
-                  name="identifier"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  autoFocus
-                  required
-                  aria-label="Phone number"
-                  value={identifier}
-                  onChange={(e) => onIdentifierChange(e.target.value)}
-                  placeholder="(555) 123-4567"
-                  className={`sign-field ${error ? "sign-field-error" : ""}`}
-                />
-                <AnimatedValue value={identifier} />
-              </div>
-              <p className="auth-in auth-delay-1 auth-hint mt-3">We'll text you a six-digit code.</p>
-
-              <button type="submit" disabled={busy || !valid} className="auth-btn auth-in auth-delay-2 mt-7">
-                {busy ? (
-                  <>
-                    <Spinner /> Sending
-                  </>
-                ) : (
-                  "Send code"
-                )}
-              </button>
-            </form>
-          )}
-
-          {step === "code" && (
-            <form
-              key="code"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submitCode(code);
-              }}
-            >
-              <p className="auth-in auth-eyebrow">One-time code</p>
-              <h2 className="auth-in auth-title mt-2.5">Check your phone.</h2>
-              <p className="auth-in auth-hint mt-2">Sent to {masked}</p>
-
-              {/* Six digits on six rules; a hidden input keeps typing, paste and iOS code-autofill working */}
-              <div className="relative auth-in auth-delay-1 mt-6" onClick={() => codeInput.current?.focus()}>
-                <input
-                  ref={codeInput}
-                  id="code"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={CODE_LEN}
-                  value={code}
-                  onChange={(e) => {
-                    const next = e.target.value.replace(/\D/g, "").slice(0, CODE_LEN);
-                    setCode(next);
-                    setError("");
-                    if (next.length === CODE_LEN) void submitCode(next);
-                  }}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                  aria-label="6-digit code"
-                />
-                <div className="flex gap-3 justify-between" aria-hidden>
-                  {cells.map((ch, i) => (
-                    <div
-                      key={i}
-                      className={`sign-cell ${ch ? "sign-cell-filled" : ""} ${
-                        !success && !error && i === activeCell && code.length < CODE_LEN ? "sign-cell-active" : ""
-                      } ${success ? "sign-cell-success" : ""} ${error ? "sign-cell-error" : ""}`}
-                    >
-                      {ch && (
-                        <span key={`${i}-${ch}`} className="auth-char">
-                          {ch}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <button type="submit" disabled={busy || code.length !== CODE_LEN} className="auth-btn auth-in auth-delay-2 mt-7">
-                {success ? (
-                  "Welcome"
-                ) : busy ? (
-                  <>
-                    <Spinner /> Verifying
-                  </>
-                ) : (
-                  "Continue"
-                )}
-              </button>
-
-              <p className="auth-in auth-delay-3 auth-foot mt-4">Signed in on this device for 30 days.</p>
-
-              <div className="auth-in auth-delay-3 auth-rule mt-6" />
-              <div className="flex items-center justify-between mt-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep("identifier");
-                    setCode("");
-                    setError("");
-                  }}
-                  className="auth-link min-h-[40px] -ml-1 px-1"
-                >
-                  ← Change
-                </button>
-                <button type="button" disabled={cooldown > 0 || busy} onClick={() => void send(sentTo)} className="auth-link sign-resend">
-                  {cooldown > 0 && <span className="sign-resend-fill" style={{ width: `${(cooldown / RESEND_SECONDS) * 100}%` }} />}
-                  <span className="relative tabular-nums">{cooldown > 0 ? `Resend · ${cooldown}s` : "Resend code"}</span>
-                </button>
-              </div>
-            </form>
-          )}
-
-          {step === "pending" && (
-            <div key="pending" className="auth-in">
-              <div className="mx-auto w-11 h-11 rounded-full border border-[#f4ede0]/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-[#f4ede0]/75" fill="none" stroke="currentColor" strokeWidth={1.4} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <p className="auth-eyebrow mt-6">Verified</p>
-              <h2 className="auth-title mt-2.5">One more step.</h2>
-              <p className="auth-hint mt-3">An owner needs to approve access for {masked}. You'll be able to sign in once they do.</p>
-              <button
-                type="button"
-                onClick={() => {
-                  setStep("identifier");
-                  setCode("");
-                  setError("");
-                }}
-                className="auth-link mt-6 min-h-[40px] px-2"
-              >
-                ← Start over
-              </button>
-            </div>
-          )}
-
-          {error && (
-            <p role="alert" className="mt-5 text-[12.5px] text-red-300/85">
-              {error}
+      {step === "pending" && (
+        <div key="pending" className="ds-reveal">
+          <DoorHeading step="Sign in" title="Waiting for approval.">
+            <p>
+              Your number <span className="whitespace-nowrap text-door-ink tabular-nums">{shownNumber}</span> is confirmed. Ask the office to approve you; you can sign in as soon as they do.
             </p>
-          )}
+            <p className="mt-2">If no one approves the request within {RETENTION.waitingRequestDays} days, we delete it and your number.</p>
+          </DoorHeading>
+          <DoorLink className="mt-6" onClick={startOver}>
+            Start over
+          </DoorLink>
         </div>
-      </div>
-    </div>
+      )}
+    </DoorScreen>
   );
 }

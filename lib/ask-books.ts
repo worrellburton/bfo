@@ -38,9 +38,7 @@ export type LedgerRow = Pick<ReportTxn, "account_id" | "amount" | "book_category
 export type PnlSection = "revenue" | "operating" | "other";
 
 /** Where one row lands on the P&L. */
-export type Placement =
-  | { kind: "statement"; section: PnlSection; account: string; uncategorized: boolean }
-  | { kind: "transfer" | "loan" | "flow" | "intercompany" | "eliminated" };
+export type Placement = { kind: "statement"; section: PnlSection; account: string; uncategorized: boolean } | { kind: "transfer" | "loan" | "flow" | "intercompany" | "eliminated" };
 
 /** One row's place, the way pnlReport files it. */
 export function pnlPlace(t: LedgerRow, selection: string[] | null, entityOfAccount: (accountId: string) => string | null | undefined): Placement {

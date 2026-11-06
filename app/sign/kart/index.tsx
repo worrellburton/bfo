@@ -1,19 +1,19 @@
-// The race in front of the signing page (engine.ts does the 3D). This draws
-// the HUD: the title screen, the controls, the countdown, the lap counter,
-// the timer and the position, Judy's subtitles, the pause cover; in the
-// finale the letterbox bars, the on-foot objective, crosshair, reach prompt
-// and taping ring, then Judy's win with a small "Go sign" (the hand-over is
-// automatic after her last line); the fade into the signing page, and the
-// way out for anyone it doesn't work for. Phones and tablets get the theater's phone
-// screen. The engine and three.js load only here, through import(), so the
-// plain signing page never carries them. The props are the theater gate's
-// exactly, so app/routes/sign.tsx can mount either.
+// The race in front of the signing page on a computer (engine.ts does the
+// 3D). This draws the HUD: the title screen, the controls, the countdown, the
+// lap counter, the timer and the position, Judy's subtitles, the pause cover;
+// in the finale the letterbox bars, the on-foot objective, crosshair, reach
+// prompt and taping ring, then Judy's win with "Go to the signing page" (the
+// hand-over is automatic after her last line); the fade into the signing
+// page, and the way past the race, there from the first frame. Phones and
+// tablets get the shared phone screen, whose first choice is to read and sign
+// (app/sign/game/screens.tsx). The race is optional; the signing page and its
+// consent are the same after it. The engine and three.js load only here,
+// through import(). The props are the theater gate's exactly, so
+// app/routes/sign.tsx can mount either. The HUD is a dark region on the tokens.
 import { useEffect, useRef, useState } from "react";
-import { canPlayHere, PhoneScreen } from "../game";
+import { canPlayHere } from "../game";
+import { CHROME, PhoneScreen, SkipButton, TitleScreen, type GameDocument } from "../game/screens";
 import type { KartHud, KartManifest, KartRace, KartScript } from "./engine";
-
-/** How long before "Sign the normal way" is offered, so a browser the game can't run in never blocks a signature. */
-const ESCAPE_AFTER_MS = 60_000;
 /** How long the controls stay on screen once the race is on. */
 const CONTROLS_FOR_MS = 12_000;
 
@@ -51,23 +51,26 @@ export function RaceGate({
   preview,
   onDone,
   onSkip,
+  onDecline,
 }: {
   signerName: string;
   title: string;
   brand: string | null;
   /** The document itself, for the title screen: its file name, length, who sent it, and where the signature goes. */
-  document?: { fileName: string; pages: number; sentBy: string | null; role: string; signPages: number[]; downloadUrl?: string | null };
+  document?: GameDocument;
   /** The office looking at it: a way out at the top instead of a signature at the end. */
   preview?: boolean;
   onDone: () => void;
+  /** Straight to the signing page (from the first frame). */
   onSkip: () => void;
+  /** Straight to the signing page with the decline open. */
+  onDecline?: () => void;
 }) {
   const [playable] = useState(canPlayHere);
   const frame = useRef<HTMLDivElement | null>(null);
   const game = useRef<KartRace | null>(null);
   const [hud, setHud] = useState<KartHud>(IDLE);
   const [loading, setLoading] = useState<"loading" | "ready" | "failed">("loading");
-  const [escape, setEscape] = useState(false);
   const [controls, setControls] = useState(true);
   useEffect(() => {
     if (hud.phase !== "racing") return;
@@ -80,12 +83,6 @@ export function RaceGate({
     const t = setTimeout(() => setFootControls(false), FOOT_CONTROLS_FOR_MS);
     return () => clearTimeout(t);
   }, [hud.firstPerson]);
-
-  useEffect(() => {
-    if (!playable) return;
-    const t = setTimeout(() => setEscape(true), ESCAPE_AFTER_MS);
-    return () => clearTimeout(t);
-  }, [playable]);
 
   useEffect(() => {
     if (!playable || !frame.current) return;
@@ -136,7 +133,7 @@ export function RaceGate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playable, signerName, title]);
 
-  if (!playable) return <PhoneScreen title={title} brand={brand} document={document} preview={preview} onSkip={onSkip} />;
+  if (!playable) return <PhoneScreen title={title} brand={brand} document={document} preview={preview} kind="race" onSkip={onSkip} onDecline={onDecline} />;
 
   const racing = hud.phase === "racing";
   const inPlay = hud.phase === "ready" || hud.phase === "countdown" || hud.phase === "racing" || hud.phase === "finale" || hud.phase === "finished";
@@ -145,25 +142,29 @@ export function RaceGate({
   const judyName = hud.dialogue?.speaker ?? "Judy";
 
   return (
-    <div className="fixed inset-0 z-40 select-none bg-black text-white">
+    <div data-theme="dark" className="ds fixed inset-0 z-40 bg-page text-ink select-none">
       <div ref={frame} className="absolute inset-0" />
 
       {/* The letterbox of the finale's cut scenes. */}
-      <div aria-hidden className="pointer-events-none absolute left-0 right-0 top-0 z-10 bg-black transition-[height] duration-700 ease-out" style={{ height: hud.cinematic ? "12vh" : 0 }} />
-      <div aria-hidden className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 bg-black transition-[height] duration-700 ease-out" style={{ height: hud.cinematic ? "12vh" : 0 }} />
+      <div aria-hidden className="pointer-events-none absolute top-0 right-0 left-0 z-10 bg-page transition-[height] duration-700 ease-out" style={{ height: hud.cinematic ? "12vh" : 0 }} />
+      <div aria-hidden className="pointer-events-none absolute right-0 bottom-0 left-0 z-10 bg-page transition-[height] duration-700 ease-out" style={{ height: hud.cinematic ? "12vh" : 0 }} />
 
       {/* Top strip: who sent it, what it is. */}
-      <div
-        className={`pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-start justify-between p-4 text-[12px] text-white/70 transition-opacity duration-500 ${bare ? "opacity-0" : ""}`}
-      >
+      <div className={`pointer-events-none absolute top-0 right-0 left-0 z-20 flex items-start justify-between p-4 text-small text-ink-2 transition-opacity duration-500 ${bare ? "opacity-0" : ""}`}>
         <div>
-          {brand ? <p className="font-[var(--font-brand)] text-[18px] leading-none text-white">{brand}</p> : <p className="font-[var(--font-brand)] text-[20px] leading-none text-white">BFO</p>}
+          {brand ? (
+            <p className="text-section text-ink">{brand}</p>
+          ) : (
+            <p className="font-brand leading-none text-ink" style={{ fontSize: 20 }}>
+              BFO
+            </p>
+          )}
           <p className="mt-1 max-w-[46vw] truncate">{title}</p>
         </div>
-        {preview && (
+        {preview && hud.phase !== "intro" && (
           <div className="pointer-events-auto flex items-center gap-2">
-            {hud.phase !== "intro" && <span className="tabular-nums text-[11px] text-white/45">{hud.fps} fps</span>}
-            <span className="rounded-full border border-amber-300/50 bg-amber-300/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200">Preview</span>
+            <span className="text-caption text-ink-2 tabular-nums">{hud.fps} fps</span>
+            <span className="rounded-full bg-sunken px-3 py-1 text-caption font-medium text-ink-2">Preview · Race</span>
           </div>
         )}
       </div>
@@ -171,15 +172,19 @@ export function RaceGate({
       {/* The race: lap, time, position. */}
       {racing && !hud.paused && (
         <>
-          <div className="pointer-events-none absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-2 text-white">
-            <span className="rounded-full border border-white/10 bg-black/55 px-4 py-1.5 text-[12px] font-semibold uppercase tracking-[0.2em] text-amber-200 backdrop-blur">
-              Lap {hud.lap}/{hud.laps}
+          <div className="pointer-events-none absolute top-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 text-ink">
+            <span className="rounded-full px-4 py-1 text-small font-medium text-brand-ivory" style={CHROME}>
+              Lap {hud.lap} of {hud.laps}
             </span>
-            <span className="rounded-full border border-white/10 bg-black/55 px-4 py-1.5 font-mono text-[15px] tabular-nums tracking-wide backdrop-blur">{clock(hud.time)}</span>
+            <span className="rounded-full px-4 py-1 text-section tabular-nums" style={CHROME}>
+              {clock(hud.time)}
+            </span>
           </div>
-          <div className="pointer-events-none absolute bottom-8 left-6 z-20 flex items-end gap-1 text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.7)]">
-            <span className={`font-[var(--font-brand)] text-[84px] leading-none ${hud.position === 1 ? "text-amber-300" : "text-white"}`}>{hud.position}</span>
-            <span className="mb-3 text-[20px] text-white/70">{hud.position === 1 ? "st" : "nd"}</span>
+          <div className="pointer-events-none absolute bottom-8 left-6 z-20 flex items-end gap-1 text-ink">
+            <span className={`font-brand leading-none ${hud.position === 1 ? "text-brand-ivory" : "text-ink"}`} style={{ fontSize: 84 }}>
+              {hud.position}
+            </span>
+            <span className="mb-3 text-title font-normal text-ink-2">{hud.position === 1 ? "st" : "nd"}</span>
           </div>
         </>
       )}
@@ -187,26 +192,23 @@ export function RaceGate({
       {/* The controls, until the race has been on a while. Only the keys: nothing is given away. */}
       {controls && (hud.phase === "ready" || hud.phase === "countdown" || hud.phase === "racing") && !hud.paused && (
         <div
-          className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 w-[min(92vw,620px)] -translate-x-1/2 rounded-2xl border border-white/10 bg-black/55 px-5 py-4 backdrop-blur"
-          style={{ animation: "reply-in 0.5s ease-out both" }}
+          className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 w-[min(92vw,620px)] -translate-x-1/2 rounded-card px-5 py-4"
+          style={{ ...CHROME, animation: "reply-in 0.5s ease-out both" }}
         >
-          <p className="mb-2 flex items-center gap-2 text-[13px] text-amber-200/90">
-            <span aria-hidden>🔊</span>
-            Turn your sound on.
-          </p>
-          <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">Controls</p>
-          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80 sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-7">
-            <dt className="text-white/40">Go</dt>
+          <p className="mb-2 text-small text-brand-ivory">Turn your sound on.</p>
+          <p className="text-small font-medium text-ink">Controls</p>
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-small text-ink sm:grid-cols-[auto_1fr_auto_1fr_auto_1fr] sm:gap-x-8">
+            <dt className="text-ink-2">Go</dt>
             <dd>W or ↑</dd>
-            <dt className="text-white/40">Brake</dt>
+            <dt className="text-ink-2">Brake</dt>
             <dd>S or ↓</dd>
-            <dt className="text-white/40">Steer</dt>
+            <dt className="text-ink-2">Steer</dt>
             <dd>A D or ← →</dd>
-            <dt className="text-white/40">Drift</dt>
+            <dt className="text-ink-2">Drift</dt>
             <dd>Hold Shift, let go for a boost</dd>
-            <dt className="text-white/40">Jump</dt>
+            <dt className="text-ink-2">Jump</dt>
             <dd>Space</dd>
-            <dt className="text-white/40">Pause</dt>
+            <dt className="text-ink-2">Pause</dt>
             <dd>Esc</dd>
           </dl>
         </div>
@@ -215,8 +217,8 @@ export function RaceGate({
       {/* The countdown. */}
       {hud.countdown !== null && !hud.paused && (
         <div key={hud.countdown} className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center" style={{ animation: "count-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both" }}>
-          <span className={`font-[var(--font-brand)] leading-none drop-shadow-[0_4px_30px_rgba(0,0,0,0.8)] ${hud.countdown === 0 ? "text-[150px] text-amber-300" : "text-[180px] text-white"}`}>
-            {hud.countdown === 0 ? "GO!" : hud.countdown}
+          <span className={`font-brand leading-none ${hud.countdown === 0 ? "text-brand-ivory" : "text-ink"}`} style={{ fontSize: hud.countdown === 0 ? 150 : 180 }}>
+            {hud.countdown === 0 ? "Go" : hud.countdown}
           </span>
         </div>
       )}
@@ -225,22 +227,22 @@ export function RaceGate({
       {hud.firstPerson && !hud.paused && (
         <>
           {hud.objective && (
-            <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2" style={{ animation: "reply-in 0.5s ease-out both" }} key={hud.objective}>
-              <span className="block rounded-full border border-white/10 bg-black/55 px-5 py-2 text-[13px] font-semibold uppercase tracking-[0.18em] text-amber-200 backdrop-blur">
+            <div className="pointer-events-none absolute top-4 left-1/2 z-20 -translate-x-1/2" style={{ animation: "reply-in 0.5s ease-out both" }} key={hud.objective}>
+              <span className="block rounded-full px-5 py-2 text-small font-medium text-brand-ivory" style={CHROME}>
                 {hud.objective}
               </span>
             </div>
           )}
-          <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-[5px] w-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80 shadow-[0_0_6px_rgba(0,0,0,0.8)]" />
+          <div aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 z-20 size-[6px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink" />
           {hud.progress !== null && (
-            <svg aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" width="84" height="84" viewBox="0 0 84 84">
-              <circle cx="42" cy="42" r="34" fill="none" stroke="rgba(0,0,0,0.45)" strokeWidth="7" />
+            <svg aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2 text-brand-ivory" width="84" height="84" viewBox="0 0 84 84">
+              <circle cx="42" cy="42" r="34" fill="none" stroke="currentColor" strokeOpacity={0.25} strokeWidth="7" />
               <circle
                 cx="42"
                 cy="42"
                 r="34"
                 fill="none"
-                stroke="#fcd34d"
+                stroke="currentColor"
                 strokeWidth="7"
                 strokeLinecap="round"
                 strokeDasharray={2 * Math.PI * 34}
@@ -250,25 +252,19 @@ export function RaceGate({
             </svg>
           )}
           {hud.reach && (
-            <p
-              role="status"
-              className="pointer-events-none absolute left-1/2 top-[calc(50%+56px)] z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/65 px-4 py-1.5 text-[13.5px] text-white backdrop-blur"
-            >
+            <p role="status" className="pointer-events-none absolute top-[calc(50%+56px)] left-1/2 z-20 -translate-x-1/2 rounded-full px-4 py-1 text-body whitespace-nowrap text-ink" style={CHROME}>
               {hud.reach}
             </p>
           )}
           {footControls && (
-            <div
-              className="pointer-events-none absolute right-6 top-16 z-20 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 backdrop-blur"
-              style={{ animation: "reply-in 0.5s ease-out both" }}
-            >
-              <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/90">On foot</p>
-              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-[12.5px] text-white/80">
-                <dt className="text-white/40">Walk</dt>
+            <div className="pointer-events-none absolute top-16 right-6 z-20 rounded-card px-4 py-3" style={{ ...CHROME, animation: "reply-in 0.5s ease-out both" }}>
+              <p className="text-small font-medium text-ink">On foot</p>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-5 gap-y-1 text-small text-ink">
+                <dt className="text-ink-2">Walk</dt>
                 <dd>W S or ↑ ↓</dd>
-                <dt className="text-white/40">Turn</dt>
+                <dt className="text-ink-2">Turn</dt>
                 <dd>A D or ← →, or click and use the mouse</dd>
-                <dt className="text-white/40">Pick up, tape</dt>
+                <dt className="text-ink-2">Pick up, tape</dt>
                 <dd>E</dd>
               </dl>
             </div>
@@ -278,137 +274,84 @@ export function RaceGate({
 
       {/* Judy, over the pit radio. */}
       {hud.dialogue && (
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-30 flex justify-center p-4 pb-6">
-          <div role="status" aria-live="polite" className="w-full max-w-[760px] rounded-2xl border border-white/10 bg-black/75 px-5 py-4 text-center backdrop-blur">
-            <span className="flex items-center justify-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.2em] text-amber-300">
+        <div className="pointer-events-none absolute right-0 bottom-0 left-0 z-30 flex justify-center p-4 pb-6">
+          <div role="status" aria-live="polite" className="w-full max-w-[760px] rounded-card px-5 py-4 text-center" style={CHROME}>
+            <span className="flex items-center justify-center gap-2 text-small font-medium text-brand-ivory">
               {judyName}
               <span aria-hidden className="flex items-end gap-[2px]">
                 {[0, 1, 2, 3].map((i) => (
-                  <span key={i} className="block w-[3px] rounded-sm bg-amber-300" style={{ height: 8, animation: `speaking 700ms ease-in-out ${i * 120}ms infinite alternate` }} />
+                  <span key={i} className="block w-[3px] rounded-mark bg-brand-ivory" style={{ height: 8, animation: `speaking 700ms ease-in-out ${i * 120}ms infinite alternate` }} />
                 ))}
               </span>
             </span>
-            <span className="mt-1 block text-[17px] leading-snug text-white">{hud.dialogue.text}</span>
+            <span className="mt-1 block text-title font-normal text-ink">{hud.dialogue.text}</span>
           </div>
         </div>
       )}
 
       {/* A hint. */}
       {hud.prompt && hud.phase !== "intro" && !hud.dialogue && !hud.paused && (
-        <p
-          role="status"
-          className="pointer-events-none absolute bottom-10 left-1/2 z-20 max-w-[90vw] -translate-x-1/2 rounded-full bg-black/70 px-5 py-2.5 text-center text-[14px] text-white backdrop-blur"
-        >
+        <p role="status" className="pointer-events-none absolute bottom-10 left-1/2 z-20 max-w-[90vw] -translate-x-1/2 rounded-full px-5 py-2 text-center text-body text-ink" style={CHROME}>
           {hud.prompt}
         </p>
       )}
 
-      {/* The title screen: the document to sign, full screen, Start at the bottom. */}
+      {/* The title screen: the document, what comes first, and the ways in and out. */}
       {hud.phase === "intro" && (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#07070a]">
-          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <p className="auth-eyebrow text-[11px] uppercase tracking-[0.32em] text-amber-300/80" style={rise(0)}>
-              {brand || "Burton Family Office"}
-            </p>
-            <p className="mt-6 text-[13px] uppercase tracking-[0.22em] text-white/50" style={rise(1)}>
-              A document is waiting for your signature
-            </p>
-            <h1 className="mt-3 max-w-[900px] font-[var(--font-brand)] text-[40px] leading-[1.05] text-white sm:text-[56px]" style={rise(2)}>
-              {title}
-            </h1>
-            {document && (
-              <div className="mt-6 flex w-full max-w-[560px] items-center gap-4 rounded-2xl border border-[#2a2a33] bg-[#141419] p-4 text-left" style={rise(3)}>
-                <span className="flex h-14 w-11 shrink-0 items-center justify-center rounded-md bg-[#f4ede0] text-[10px] font-bold uppercase tracking-wider text-[#8c2a2f] shadow">PDF</span>
-                <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-medium text-white">{document.fileName}</span>
-                  <span className="mt-0.5 block text-[12.5px] text-white/55">
-                    {document.pages} page{document.pages === 1 ? "" : "s"}
-                    {document.sentBy ? ` · sent by ${document.sentBy}` : ""} · you sign as {document.role}
-                  </span>
-                  {document.signPages.length > 0 && <span className="mt-0.5 block text-[12.5px] text-amber-200/90">Your signature goes on page {document.signPages.join(", ")}</span>}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex flex-col items-center gap-3 px-6 pb-10 pt-4" style={rise(4)}>
-            <button
-              type="button"
-              disabled={loading !== "ready"}
-              onClick={() => game.current?.begin()}
-              className="h-[56px] min-w-[260px] rounded-full bg-white px-10 text-[16px] font-semibold text-black shadow-[0_0_40px_rgba(255,255,255,0.18)] transition-opacity disabled:opacity-50"
-            >
-              {loading === "failed" ? "The track couldn't be built" : "Start signing"}
-            </button>
-            {loading === "failed" && (
-              <p className="text-[12.5px] text-white/60">
-                Your browser couldn't run it.{" "}
-                <button type="button" onClick={onSkip} className="underline hover:text-white">
-                  Sign the normal way
-                </button>
-              </p>
-            )}
-          </div>
-        </div>
+        <TitleScreen title={title} brand={brand} document={document} preview={preview} kind="race" loading={loading} onStart={() => game.current?.begin()} onSkip={onSkip} onDecline={onDecline} />
       )}
 
       {/* Paused (Escape, or the tab went away). */}
       {hud.paused && inPlay && (
-        <button type="button" onClick={() => game.current?.resume()} className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 text-center">
+        <button type="button" onClick={() => game.current?.resume()} className="absolute inset-0 z-30 flex cursor-pointer items-center justify-center text-center" style={CHROME}>
           <span>
-            <span className="block text-[20px] font-semibold">Paused</span>
-            <span className="mt-1 block text-[13px] text-white/65">Click to keep going</span>
+            <span className="block text-title">Paused</span>
+            <span className="mt-1 block text-body text-ink-2">Click to keep going</span>
           </span>
         </button>
       )}
 
       {/* Judy's win: a small card under the letterbox while she laughs; the hand-over comes on its own, or now. */}
       {hud.result && (hud.phase === "finished" || hud.phase === "done") && (
-        <div className="pointer-events-none absolute left-0 right-0 top-[calc(12vh+16px)] z-30 flex justify-center px-6">
+        <div className="pointer-events-none absolute top-[calc(12vh+16px)] right-0 left-0 z-30 flex justify-center px-6">
           <div
-            className="pointer-events-auto flex items-center gap-5 rounded-2xl border border-white/10 bg-[#0b0b0f]/85 px-6 py-4 backdrop-blur"
-            style={{ animation: "rise-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both" }}
+            className="pointer-events-auto flex items-center gap-5 rounded-card border border-line-strong bg-overlay px-6 py-4"
+            style={{ animation: "reply-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both" }}
           >
             <div>
-              <p className="text-[10.5px] uppercase tracking-[0.32em] text-amber-300/80">Checkered flag</p>
-              <p className="mt-1 font-[var(--font-brand)] text-[30px] leading-none text-white">Judy wins</p>
-              <p className="mt-1.5 text-[12px] text-white/55">
-                Two laps, one arm, a roll of tape · <span className="font-mono tabular-nums text-white/75">{clock(hud.result.time)}</span>
+              <p className="text-small text-ink-2">Checkered flag</p>
+              <p className="mt-1 text-heading">Judy wins</p>
+              <p className="mt-1 text-small text-ink-2">
+                Two laps, one arm, a roll of tape · <span className="tabular-nums text-ink">{clock(hud.result.time)}</span>
               </p>
             </div>
             <button
               type="button"
               onClick={() => game.current?.goSign()}
               disabled={hud.phase === "done"}
-              className="h-[44px] shrink-0 rounded-full bg-white px-6 text-[14px] font-semibold text-black transition-opacity disabled:opacity-60"
+              className="h-11 shrink-0 cursor-pointer rounded-control bg-ink px-5 text-body font-medium text-ink-inverse hover:bg-primary-hover disabled:bg-selected disabled:text-ink-disabled"
             >
-              Go sign
+              Go to the signing page
             </button>
           </div>
         </div>
       )}
 
-      {/* The way out, for a browser where it never gets going. */}
-      {escape && hud.phase !== "done" && (
-        <button type="button" onClick={onSkip} className="absolute bottom-3 right-4 z-30 rounded-full px-3 py-1.5 text-[12px] text-white/45 hover:bg-white/10 hover:text-white">
-          Having trouble? Sign the normal way
-        </button>
-      )}
+      {/* The way past it, at any moment once it's running. */}
+      {hud.phase !== "intro" && hud.phase !== "done" && !hud.result && <SkipButton onSkip={onSkip} />}
 
       <style>{`
         @keyframes reply-in { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes speaking { from { height: 3px; } to { height: 11px; } }
-        @keyframes rise-in { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes count-in { from { transform: scale(1.6); opacity: 0; } 30% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } to { transform: scale(0.9); opacity: 0; } }
+        @media (prefers-reduced-motion: reduce) { [style*="reply-in"], [style*="speaking"], [style*="count-in"] { animation: none !important; } }
       `}</style>
 
       {/* The fade into the signing page. */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 z-50 bg-black transition-opacity duration-500" style={{ opacity: hud.dark }} />
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-50 bg-page transition-opacity duration-500" style={{ opacity: hud.dark }} />
     </div>
   );
 }
-
-/** Staggered entrance for the title screen's rows. */
-const rise = (i: number): React.CSSProperties => ({ animation: `rise-in 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${120 + i * 110}ms both` });
 
 /** Seconds as m:ss.t. */
 function clock(seconds: number): string {

@@ -1,23 +1,26 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { cleanCompose, htmlFromPlain } from "../lib/mail-compose";
-import { useTone } from "./entity/ui";
+import { Button, Dialog, Field, Input, cx } from "./ui";
+import { GlyphButton, type GlyphName } from "./mail/glyphs";
 
 /**
  * The composer's body: formatted text (paragraphs, bold, italic, lists, quotes,
  * links) that keeps a paste's formatting, cleaned to what mail allows
- * (lib/mail-compose.ts). Plain-text pastes become paragraphs and lists.
+ * (lib/mail-compose.ts). Plain-text pastes become paragraphs and lists. Text
+ * at the field size (14 desktop, 16 touch, so iOS never zooms), the
+ * placeholder in ink-3, and the global focus ring left off: the caret is the
+ * focus in a page-sized writing area.
  */
 
 export type MailEditorHandle = {
   focus(atStart?: boolean): void;
-  /** Replace the whole body (Improve design, Undo). */
+  /** Replace the whole body (Tidy layout, Undo). */
   setHtml(html: string): void;
 };
 
-type Props = { initialHtml: string; onChange: (html: string) => void; placeholder?: string; className?: string };
+type Props = { initialHtml: string; onChange: (html: string) => void; placeholder?: string; className?: string; label?: string };
 
-export const MailEditor = forwardRef<MailEditorHandle, Props>(function MailEditor({ initialHtml, onChange, placeholder, className = "" }, ref) {
-  const t = useTone();
+export const MailEditor = forwardRef<MailEditorHandle, Props>(function MailEditor({ initialHtml, onChange, placeholder, className, label = "Message" }, ref) {
   const el = useRef<HTMLDivElement>(null);
   const emit = () => onChange(el.current?.innerHTML ?? "");
 
@@ -68,7 +71,7 @@ export const MailEditor = forwardRef<MailEditorHandle, Props>(function MailEdito
       ref={el}
       role="textbox"
       aria-multiline="true"
-      aria-label="Message"
+      aria-label={label}
       contentEditable
       suppressContentEditableWarning
       data-placeholder={placeholder}
@@ -83,81 +86,87 @@ export const MailEditor = forwardRef<MailEditorHandle, Props>(function MailEdito
         document.execCommand("insertHTML", false, html ? cleanCompose(html) : htmlFromPlain(text));
         emit();
       }}
-      style={{ outline: "none" }}
-      className={`overflow-y-auto px-4 py-3 text-[13.5px] leading-relaxed max-sm:text-[16px] ${t.text}
-        empty:before:pointer-events-none empty:before:text-gray-500 empty:before:content-[attr(data-placeholder)]
-        [&_p]:mb-3 [&_div]:min-h-[1.2em] [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-6 [&_li]:mb-1
-        [&_blockquote]:mb-3 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 ${t.dark ? "[&_blockquote]:border-white/15 [&_blockquote]:text-gray-400" : "[&_blockquote]:border-gray-300 [&_blockquote]:text-gray-600"}
-        [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[15px] [&_h3]:font-semibold [&_a]:underline ${t.dark ? "[&_a]:text-[#a5b4fc]" : "[&_a]:text-[#4f46e5]"} ${className}`}
+      className={cx(
+        "overflow-y-auto text-field text-ink outline-none!",
+        "empty:before:pointer-events-none empty:before:text-ink-3 empty:before:content-[attr(data-placeholder)]",
+        "[&_p]:mb-3 [&_div]:min-h-[1.2em] [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-6 [&_li]:mb-1",
+        "[&_blockquote]:mb-3 [&_blockquote]:border-l-2 [&_blockquote]:border-line-strong [&_blockquote]:pl-3 [&_blockquote]:text-ink-2",
+        "[&_a]:text-accent [&_a]:underline",
+        className,
+      )}
     />
   );
 });
 
-/** Formatting buttons for the editor. mousedown is held so the selection stays in the body. */
+/** Formatting for the editor: one icon set, one size. mousedown is held so the selection stays in the body. */
 export function FormatBar({ onFormat, disabled = false }: { onFormat: () => void; disabled?: boolean }) {
-  const t = useTone();
   const run = (cmd: string, value?: string) => {
     document.execCommand(cmd, false, value);
     onFormat();
   };
-  const btn = `inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md px-1.5 text-[12.5px] transition-colors disabled:cursor-default disabled:opacity-40 max-sm:h-[40px] max-sm:min-w-[40px] ${
-    t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-  }`;
-  const items: { label: string; title: string; act: () => void; node: React.ReactNode }[] = [
-    { label: "Bold", title: "Bold (⌘B)", act: () => run("bold"), node: <b>B</b> },
-    { label: "Italic", title: "Italic (⌘I)", act: () => run("italic"), node: <i className="font-serif">I</i> },
-    { label: "Bulleted list", title: "Bulleted list", act: () => run("insertUnorderedList"), node: <ListGlyph /> },
-    { label: "Numbered list", title: "Numbered list", act: () => run("insertOrderedList"), node: <ListGlyph numbered /> },
-    { label: "Quote", title: "Quote", act: () => run("formatBlock", "blockquote"), node: <span className="text-[15px] leading-none">“</span> },
+  // A link: the selection is kept while its address is asked for, then the link goes on it.
+  const saved = useRef<Range | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [url, setUrl] = useState("https://");
+  const okUrl = /^(https?:\/\/[^\s.]+\.\S+|mailto:\S+@\S+)$/i.test(url.trim());
+  function addLink() {
+    const range = saved.current;
+    setAsking(false);
+    if (!okUrl || !range) return;
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    run("createLink", url.trim());
+  }
+  const items: { label: string; glyph: GlyphName; act: () => void }[] = [
+    { label: "Bold (⌘B)", glyph: "bold", act: () => run("bold") },
+    { label: "Italic (⌘I)", glyph: "italic", act: () => run("italic") },
+    { label: "Bulleted list", glyph: "bullets", act: () => run("insertUnorderedList") },
+    { label: "Numbered list", glyph: "numbers", act: () => run("insertOrderedList") },
+    { label: "Quote", glyph: "quote", act: () => run("formatBlock", "blockquote") },
     {
       label: "Link",
-      title: "Link",
+      glyph: "link",
       act: () => {
-        const url = window.prompt("Link address (https://…)", "https://");
-        if (url && /^(https?:\/\/|mailto:)\S+$/i.test(url.trim())) run("createLink", url.trim());
+        const sel = window.getSelection();
+        saved.current = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        setUrl("https://");
+        setAsking(true);
       },
-      node: <LinkGlyph />,
     },
-    { label: "Clear formatting", title: "Clear formatting", act: () => run("removeFormat"), node: <span className="text-[11px] line-through">T</span> },
+    { label: "Clear formatting", glyph: "clearFormat", act: () => run("removeFormat") },
   ];
   return (
-    <div className="flex items-center gap-0.5" role="toolbar" aria-label="Formatting">
+    <div className="flex items-center gap-1" role="toolbar" aria-label="Formatting">
       {items.map((it) => (
-        <button key={it.label} type="button" aria-label={it.label} title={it.title} disabled={disabled} className={btn} onMouseDown={(e) => e.preventDefault()} onClick={it.act}>
-          {it.node}
-        </button>
+        <GlyphButton key={it.label} glyph={it.glyph} label={it.label} disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={it.act} />
       ))}
+      <Dialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title="Add a link"
+        description="On the words you selected."
+        size="sm"
+        footer={
+          <>
+            <Button onClick={() => setAsking(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!okUrl} disabledReason="Type a web or email address" onClick={addLink}>
+              Add link
+            </Button>
+          </>
+        }
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            addLink();
+          }}
+        >
+          <Field label="Address" hint="A web address (https://…) or mailto:">
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} inputMode="url" autoCapitalize="none" spellCheck={false} />
+          </Field>
+        </form>
+      </Dialog>
     </div>
-  );
-}
-
-function ListGlyph({ numbered = false }: { numbered?: boolean }) {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-      {numbered ? (
-        <>
-          <text x="0.5" y="5.5" fontSize="5" fill="currentColor" stroke="none">
-            1
-          </text>
-          <text x="0.5" y="12.5" fontSize="5" fill="currentColor" stroke="none">
-            2
-          </text>
-        </>
-      ) : (
-        <>
-          <circle cx="2" cy="4" r="1" fill="currentColor" stroke="none" />
-          <circle cx="2" cy="11" r="1" fill="currentColor" stroke="none" />
-        </>
-      )}
-      <path d="M6 4h9M6 11h9" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function LinkGlyph() {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-    </svg>
   );
 }

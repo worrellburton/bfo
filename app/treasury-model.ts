@@ -52,12 +52,7 @@ const RETIREMENT_SUBTYPES = new Set([
 ]);
 const TAX_EXEMPT_SUBTYPES = new Set(["roth", "roth ira", "roth 401k", "hsa"]);
 
-const norm = (s: string | null | undefined) =>
-  (s ?? "")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+const norm = (s: string | null | undefined) => (s ?? "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 
 /** An IRA, Roth, 401(k), 403(b), HSA and the like: owned by one person, never by an entity. */
 export function isRetirement(subtype: string | null | undefined, name?: string | null): boolean {
@@ -109,7 +104,8 @@ export function ownerConflict(a: OwnedAccount, entityIsTrust: boolean): string |
   const reg = registration(a.official_name || a.name, a.subtype);
   const kind = a.owner_kind ?? (a.entity_id ? "entity" : null);
   if (!reg || kind !== "entity") return null;
-  if (reg.kind === "retirement") return `Registered as ${article(reg.label)} ${reg.label}. It belongs to one person; ${entityIsTrust ? "the trust" : "an entity"} can only be named as its beneficiary.`;
+  if (reg.kind === "retirement")
+    return `Registered as ${article(reg.label)} ${reg.label}. It belongs to one person; ${entityIsTrust ? "the trust" : "an entity"} can only be named as its beneficiary.`;
   if (reg.kind === "joint") return `Registered as ${reg.label}. It belongs to its joint owners unless it has been retitled${entityIsTrust ? " to the trust" : ""}.`;
   if (reg.kind === "individual") return `Registered as Individual. It belongs to one person unless it has been retitled${entityIsTrust ? " to the trust" : ""}.`;
   return null;
@@ -197,7 +193,10 @@ export function stripBankMask(name: string | null | undefined, mask: string | nu
 }
 
 /** Who owns an account, as a group key and a label for headings. */
-export function ownerOf(a: { owner_kind?: OwnerKind | null; owner_names?: string[] | null; entity_id?: string | null }, entityName: (id: string) => string | null): { key: string; label: string; kind: "entity" | "person" | "joint" | "none" } {
+export function ownerOf(
+  a: { owner_kind?: OwnerKind | null; owner_names?: string[] | null; entity_id?: string | null },
+  entityName: (id: string) => string | null,
+): { key: string; label: string; kind: "entity" | "person" | "joint" | "none" } {
   if (a.owner_kind === "person" && a.owner_names?.length) return { key: `person:${a.owner_names[0].toLowerCase()}`, label: a.owner_names[0], kind: "person" };
   if (a.owner_kind === "joint" && a.owner_names?.length) {
     const names = [...a.owner_names].sort((x, y) => x.localeCompare(y));

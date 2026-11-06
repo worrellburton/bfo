@@ -1,218 +1,186 @@
-import { Link } from "react-router";
+/**
+ * Account owners: who holds each bank and brokerage account. An entity (its
+ * Books and statements use the account), one person, or joint owners
+ * (outside every entity's Books). Accounts with no owner, and accounts whose
+ * owner contradicts the custodian's registration (an IRA mapped to a trust),
+ * come first. Every change is confirmed with what it moves and recorded
+ * (api/plaid/account-prefs.ts). Built on app/ui (docs/DESIGN.md).
+ */
 import { useEffect, useMemo, useState } from "react";
-import { authFetch } from "../auth";
-import { useTheme } from "../theme";
+import { useSearchParams } from "react-router";
+import { canWrite } from "../auth";
+import { Banner, Button, Card, Empty, Page, PageHeader, Segmented, Skeleton, Status, format, toast } from "../ui";
+import { isDebt } from "../treasury-model";
+import { InstitutionMark, OwnerDialog } from "../treasury-ui";
+import { accountName, confirmOwnerChange, conflictOf, loadTreasury, ownerText, saveOwner, stoppedAsAccount, typeLabel, useRecords, type Account, type OwnerChoice } from "../treasury-data";
 
 export function meta() {
-  return [{ title: "BFO - Account mappings" }];
+  return [{ title: "Account owners · Treasury · BFO" }];
 }
 
-type Account = {
-  account_id: string;
-  item_id: string;
-  institution_name: string;
-  institution_color: string | null;
-  institution_logo: string | null;
-  name: string;
-  official_name: string | null;
-  nickname: string | null;
-  mask: string | null;
-  type: string;
-  subtype: string | null;
-  hidden: boolean;
-  entity_id: string | null;
-  entity_name: string | null;
-};
-
-type Entity = { id: string; name: string };
-
-function tint(hex: string | null): string {
-  const fallback = "99, 102, 241";
-  if (!hex) return fallback;
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return fallback;
-  const n = parseInt(m[1], 16);
-  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
-}
-
-function label(a: Account): string {
-  const base = a.nickname || a.official_name || a.name;
-  return a.mask && !base.includes(a.mask) ? `${base} ····${a.mask}` : base;
-}
+type Filter = "all" | "none" | "review";
+type Item = Account & { stopped?: boolean; logo?: string | null };
 
 export default function TreasuryMappings() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const records = useRecords();
+  const writer = canWrite();
+  const [params, setParams] = useSearchParams();
+  const filter = (["none", "review"].includes(params.get("show") ?? "") ? params.get("show") : "all") as Filter;
 
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [entities, setEntities] = useState<Entity[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [items, setItems] = useState<Item[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Item | null>(null);
 
-  useEffect(() => {
-    // Accounts from the treasury API; entities from the assets tree.
-    void (async () => {
-      try {
-        const res = await authFetch("/api/plaid/data?report=treasury");
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || "Couldn't load accounts.");
-        setAccounts(data.accounts ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn't load accounts.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-
-    let unsub: (() => void) | undefined;
-    let cancelled = false;
-    void (async () => {
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, onValue } = await import("../store");
-      if (cancelled) return;
-      unsub = onValue(ref(db, "assets"), (snap) => {
-        const data = snap.val() || {};
-        const list: Entity[] = Object.entries<any>(data)
-          .map(([id, asset]) => ({ id, name: asset?.name || "Unnamed entity" }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-        setEntities(list);
-      });
-    })().catch(() => {
-      /* the pickers just stay empty */
-    });
-    return () => {
-      cancelled = true;
-      unsub?.();
-    };
-  }, []);
-
-  async function assign(account: Account, entityId: string) {
-    const entity = entities.find((e) => e.id === entityId) ?? null;
-    setBusyId(account.account_id);
-    setError("");
+  async function load() {
     try {
-      const res = await authFetch("/api/plaid/account-prefs", {
-        method: "POST",
-        body: JSON.stringify({
-          account_id: account.account_id,
-          entity_id: entity?.id ?? "",
-          entity_name: entity?.name ?? "",
-        }),
-      });
-      if (!res.ok) throw new Error("Couldn't save that mapping.");
-      setAccounts((prev) => prev.map((a) => (a.account_id === account.account_id ? { ...a, entity_id: entity?.id ?? null, entity_name: entity?.name ?? null } : a)));
+      const data = await loadTreasury();
+      setItems([...data.accounts, ...data.disconnected.map((s) => ({ ...stoppedAsAccount(s), stopped: true }))]);
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't save that mapping.");
-    } finally {
-      setBusyId(null);
+      setError(err instanceof Error ? err.message : "Couldn’t load the accounts.");
     }
   }
+  useEffect(() => {
+    void load();
+  }, []);
 
-  // An account mapped to an entity deleted since counts as unmapped. Until the
-  // entities load, trust the stored id so the page doesn't flash amber.
-  const known = new Set(entities.map((e) => e.id));
-  const isMapped = (a: Account) => !!a.entity_id && (entities.length === 0 || known.has(a.entity_id));
-  const unmapped = accounts.filter((a) => !isMapped(a)).length;
+  const nameOf = (a: Account) => (id: string) => (records.loaded ? records.nameOf(id) : (a.entity_name ?? null));
+  const ownerOfItem = (a: Account) => ownerText(a, nameOf(a));
+  const noOwner = (a: Account) => !ownerOfItem(a);
+  const review = (a: Account) => !!conflictOf(a, records.isTrust);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, Account[]>();
-    for (const a of accounts) {
-      const list = map.get(a.institution_name) ?? [];
-      list.push(a);
-      map.set(a.institution_name, list);
-    }
+  const all = items ?? [];
+  const counts = { none: all.filter(noOwner).length, review: all.filter(review).length, hidden: all.filter((a) => a.hidden).length };
+  const shown = all.filter((a) => (filter === "none" ? noOwner(a) : filter === "review" ? review(a) : true));
+
+  const banks = useMemo(() => {
+    const map = new Map<string, Item[]>();
+    for (const a of shown) map.set(a.institution_name || "Other", [...(map.get(a.institution_name || "Other") ?? []), a]);
+    const rank = (a: Account) => (noOwner(a) ? 0 : review(a) ? 1 : 2);
+    for (const list of map.values()) list.sort((x, y) => rank(x) - rank(y) || accountName(x).localeCompare(accountName(y)));
     return [...map.entries()].sort((x, y) => x[0].localeCompare(y[0]));
-  }, [accounts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, filter, records]);
 
-  const subtle = isDark ? "text-gray-500" : "text-gray-500";
-  const card = isDark ? "glass-card" : "glass-card";
-  const rowBorder = isDark ? "border-white/5" : "border-gray-100";
+  async function onSave(choice: OwnerChoice): Promise<string | null> {
+    if (!editing) return null;
+    const toPerson = choice.owner_kind === "person" || choice.owner_kind === "joint";
+    const toText = toPerson ? (choice.owner_names ?? []).filter(Boolean).join(" & ") : (choice.entity_name ?? null);
+    if (!(await confirmOwnerChange(editing, ownerOfItem(editing), toText || null, toPerson))) return "Not changed.";
+    const err = await saveOwner(editing.account_id, choice);
+    if (err) return err;
+    toast({ message: `Owner saved for ${accountName(editing)}` });
+    await load();
+    return null;
+  }
+
+  const context = items
+    ? [format.count(all.length, "account"), counts.none ? `${counts.none} with no owner` : "every account has an owner", counts.hidden ? `${counts.hidden} hidden in Treasury` : null]
+        .filter(Boolean)
+        .join(" · ")
+    : "Who holds each account";
 
   return (
-    <div className="max-w-4xl">
-      <Link to="/treasury" className={`inline-flex items-center min-h-[40px] lg:min-h-0 text-sm ${subtle} hover:underline`}>
-        ← Treasury
-      </Link>
-      <div className="flex items-start justify-between gap-4 mt-2 mb-6">
-        <div className="min-w-0">
-          <h1 className={`text-2xl font-bold ${isDark ? "" : "text-gray-900"}`}>Account mappings</h1>
-          <p className={`text-sm mt-1 ${subtle}`}>Which entity each bank account and card belongs to — Books and the entity P&amp;Ls are built on these.</p>
-        </div>
-        {unmapped > 0 && (
-          <span className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium ${isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"}`}>{unmapped} unmapped</span>
-        )}
-      </div>
+    <Page width="workspace" header={<PageHeader title="Account owners" back={{ to: "/treasury", label: "Treasury" }} context={context} />}>
+      <p className="-mt-4 max-w-[68ch] text-small text-ink-2">
+        Books and each entity’s statements use these. An IRA or other retirement account belongs to one person; a trust can be named as its beneficiary. Accounts held by a person or jointly sit
+        outside every entity’s Books.
+      </p>
 
-      {error && <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${isDark ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-700"}`}>{error}</div>}
-
-      {loading ? (
-        <p className={`text-sm ${subtle}`}>Loading…</p>
-      ) : accounts.length === 0 ? (
-        <p className={`text-sm ${subtle}`}>No accounts connected yet.</p>
-      ) : (
-        grouped.map(([bank, list]) => {
-          const rgb = tint(list[0].institution_color);
-          return (
-            <section key={bank} className={`rounded-xl border overflow-hidden mb-4 ${card}`}>
-              <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3">
-                {list[0].institution_logo ? (
-                  <img src={`data:image/png;base64,${list[0].institution_logo}`} alt="" className="w-6 h-6 shrink-0 rounded object-contain bg-white/90 p-0.5" />
-                ) : (
-                  <span className="w-6 h-6 shrink-0 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ background: `rgba(${rgb}, 0.55)` }}>
-                    {bank.slice(0, 1)}
-                  </span>
-                )}
-                <span className="text-sm font-semibold">{bank}</span>
-                <span className={`text-xs ${subtle}`}>· {list.length}</span>
-              </div>
-
-              {list.map((account) => (
-                <div key={account.account_id} className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-5 py-3 border-t ${rowBorder}`}>
-                  <div className="min-w-[10rem] flex-1">
-                    <p className="text-sm font-medium truncate">
-                      {label(account)}
-                      {account.hidden && <span className={`ml-2 text-[10px] uppercase tracking-wider ${isDark ? "text-amber-400/70" : "text-amber-600"}`}>hidden</span>}
-                    </p>
-                    <p className={`text-xs capitalize ${subtle}`}>{account.subtype || account.type}</p>
-                  </div>
-
-                  {!isMapped(account) && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title={account.entity_id ? "Its entity was deleted" : "Not mapped yet"} />}
-                  <select
-                    aria-label={`Entity for ${label(account)}`}
-                    style={{ colorScheme: isDark ? "dark" : "light" }}
-                    value={account.entity_id ?? ""}
-                    disabled={busyId === account.account_id || entities.length === 0}
-                    onChange={(e) => void assign(account, e.target.value)}
-                    className={`px-3 py-2 rounded-lg text-sm border transition-colors cursor-pointer disabled:opacity-50 w-full min-h-[40px] lg:min-h-0 sm:w-auto sm:min-w-[220px] sm:max-w-[320px] ${
-                      isMapped(account)
-                        ? isDark
-                          ? "bg-white/[0.04] border-white/10 text-white"
-                          : "bg-white border-gray-200 text-gray-900"
-                        : isDark
-                          ? "bg-amber-500/[0.06] border-amber-500/30 text-amber-200"
-                          : "bg-amber-50 border-amber-300 text-amber-900"
-                    }`}
-                  >
-                    <option value="">{entities.length === 0 ? "No entities found" : "Assign to entity…"}</option>
-                    {!isMapped(account) && account.entity_id && (
-                      <option value={account.entity_id} disabled>
-                        {account.entity_name ?? "Unknown entity"} (deleted)
-                      </option>
-                    )}
-                    {entities.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </section>
-          );
-        })
+      {error && (
+        <Banner
+          tone="negative"
+          action={
+            <Button variant="quiet" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+        >
+          {error}
+        </Banner>
       )}
-    </div>
+
+      {items && all.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmented
+            label="Show"
+            value={filter}
+            onChange={(v) => setParams(v === "all" ? {} : { show: v }, { replace: true })}
+            options={[
+              { value: "all", label: "All" },
+              { value: "none", label: counts.none ? `No owner · ${counts.none}` : "No owner" },
+              { value: "review", label: counts.review ? `To review · ${counts.review}` : "To review" },
+            ]}
+          />
+          {!writer && <span className="text-small text-ink-2">Viewers can see owners but not change them.</span>}
+        </div>
+      )}
+
+      {!items && !error && <Skeleton kind="rows" rows={8} />}
+
+      {items && all.length === 0 && <Empty title="No accounts yet">Connect a bank on Treasury, and its accounts appear here to be given an owner.</Empty>}
+
+      {items && all.length > 0 && shown.length === 0 && (
+        <Empty title={filter === "none" ? "Every account has an owner" : "Nothing to review"} action={<Button onClick={() => setParams({}, { replace: true })}>Show all accounts</Button>}>
+          {filter === "none" ? "Each account is held by an entity, a person or joint owners." : "No account’s owner contradicts how the custodian registers it."}
+        </Empty>
+      )}
+
+      {banks.map(([bank, list]) => (
+        <Card key={bank} title={bank} count={list.length} flush>
+          <ul>
+            {list.map((a, i) => {
+              const owner = ownerOfItem(a);
+              const conflict = conflictOf(a, records.isTrust);
+              const meta = [
+                typeLabel(a),
+                a.balance_current != null ? `${format.money((isDebt(a) ? -1 : 1) * a.balance_current)}${a.stopped ? " last balance" : ""}` : null,
+                a.last_activity ? `last moved ${format.date(a.last_activity, "short")}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <li key={a.account_id} className={`flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:gap-4 touch:px-4 ${i ? "border-t border-line" : ""}`}>
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <InstitutionMark name={a.institution_name} logo={a.institution_logo} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-body break-words text-ink">{accountName(a)}</p>
+                      <p className="text-small text-ink-2">{meta}</p>
+                      {(a.hidden || a.stopped) && (
+                        <p className="text-small text-ink-2">
+                          {a.stopped ? "Not syncing; its Books history is kept." : "Hidden in Treasury: left out of its totals, Books reports and the emailed report."}
+                          {a.hidden && !owner ? " Confirm it isn’t an entity’s account." : ""}
+                        </p>
+                      )}
+                      {conflict && <p className="mt-1 text-small text-ink">{conflict}</p>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center justify-between gap-3 pl-11 sm:justify-end sm:pl-0">
+                    <span className="min-w-0 text-right text-body">
+                      {owner ? (
+                        <span className="inline-flex flex-wrap items-center justify-end gap-x-2">
+                          <span className="text-ink">{owner}</span>
+                          {conflict && <Status tone="warning">Check owner</Status>}
+                          {a.owner_kind === "person" || a.owner_kind === "joint" ? <span className="text-small text-ink-2">outside Books</span> : null}
+                        </span>
+                      ) : (
+                        <Status tone="warning">No owner</Status>
+                      )}
+                    </span>
+                    {writer && (
+                      <Button size="sm" onClick={() => setEditing(a)} aria-label={`Change owner of ${accountName(a)}`}>
+                        {owner ? "Change…" : "Choose…"}
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      ))}
+
+      <OwnerDialog open={!!editing} onClose={() => setEditing(null)} account={editing} entities={records.entities} people={records.people} onSave={onSave} />
+    </Page>
   );
 }

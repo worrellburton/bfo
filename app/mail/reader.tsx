@@ -1,353 +1,362 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Button, Dot, ErrorLine, Icon, IconButton, formatBytes, useTone } from "../entity/ui";
-import { MailFrame } from "../mail-frame";
-import { Orbit, ReaderLoader } from "../mail-loaders";
-import { FileIcon } from "../file-icon";
-import { fileKind } from "../../lib/file-kind";
-import { attachmentUrl, type MailAddress, type MailAttachment, type MailMessage, type MailSummary } from "../mail-client";
+import { Badge, Banner, Button, Icon, IconButton, Menu, Skeleton, Spinner, Status, cx, format, usePhone, type MenuItem } from "../ui";
+import { MailFrame, useDarkTheme } from "../mail-frame";
+import { attachmentUrl, type MailAttachment, type MailMessage, type MailSummary } from "../mail-client";
 import { Glyph, GlyphButton, Star } from "./glyphs";
-import { fullAddress, fullDate, listDate, same, senderLabel } from "./helpers";
-import { Avatar } from "./avatar";
-import { ENVELOPE_MS } from "./constants";
+import { bytes, fullAddress, fullStamp, listDate, recipientLabel, same, senderLabel } from "./helpers";
+import { MailAvatar } from "./avatar";
+import { UnverifiedTag } from "./list-row";
+
+// ── Pictures: who may load them ──────────────────────────────────────────
+
+const ALWAYS_KEY = "bfo-mail-images";
+
+function alwaysShown(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(ALWAYS_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function alwaysShow(email: string) {
+  try {
+    const next = [email.toLowerCase(), ...alwaysShown().filter((x) => x !== email.toLowerCase())].slice(0, 500);
+    localStorage.setItem(ALWAYS_KEY, JSON.stringify(next));
+  } catch {
+    // Then it lasts the visit.
+  }
+}
+
+/** Pictures load for a sender the mailbox has written to, one chosen to always show, and our own sent mail. */
+function picturesByDefault(m: MailMessage): boolean {
+  if (m.direction === "out") return true;
+  if (m.unverifiedSender || m.impersonation) return false;
+  return m.knownSender === true || alwaysShown().includes(m.from.email.toLowerCase());
+}
 
 // ── Reader ───────────────────────────────────────────────────────────────
 
-export function Reader({
-  message: m,
-  error,
-  me,
-  mine = [me],
-  backAlways,
-  onBack,
-  onReply,
-  onForward,
-  onMove,
-  onDelete,
-  onStar,
-  onUnread,
-  thread,
-  freshId,
-  wholeConversation = false,
-  preview = null,
-}: {
-  /** The whole conversation, newest first (the open message included). */
-  thread: MailMessage[];
-  /** A message just sent into it: it slides in at the top. */
-  freshId: string | null;
-  /** Opened from Active: Archive takes the whole conversation, whoever wrote this message. */
-  wholeConversation?: boolean;
-  /** The list's row for it, so the loader can open this very message (sender, subject, first words). */
-  preview?: MailSummary | null;
-  message: MailMessage | null;
-  error: string | null;
-  me: string;
-  /** Every address of mine (the main one and the extra ones): mail to any of them is "To me". */
-  mine?: string[];
-  /** Show Back at every width (the table view gives the message the whole card). */
-  backAlways: boolean;
-  onBack: () => void;
+type Actions = {
   onReply: (m: MailMessage, mode: "reply" | "all") => void;
   onForward: (m: MailMessage) => void;
   onMove: (m: MailMessage, to: "inbox" | "archive") => void;
   onDelete: (m: MailMessage) => void;
+  onRestore: (m: MailMessage) => void;
+  onPurge: (m: MailMessage) => void;
+  onHold: (m: MailMessage, on: boolean) => void;
   onStar: (m: MailMessage, on: boolean) => void;
   onUnread: (m: MailMessage) => void;
+};
+
+/**
+ * One message, and the conversation it's in (§8.19, §11). The top bar holds
+ * Back and what the message can have done to it: Reply as the one primary,
+ * Reply all and Forward beside it, then star, unread, archive and delete as
+ * labelled icons, and "…" for the rest. Warnings sit above the body, in
+ * words: an unverified sender, a name copied from the office, payment
+ * instructions. On a phone, Reply and Forward are in a bar at the bottom.
+ */
+export function Reader({
+  message: m,
+  error,
+  mine,
+  backLabel,
+  backAlways,
+  onBack,
+  thread,
+  freshId,
+  wholeConversation = false,
+  preview = null,
+  canHold = false,
+  canRelease = false,
+  noAddress = false,
+  ...act
+}: Actions & {
+  /** The whole conversation, newest first (the open message included). */
+  thread: MailMessage[];
+  /** A message just sent into it: it opens at the top. */
+  freshId: string | null;
+  /** Opened from Inbox (conversations): Archive and Delete take the whole conversation. */
+  wholeConversation?: boolean;
+  /** The list's row for it, shown at once while the message itself is read. */
+  preview?: MailSummary | null;
+  message: MailMessage | null;
+  error: string | null;
+  /** Every address of mine (the main one and the extra ones): mail to any of them is "To me". */
+  mine: string[];
+  /** The place Back returns to ("Inbox", "Trash"). */
+  backLabel: string;
+  /** Show Back at every width (the table view gives the message the whole card). */
+  backAlways: boolean;
+  onBack: () => void;
+  /** Owners and admins keep mail for records; only owners stop keeping it. */
+  canHold?: boolean;
+  canRelease?: boolean;
+  /** No address yet: nothing can be sent. */
+  noAddress?: boolean;
 }) {
-  const t = useTone();
+  const phone = usePhone();
   const [details, setDetails] = useState(false);
-  // Opened without the message in hand: the envelope plays over the message, which renders underneath as soon as it
-  // arrives (its frame and pictures load meanwhile), and lifts off to reveal it as the letter comes forward.
-  const openedAt = useRef(performance.now());
-  const [reveal, setReveal] = useState<"hold" | "go" | "done">(() => (m ? "done" : "hold"));
+  const [images, setImages] = useState(() => (m ? picturesByDefault(m) : false));
+  const [hasPictures, setHasPictures] = useState(false);
+  const [original, setOriginal] = useState(false);
+  const dark = useDarkTheme();
+  // A fresher copy (knownSender arrives with the full message) may allow pictures it didn't before.
   useEffect(() => {
-    if (!m || reveal === "done") return;
-    const wait = Math.max(0, ENVELOPE_MS - (performance.now() - openedAt.current));
-    const a = window.setTimeout(() => setReveal("go"), wait);
-    const b = window.setTimeout(() => setReveal("done"), wait + 520);
-    return () => {
-      window.clearTimeout(a);
-      window.clearTimeout(b);
-    };
-  }, [m, reveal]);
-  const envelope = reveal !== "done";
-  const toLine = (list: MailAddress[]) => list.map((a) => (mine.some((x) => same(a.email, x)) ? "me" : senderLabel(a))).join(", ");
+    if (m) setImages((on) => on || picturesByDefault(m));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m?.id, m?.knownSender]);
+  const onRemote = useCallback((has: boolean) => setHasPictures(has), []);
+
   const failed = m?.direction === "out" && /fail|bounce|reject|drop/i.test(m.status ?? "");
   const canReplyAll = !!m && (m.to?.length ?? 0) + (m.cc?.length ?? 0) > 1;
+  const inTrash = !!m?.deletedAt;
   const others = m ? thread.filter((x) => x.id !== m.id) : [];
   const newer = m ? others.filter((x) => x.occurredAt > m.occurredAt) : [];
   const older = m ? others.filter((x) => x.occurredAt <= m.occurredAt) : [];
+  const toLine = (list: MailMessage["to"]) => list.map((a) => recipientLabel(a, mine)).join(", ");
 
-  const starButton = (m: MailMessage, className = "") => (
-    <button
-      type="button"
-      aria-label={m.starred ? "Unstar" : "Star"}
-      aria-pressed={m.starred}
-      title={m.starred ? "Unstar" : "Star"}
-      onClick={() => onStar(m, !m.starred)}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[44px] max-md:w-[44px] md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${
-        m.starred ? "hover:bg-amber-400/10" : t.dark ? "text-gray-400 hover:bg-white/[0.06] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-      } ${className}`}
-    >
-      <Star on={m.starred} className="h-3.5 w-3.5 max-md:h-[22px] max-md:w-[22px]" strokeWidth={m.starred ? 1.6 : 1.4} />
-    </button>
-  );
+  const more: MenuItem[] = [];
+  if (m && !inTrash) {
+    if (m.html && hasPictures) more.push(images ? { label: "Hide pictures", onSelect: () => setImages(false) } : { label: "Show pictures", onSelect: () => setImages(true) });
+    if (m.html && dark) more.push({ label: original ? "Show in dark colours" : "Show original colours", onSelect: () => setOriginal((o) => !o) });
+    more.push({ label: details ? "Hide details" : "Show details", onSelect: () => setDetails((d) => !d) });
+    if (m.kept === "message" && canRelease) more.push({ divider: true }, { label: "Stop keeping for records", onSelect: () => act.onHold(m, false) });
+    else if (m.kept !== "message" && canHold) more.push({ divider: true }, { label: "Keep for records…", hint: "Can't be deleted", onSelect: () => act.onHold(m, true) });
+  }
 
-  // Phones: the top bar's buttons are big and bright, with 24px icons; larger screens keep the small ones (a finger's size on a tablet).
-  const bar = `max-md:h-[48px] max-md:w-[48px] max-md:rounded-xl md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${t.dark ? "max-md:text-gray-200" : "max-md:text-gray-700"}`;
-  const barGlyph = "h-3.5 w-3.5 max-md:h-6 max-md:w-6";
+  const sticky = "sticky top-[calc(52px+env(safe-area-inset-top))] z-sticky md:top-0";
   return (
-    <article className="relative max-md:-mx-4 max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
-      {/* Top bar. Phones: Back, then the message's housekeeping; Reply and Forward live in the bar at the bottom. */}
-      <div
-        className={`sticky top-[env(safe-area-inset-top)] z-10 flex items-center gap-1 border-b px-2 py-1.5 backdrop-blur-xl max-md:gap-1.5 max-md:px-3 max-md:py-2 md:top-0 md:rounded-t-2xl ${t.line} ${
-          t.dark ? "bg-[#0b0b0f]/90" : "bg-white/90"
-        }`}
-      >
+    <article className="relative pb-[calc(96px+env(safe-area-inset-bottom))] md:pb-6" aria-label={m?.subject || preview?.subject || "Message"}>
+      {/* The top bar. */}
+      <div className={cx(sticky, "flex min-h-[52px] items-center gap-1 border-b border-line bg-raised px-2 md:rounded-t-card md:px-3")}>
         <button
           type="button"
-          aria-label="Back"
-          title="Back"
           onClick={onBack}
-          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] max-md:h-[48px] max-md:w-auto max-md:gap-0.5 max-md:rounded-xl max-md:pl-1.5 max-md:pr-3.5 max-md:text-[16px] max-md:font-medium ${backAlways ? "" : "lg:hidden"} ${
-            t.dark ? "text-gray-500 hover:bg-white/[0.06] hover:text-white max-md:text-gray-100" : "text-gray-400 hover:bg-gray-100 hover:text-gray-900 max-md:text-gray-900"
-          }`}
+          className={cx(
+            "inline-flex h-(--control-sm) shrink-0 cursor-pointer items-center gap-1 rounded-control pr-3 pl-1 text-small font-medium text-ink-2 hover:bg-hover hover:text-ink",
+            !backAlways && "lg:hidden",
+          )}
         >
-          <Icon name="chevronLeft" className="h-3.5 w-3.5 max-md:h-7 max-md:w-7" strokeWidth={2} />
-          <span className="md:hidden">Back</span>
+          <Icon name="chevronLeft" />
+          {backLabel}
         </button>
-        {m && (
-          <>
-            <Button kind="ghost" onClick={() => onReply(m, "reply")} aria-label="Reply" title="Reply" className="max-md:hidden md:pointer-coarse:h-[40px]">
+        {m && !phone && !inTrash && !noAddress && (
+          <span className="ml-2 flex items-center gap-2">
+            <Button variant="primary" size="sm" onClick={() => act.onReply(m, "reply")} title="Reply (r)">
               <Glyph name="reply" />
               Reply
             </Button>
             {canReplyAll && (
-              <Button kind="ghost" onClick={() => onReply(m, "all")} aria-label="Reply all" title="Reply all" className="max-md:hidden md:pointer-coarse:h-[40px]">
+              <Button variant="quiet" size="sm" onClick={() => act.onReply(m, "all")} title="Reply all (a)">
                 <Glyph name="replyAll" />
                 Reply all
               </Button>
             )}
-            <Button kind="ghost" onClick={() => onForward(m)} aria-label="Forward" title="Forward" className="max-md:hidden md:pointer-coarse:h-[40px]">
+            <Button variant="quiet" size="sm" onClick={() => act.onForward(m)} title="Forward (f)">
               <Glyph name="forward" />
               Forward
             </Button>
-            <span className="flex-1" />
-            {starButton(m, "max-md:hidden")}
-            {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread" onClick={() => onUnread(m)} className={bar} glyphClassName={barGlyph} />}
+          </span>
+        )}
+        <span className="flex-1" />
+        {m && inTrash && (
+          <span className="flex items-center gap-2">
+            <Button size="sm" onClick={() => act.onRestore(m)}>
+              <Glyph name="restore" />
+              Restore
+            </Button>
+            {!m.kept && (
+              <Button variant="quiet" size="sm" className="text-negative enabled:hover:text-negative" onClick={() => act.onPurge(m)}>
+                Delete forever
+              </Button>
+            )}
+          </span>
+        )}
+        {m && !inTrash && (
+          <>
+            <GlyphButton glyph="star" label={m.starred ? "Unstar (s)" : "Star (s)"} pressed={m.starred} onClick={() => act.onStar(m, !m.starred)} icon={<Star on={m.starred} />} />
+            {m.direction === "in" && <GlyphButton glyph="unread" label="Mark as unread (⇧U)" onClick={() => act.onUnread(m)} />}
             {(m.direction === "in" || (wholeConversation && m.folder !== "archive")) &&
               (m.folder === "archive" ? (
-                <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => onMove(m, "inbox")} className={bar} glyphClassName={barGlyph} />
+                <GlyphButton glyph="unarchive" label="Move to inbox" onClick={() => act.onMove(m, "inbox")} />
               ) : (
-                <GlyphButton glyph="archive" label="Archive" onClick={() => onMove(m, "archive")} className={bar} glyphClassName={barGlyph} />
+                <GlyphButton glyph="archive" label="Archive (e)" onClick={() => act.onMove(m, "archive")} />
               ))}
-            <IconButton icon="trash" label="Delete" tone="danger" onClick={() => onDelete(m)} className={bar} iconClassName={barGlyph} />
+            {m.kept === "message" ? (
+              <Badge icon="lock" className="mx-1">
+                Kept for records
+              </Badge>
+            ) : (
+              <GlyphButton glyph="trash" danger label={wholeConversation ? "Delete conversation (#)" : "Delete (#)"} onClick={() => act.onDelete(m)} />
+            )}
+            {more.length > 0 && <Menu label="More actions" align="end" items={more} trigger={<IconButton icon="more" label="More actions" />} />}
           </>
         )}
       </div>
 
-      {error && <ErrorLine>{error}</ErrorLine>}
+      {error && (
+        <div className="px-4 pt-4 md:px-6">
+          <Banner tone="negative">{error}</Banner>
+        </div>
+      )}
 
-      <div className="relative">
-        {envelope && !error && (
-          <div className={`reader-envelope relative z-[5] ${m ? "pointer-events-none" : ""} ${reveal === "go" ? "env-out" : ""}`}>
-            {preview ? (
-              <ReaderLoader
-                // Sent mail is sealed with who it went to.
-                seal={<Avatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} size="h-9 w-9 text-[12px]" trusted={!preview.unverified} />}
-                subject={preview.subject || "(no subject)"}
-                from={preview.direction === "out" ? `To ${preview.to.map((a) => senderLabel(a)).join(", ") || "—"}` : senderLabel(preview.from)}
-                snippet={preview.snippet}
-              />
-            ) : (
-              <ReaderLoader />
-            )}
-          </div>
-        )}
-        {m && (
-          <div
-            className={`px-5 pb-6 pt-4 sm:px-6 max-md:px-7 max-md:pt-6 ${envelope ? "absolute inset-x-0 top-0" : ""} ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""}`}
-          >
-            {/* Subject, with the star beside it on phones (as Gmail puts it). */}
-            <div className="flex items-start gap-2">
-              <h2
-                className={`min-w-0 flex-1 break-words text-[17px] font-semibold leading-snug tracking-[-0.01em] sm:text-[18px] max-md:text-[22px] max-md:font-medium max-md:leading-[1.3] max-md:tracking-[-0.015em] ${t.text}`}
-              >
-                {m.subject || "(no subject)"}
-              </h2>
-              {starButton(m, "md:hidden -mr-2 -mt-1.5")}
+      {!m && !error && <LoadingMessage preview={preview} mine={mine} />}
+
+      {m && (
+        <div className="px-4 pt-6 md:px-6">
+          {inTrash && m.purgeAt && (
+            <Banner tone="info" className="mb-6">
+              {m.kept
+                ? "In Trash, and kept for records: it won't be removed while it's kept."
+                : `In Trash. It will be deleted for good on ${format.date(m.purgeAt, "medium")}, with its attachments, unless you restore it.`}
+            </Banner>
+          )}
+
+          <h1 className="text-heading text-balance break-words text-ink">{m.subject || "(no subject)"}</h1>
+
+          {/* Newer in the conversation (newest on top): the latest reads first; a reply just sent opens at the top. */}
+          {newer.length > 0 && (
+            <div className="mt-6 flex flex-col gap-2">
+              {newer.map((x, i) => (
+                <ThreadCard key={x.id} m={x} mine={mine} open={i === 0 || x.id === freshId} fresh={x.id === freshId} />
+              ))}
+              <p className="pt-2 text-small font-medium text-ink-2">The message you opened</p>
             </div>
+          )}
 
-            {/* Newer in the conversation (newest on top): the latest reads first, a reply just sent slides in. */}
-            {newer.length > 0 && (
-              <div className="mt-4 space-y-2.5">
-                {newer.map((x, i) => (
-                  <ThreadCard key={x.id} m={x} me={me} open={i === 0 || x.id === freshId} fresh={x.id === freshId} />
-                ))}
-                <p className={`pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>The message you opened</p>
+          {/* Who and when. */}
+          <div className="mt-6 flex items-start gap-3">
+            <MailAvatar a={m.from} trusted={!m.unverifiedSender} size={40} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="min-w-0 truncate text-body font-semibold text-ink" title={fullAddress(m.from)}>
+                  {m.direction === "out" && mine.some((x) => same(x, m.from.email)) ? "You" : senderLabel(m.from)}
+                </span>
+                {(m.unverifiedSender || m.impersonation) && <UnverifiedTag />}
+                <span className="flex-1" />
+                <time dateTime={m.occurredAt} title={fullStamp(m.occurredAt)} className="shrink-0 text-small text-ink-2 tabular-nums">
+                  {phone ? listDate(m.occurredAt) : format.dateTime(m.occurredAt)}
+                </time>
               </div>
-            )}
-
-            {/* The message itself; hovering it brings its Reply, Reply all and Forward up beside the date (not on touch, which has no hover: the top bar has them). */}
-            <div className="group/main">
-              <div className="mt-4 flex items-start gap-3 max-md:mt-6">
-                <Avatar a={m.from} trusted={!m.unverifiedSender} size="h-9 w-9 text-[12px] max-md:h-11 max-md:w-11 max-md:text-[14px]" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className={`min-w-0 truncate text-[13px] font-semibold max-md:text-[15px] ${t.text}`}>{senderLabel(m.from)}</span>
-                    <time dateTime={m.occurredAt} className={`shrink-0 text-[12px] tabular-nums max-md:text-[13px] md:ml-auto md:pl-2 ${t.muted}`}>
-                      <span className="md:hidden">{listDate(m.occurredAt)}</span>
-                      <span className="max-md:hidden">{fullDate(m.occurredAt)}</span>
-                    </time>
-                    <span className="-my-1 hidden shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover/main:opacity-100 focus-within:opacity-100 md:flex md:pointer-coarse:hidden">
-                      <GlyphButton glyph="reply" label="Reply" onClick={() => onReply(m, "reply")} />
-                      {canReplyAll && <GlyphButton glyph="replyAll" label="Reply all" onClick={() => onReply(m, "all")} />}
-                      <GlyphButton glyph="forward" label="Forward" onClick={() => onForward(m)} />
-                    </span>
-                  </div>
-                  {/* "To me ▾" opens every address. */}
-                  <button
-                    type="button"
-                    aria-expanded={details}
-                    onClick={() => setDetails((d) => !d)}
-                    className={`mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 text-left text-[12px] leading-snug max-md:min-h-[40px] max-md:text-[13.5px] md:pointer-coarse:min-h-[40px] ${t.muted} ${t.dark ? "hover:text-gray-300" : "hover:text-gray-700"}`}
-                  >
-                    <span className="truncate">
-                      {m.to.length > 0 ? `To ${toLine(m.to)}` : "No recipients"}
-                      {m.cc.length > 0 && <span className="max-md:hidden"> · Cc {toLine(m.cc)}</span>}
-                    </span>
-                    <Icon name="chevronDown" className={`h-3 w-3 shrink-0 transition-transform ${details ? "rotate-180" : ""}`} strokeWidth={2} />
-                  </button>
-                  {details && (
-                    <dl
-                      className={`mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border px-3 py-2.5 text-[12px] max-md:text-[13px] ${t.line} ${t.dark ? "bg-white/[0.03]" : "bg-gray-50"}`}
-                    >
-                      {[
-                        ["From", [fullAddress(m.from)]],
-                        ["To", m.to.map(fullAddress)],
-                        ["Cc", m.cc.map(fullAddress)],
-                        ["Bcc", m.bcc.map(fullAddress)],
-                        ["Date", [fullDate(m.occurredAt)]],
-                      ]
-                        .filter(([, v]) => (v as string[]).length)
-                        .map(([k, v]) => (
-                          <Fragment key={k as string}>
-                            <dt className={t.muted}>{k}</dt>
-                            <dd className={`min-w-0 break-words ${t.soft}`}>{(v as string[]).join(", ")}</dd>
-                          </Fragment>
-                        ))}
-                    </dl>
-                  )}
-                  {(m.unverifiedSender || failed) && (
-                    <div className="mt-1.5 flex flex-wrap gap-3">
-                      {m.unverifiedSender && <Dot tone="muted">Sender not verified</Dot>}
-                      {failed && <Dot tone="bad">Not delivered</Dot>}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-5 max-md:mt-6">{m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}</div>
-
-              {(m.attachments?.length ?? 0) > 0 && (
-                <div className="mt-5 flex flex-wrap gap-2 max-md:mt-6">
-                  {(m.attachments ?? []).map((a) => (
-                    <AttachmentChip key={a.id} messageId={m.id} a={a} />
-                  ))}
-                </div>
-              )}
-
-              {/* Desktop: Reply, Reply all and Forward as big targets right under the message they answer, before anything earlier. */}
-              <div className="mt-6 hidden md:block">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => onReply(m, "reply")}
-                    className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full px-6 text-[14px] font-semibold shadow-sm transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
-                      t.dark ? "bg-white text-gray-950 hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-800"
-                    }`}
-                  >
-                    <Glyph name="reply" className="h-[18px] w-[18px]" />
-                    Reply
-                  </button>
-                  {canReplyAll && (
-                    <button
-                      type="button"
-                      onClick={() => onReply(m, "all")}
-                      className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
-                        t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
-                      }`}
-                    >
-                      <Glyph name="replyAll" className="h-[18px] w-[18px]" />
-                      Reply all
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => onForward(m)}
-                    className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-[14px] font-medium transition-[transform,background-color] hover:-translate-y-px active:translate-y-0 active:scale-[0.98] ${
-                      t.dark ? "border-white/[0.14] text-gray-100 hover:bg-white/[0.06]" : "border-gray-300 text-gray-800 hover:bg-gray-50"
-                    }`}
-                  >
-                    <Glyph name="forward" className="h-[18px] w-[18px]" />
-                    Forward
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {older.length > 0 && (
-              <div className="mt-7 space-y-2">
-                <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${t.faint}`}>Earlier in this conversation · {older.length}</p>
-                {older.map((x) => (
-                  <ThreadCard key={x.id} m={x} me={me} open={false} fresh={false} />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Phones: Reply and Forward within thumb's reach, above the browser's bottom bar. */}
-      {m &&
-        createPortal(
-          <div
-            className={`fixed inset-x-0 bottom-0 z-40 flex items-center gap-2.5 border-t px-4 pt-3 backdrop-blur-xl md:hidden ${reveal === "hold" ? "reader-under" : reveal === "go" ? "reader-reveal" : ""} ${t.line} ${t.dark ? "bg-black/80" : "bg-white/90"}`}
-            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
-          >
-            <button
-              type="button"
-              onClick={() => onReply(m, "reply")}
-              className={`flex h-[48px] flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
-                t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
-              }`}
-            >
-              <Glyph name="reply" className="h-[18px] w-[18px]" />
-              Reply
-            </button>
-            <button
-              type="button"
-              onClick={() => onForward(m)}
-              className={`flex h-[48px] flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border text-[15px] font-medium transition-colors active:scale-[0.98] ${
-                t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
-              }`}
-            >
-              <Glyph name="forward" className="h-[18px] w-[18px]" />
-              Forward
-            </button>
-            {canReplyAll && (
               <button
                 type="button"
-                aria-label="Reply all"
-                title="Reply all"
-                onClick={() => onReply(m, "all")}
-                className={`flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors active:scale-[0.98] ${
-                  t.dark ? "border-white/[0.12] text-gray-100 active:bg-white/[0.06]" : "border-gray-300 text-gray-800 active:bg-gray-100"
-                }`}
+                aria-expanded={details}
+                onClick={() => setDetails((d) => !d)}
+                className="-mx-1 inline-flex max-w-full cursor-pointer items-start gap-1 rounded-control px-1 text-left text-small text-ink-2 hover:text-ink touch:min-h-[44px] touch:items-center"
               >
-                <Glyph name="replyAll" className="h-[18px] w-[18px]" />
+                <span className="truncate">
+                  {m.to.length > 0 ? `To ${toLine(m.to)}` : "No recipients"}
+                  {m.cc.length > 0 && ` · Cc ${toLine(m.cc)}`}
+                </span>
+                <Icon name="chevronDown" size={16} className={cx("mt-[1px] shrink-0 text-ink-3", details && "rotate-180")} />
               </button>
-            )}
+              {details && <Details m={m} />}
+              {m.kept && !inTrash && (
+                <p className="mt-1 flex items-center gap-2 text-small text-ink-2">
+                  <Icon name="lock" size={16} />
+                  {m.kept === "message" ? "Kept for records. It can't be deleted until an owner releases it." : "Mail is on hold for records. Delete archives it instead."}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <Warnings m={m} failed={failed} />
+
+          {/* Pictures held back: said plainly, with the way to show them. */}
+          {m.html && hasPictures && !images && (
+            <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-ink-2">
+              <span>Pictures are hidden, so the sender can't tell you opened it.</span>
+              <button type="button" className="cursor-pointer text-accent hover:text-accent-hover hover:underline touch:min-h-[44px]" onClick={() => setImages(true)}>
+                Show pictures
+              </button>
+              {!m.unverifiedSender && !m.impersonation && (
+                <button
+                  type="button"
+                  className="cursor-pointer text-accent hover:text-accent-hover hover:underline touch:min-h-[44px]"
+                  onClick={() => {
+                    alwaysShow(m.from.email);
+                    setImages(true);
+                  }}
+                >
+                  Always show from {senderLabel(m.from)}
+                </button>
+              )}
+            </p>
+          )}
+
+          <div className="mt-6 border-t border-line pt-4">
+            {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} images={images} original={original} onRemoteImages={onRemote} /> : <PlainBody text={m.text ?? ""} />}
+          </div>
+
+          {(m.attachments?.length ?? 0) > 0 && (
+            <div className="mt-6">
+              <p className="mb-2 text-small font-medium text-ink-2">
+                {m.attachments.length} {m.attachments.length === 1 ? "attachment" : "attachments"}
+              </p>
+              <ul className="flex flex-wrap gap-2">
+                {m.attachments.map((a) => (
+                  <li key={a.id} className="max-w-full">
+                    <AttachmentChip messageId={m.id} a={a} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Desktop: Reply, Reply all and Forward again under a long message, before anything earlier. */}
+          {!phone && !inTrash && !noAddress && (
+            <div className="mt-8 flex flex-wrap items-center gap-2">
+              <Button onClick={() => act.onReply(m, "reply")}>
+                <Glyph name="reply" />
+                Reply
+              </Button>
+              {canReplyAll && (
+                <Button onClick={() => act.onReply(m, "all")}>
+                  <Glyph name="replyAll" />
+                  Reply all
+                </Button>
+              )}
+              <Button onClick={() => act.onForward(m)}>
+                <Glyph name="forward" />
+                Forward
+              </Button>
+            </div>
+          )}
+
+          {older.length > 0 && (
+            <div className="mt-8 flex flex-col gap-2">
+              <p className="text-small font-medium text-ink-2">Earlier in this conversation · {older.length}</p>
+              {older.map((x) => (
+                <ThreadCard key={x.id} m={x} mine={mine} open={false} fresh={false} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Phones: Reply and Forward within thumb's reach, above the bottom edge. */}
+      {m &&
+        phone &&
+        !inTrash &&
+        !noAddress &&
+        createPortal(
+          <div
+            data-floating
+            className="ds fixed inset-x-0 bottom-0 z-fab flex items-center gap-2 border-t border-line bg-page px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
+          >
+            <Button variant="primary" className="flex-1" onClick={() => act.onReply(m, "reply")}>
+              <Glyph name="reply" />
+              Reply
+            </Button>
+            <Button className="flex-1" onClick={() => act.onForward(m)}>
+              <Glyph name="forward" />
+              Forward
+            </Button>
+            {canReplyAll && <GlyphButton glyph="replyAll" label="Reply all" noTooltip className="border border-edge" onClick={() => act.onReply(m, "all")} />}
           </div>,
           document.body,
         )}
@@ -355,38 +364,134 @@ export function Reader({
   );
 }
 
+/** While the message is read: what the row already says (subject, who), then a skeleton for the body. */
+function LoadingMessage({ preview, mine }: { preview: MailSummary | null; mine: string[] }) {
+  return (
+    <div className="px-4 pt-6 md:px-6">
+      {preview ? (
+        <>
+          <h1 className="text-heading text-balance break-words text-ink">{preview.subject || "(no subject)"}</h1>
+          <div className="mt-6 flex items-center gap-3">
+            <MailAvatar a={preview.direction === "out" && preview.to[0] ? preview.to[0] : preview.from} trusted={!preview.unverified} size={40} />
+            <span className="text-body font-semibold text-ink">
+              {preview.direction === "out" ? `To ${preview.to.map((a) => recipientLabel(a, mine)).join(", ")}` : senderLabel(preview.from)}
+            </span>
+            <span className="ml-auto text-ink-3">
+              <Spinner />
+            </span>
+          </div>
+        </>
+      ) : null}
+      <div className="mt-6 border-t border-line pt-4">
+        <Skeleton kind="line" />
+      </div>
+    </div>
+  );
+}
+
+/** The warnings a message earns, above its body, each saying what to do. */
+function Warnings({ m, failed }: { m: MailMessage; failed: boolean }) {
+  const items: { tone: "warning" | "negative"; title: string; body: ReactNode }[] = [];
+  if (failed) items.push({ tone: "negative", title: "Not delivered.", body: "The receiving server refused this message. Check the address and send it again." });
+  if (m.direction === "in" && m.unverifiedSender)
+    items.push({
+      tone: "warning",
+      title: "This sender couldn't be verified.",
+      body: "The From address may be forged. Don't act on payment or account changes in it without calling a number you already have.",
+    });
+  if (m.direction === "in" && m.impersonation)
+    items.push({
+      tone: "warning",
+      title: `${senderLabel(m.from)} is writing from outside the office.`,
+      body: `The name matches someone here, but the address is ${m.from.email}. Check with them another way before you reply or act on it.`,
+    });
+  if (m.direction === "in" && m.paymentRisk)
+    items.push({
+      tone: "warning",
+      title: "Payment instructions.",
+      body: "Before sending money or changing bank details, confirm by phone on a number you already have, not one in this message.",
+    });
+  if (!items.length) return null;
+  return (
+    <div className="mt-4 flex flex-col gap-2">
+      {items.map((w) => (
+        <Banner key={w.title} tone={w.tone} title={w.title}>
+          {w.body}
+        </Banner>
+      ))}
+    </div>
+  );
+}
+
+/** Every address and the full date, with the year and the zone (§10.5 audit). */
+function Details({ m }: { m: MailMessage }) {
+  const rows: [string, string][] = [
+    ["From", fullAddress(m.from)],
+    ["To", m.to.map(fullAddress).join(", ")],
+    ["Cc", m.cc.map(fullAddress).join(", ")],
+    ["Bcc", m.bcc.map(fullAddress).join(", ")],
+    ["Reply to", (m.replyTo ?? []).map(fullAddress).join(", ")],
+    ["Date", fullStamp(m.occurredAt)],
+    ...(m.deletedAt ? ([["Deleted", fullStamp(m.deletedAt)]] as [string, string][]) : []),
+  ];
+  return (
+    <dl className="mt-2 grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-card bg-sunken px-4 py-3 text-small">
+      {rows
+        .filter(([, v]) => v)
+        .map(([k, v]) => (
+          <Fragment key={k}>
+            <dt className="text-ink-2">{k}</dt>
+            <dd className="min-w-0 break-words text-ink">{v}</dd>
+          </Fragment>
+        ))}
+    </dl>
+  );
+}
+
 /** One message in the conversation: who and when, opening to its body. */
-function ThreadCard({ m, me, open: startOpen, fresh }: { m: MailMessage; me: string; open: boolean; fresh: boolean }) {
-  const t = useTone();
+function ThreadCard({ m, mine, open: startOpen, fresh }: { m: MailMessage; mine: string[]; open: boolean; fresh: boolean }) {
   const [open, setOpen] = useState(startOpen);
   useEffect(() => {
     if (startOpen) setOpen(true);
   }, [startOpen]);
-  const mine = same(m.from.email, me) || m.direction === "out";
+  const [images, setImages] = useState(() => picturesByDefault(m));
+  const [hasPictures, setHasPictures] = useState(false);
+  const onRemote = useCallback((has: boolean) => setHasPictures(has), []);
+  const own = m.direction === "out" || mine.some((x) => same(x, m.from.email));
   return (
-    <section className={`overflow-hidden rounded-xl border ${t.line} ${t.dark ? "bg-white/[0.025]" : "bg-gray-50/70"} ${fresh ? "thread-fresh" : ""}`}>
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={`flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left ${t.hover}`}>
-        <Avatar a={m.from} trusted={!m.unverifiedSender} size="h-7 w-7 text-[10.5px]" />
+    <section className="rounded-card border border-line">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full cursor-pointer items-center gap-3 rounded-card px-4 py-3 text-left hover:bg-hover">
+        <MailAvatar a={m.from} trusted={!m.unverifiedSender} size={32} />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
-            <span className={`truncate text-[13px] font-semibold ${t.text}`}>{mine ? "You" : senderLabel(m.from)}</span>
-            {fresh && <span className={`shrink-0 text-[11px] font-medium ${t.accent}`}>Just sent</span>}
+            <span className="truncate text-body font-medium text-ink">{own ? "You" : senderLabel(m.from)}</span>
+            {fresh && <Status tone="positive">Just sent</Status>}
           </span>
-          {!open && <span className={`block truncate text-[12px] ${t.muted}`}>{m.snippet || (m.text ?? "").slice(0, 140)}</span>}
+          {!open && <span className="block truncate text-small text-ink-2">{m.snippet || (m.text ?? "").slice(0, 140)}</span>}
         </span>
-        <time dateTime={m.occurredAt} className={`shrink-0 text-[11.5px] tabular-nums ${t.muted}`}>
+        <time dateTime={m.occurredAt} title={fullStamp(m.occurredAt)} className="shrink-0 text-caption text-ink-3 tabular-nums">
           {listDate(m.occurredAt)}
         </time>
       </button>
       {open && (
-        <div className="px-3.5 pb-3.5">
-          {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} /> : <PlainBody text={m.text ?? ""} />}
+        <div className="border-t border-line px-4 pt-3 pb-4">
+          {m.html && hasPictures && !images && (
+            <p className="mb-2 text-small text-ink-2">
+              Pictures are hidden.{" "}
+              <button type="button" className="cursor-pointer text-accent hover:underline" onClick={() => setImages(true)}>
+                Show pictures
+              </button>
+            </p>
+          )}
+          {m.html ? <MailFrame html={m.html} title={m.subject || "Message"} images={images} onRemoteImages={onRemote} /> : <PlainBody text={m.text ?? ""} />}
           {(m.attachments?.length ?? 0) > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(m.attachments ?? []).map((a) => (
-                <AttachmentChip key={a.id} messageId={m.id} a={a} />
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {m.attachments.map((a) => (
+                <li key={a.id} className="max-w-full">
+                  <AttachmentChip messageId={m.id} a={a} />
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       )}
@@ -398,7 +503,6 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g;
 
 /** Plain text with links made clickable. */
 function Linkified({ text }: { text: string }) {
-  const { accent } = useTone();
   const out: ReactNode[] = [];
   let last = 0;
   for (const match of text.matchAll(URL_RE)) {
@@ -409,7 +513,7 @@ function Linkified({ text }: { text: string }) {
     const at = match.index ?? 0;
     out.push(text.slice(last, at));
     out.push(
-      <a key={at} href={url} target="_blank" rel="noopener noreferrer" className={`underline-offset-2 hover:underline ${accent}`}>
+      <a key={at} href={url} target="_blank" rel="noopener noreferrer" className="text-accent underline decoration-1 underline-offset-[3px] hover:text-accent-hover">
         {url}
       </a>,
     );
@@ -419,9 +523,8 @@ function Linkified({ text }: { text: string }) {
   return <>{out}</>;
 }
 
-/** A text message: quoted lines (">") sit in a quiet block. */
+/** A text message, at reading size: quoted lines (">") sit in a quiet block. */
 function PlainBody({ text, nested = false }: { text: string; nested?: boolean }) {
-  const t = useTone();
   const blocks = useMemo(() => {
     const out: { quote: boolean; text: string }[] = [];
     for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
@@ -433,12 +536,12 @@ function PlainBody({ text, nested = false }: { text: string; nested?: boolean })
     }
     return out;
   }, [text]);
-  if (!nested && !text.trim()) return <p className={`text-[13px] ${t.faint}`}>No text.</p>;
+  if (!nested && !text.trim()) return <p className="text-body text-ink-2">This message has no text.</p>;
   return (
-    <div className={nested ? "" : `max-w-[75ch] whitespace-pre-wrap break-words text-[13.5px] leading-relaxed max-md:text-[15.5px] max-md:leading-[1.6] ${t.text}`}>
+    <div className={nested ? "" : "max-w-[68ch] text-reading whitespace-pre-wrap break-words text-ink"}>
       {blocks.map((b, i) =>
         b.quote ? (
-          <div key={i} className={`my-1 border-l-2 pl-3 ${t.dark ? "border-white/10" : "border-gray-200"} ${t.muted}`}>
+          <div key={i} className="my-1 border-l-2 border-line-strong pl-3 text-ink-2">
             <PlainBody text={b.text} nested />
           </div>
         ) : (
@@ -452,8 +555,12 @@ function PlainBody({ text, nested = false }: { text: string; nested?: boolean })
   );
 }
 
+/**
+ * A file that came with the message: its name and size, saved on a click. A
+ * file BFO doesn't have (the mail service had deleted it before it was
+ * copied, or the copy failed) says so, rather than looking expired.
+ */
 function AttachmentChip({ messageId, a }: { messageId: string; a: MailAttachment }) {
-  const t = useTone();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   async function open() {
@@ -474,22 +581,27 @@ function AttachmentChip({ messageId, a }: { messageId: string; a: MailAttachment
       setBusy(false);
     }
   }
-  const off = !a.available;
+  if (!a.available) {
+    return (
+      <span className="inline-flex max-w-full items-center gap-2 rounded-control border border-line px-3 py-2 text-small text-ink-2" title="BFO doesn't have this file: it wasn't kept when the message arrived.">
+        <Icon name="doc" size={16} />
+        <span className="min-w-0 truncate">{a.filename || "attachment"}</span>
+        <span className="shrink-0 text-ink-3">· Not kept by BFO</span>
+      </span>
+    );
+  }
   return (
     <button
       type="button"
-      onClick={open}
-      disabled={off || busy}
-      title={off ? "No longer available" : `Download ${a.filename}`}
-      className={`inline-flex max-w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[12px] transition-colors disabled:cursor-default max-sm:min-h-[40px] ${
-        t.dark ? "border-white/[0.08] hover:bg-white/[0.04]" : "border-gray-200 hover:bg-gray-50"
-      } ${off ? "opacity-50" : ""}`}
+      onClick={() => void open()}
+      disabled={busy}
+      title={`Download ${a.filename}`}
+      className="inline-flex max-w-full cursor-pointer items-center gap-2 rounded-control border border-edge px-3 py-2 text-left text-small text-ink hover:bg-hover disabled:cursor-progress touch:min-h-[44px]"
     >
-      <FileIcon kind={fileKind(a.filename, a.contentType)} className="h-5 w-5" />
-      <span className={`min-w-0 truncate ${t.text}`}>{a.filename || "attachment"}</span>
-      <span className={`shrink-0 tabular-nums ${failed ? (t.dark ? "text-red-300" : "text-red-600") : t.muted}`}>
-        {failed ? "Failed" : off ? "Expired" : busy ? <Orbit className="h-3 w-3 align-[-2px]" /> : formatBytes(a.size)}
-      </span>
+      <Icon name="doc" size={16} className="text-ink-2" />
+      <span className="min-w-0 truncate">{a.filename || "attachment"}</span>
+      <span className={cx("shrink-0 tabular-nums", failed ? "text-negative" : "text-ink-3")}>{failed ? "Couldn't download. Try again" : busy ? <Spinner /> : bytes(a.size)}</span>
+      {!busy && !failed && <Icon name="download" size={16} className="text-ink-3" />}
     </button>
   );
 }

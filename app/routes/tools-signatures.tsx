@@ -1,40 +1,92 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { confirmDialog } from "../confirm-dialog";
-import { blankTab, isOpen, PARTY_LABEL, STATUS_LABEL, signApi, when, type RequestStatus, type SignatureRequest } from "../sign/api";
+import { isAdmin } from "../auth";
+import { blankTab, isOpen, PARTY_LABEL, signApi, supersededBy, whenShort, type SignatureRequest } from "../sign/api";
+import { ArchiveDialog, confirmDeleteDraft, confirmSendCopy, StatusChip, VoidDialog } from "../sign/parts";
 import { usePoll } from "../sign/use-poll";
-import { useTheme } from "../theme";
+import {
+  Banner,
+  Button,
+  Card,
+  Empty,
+  Menu,
+  IconButton,
+  Page,
+  PageHeader,
+  SearchField,
+  Segmented,
+  Select,
+  Table,
+  Toolbar,
+  confirm,
+  format,
+  toast,
+  useDocumentTitle,
+  type Column,
+  type MenuItem,
+} from "../ui";
+
+// The shared parts, kept where app/sign/contract-signature.tsx imports them from.
+export { PartyDot, Small, StatusChip } from "../sign/parts";
 
 export function meta() {
   return [{ title: "Signatures · BFO" }];
 }
 
-type Filter = "all" | "waiting" | "signed" | "draft";
+type Filter = "all" | "waiting" | "signed" | "draft" | "closed";
+const FILTERS: Array<{ value: Filter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "waiting", label: "Waiting" },
+  { value: "signed", label: "Signed" },
+  { value: "draft", label: "Drafts" },
+  { value: "closed", label: "Closed" },
+];
+const inFilter = (r: SignatureRequest, f: Filter) =>
+  f === "all" || (f === "waiting" ? isOpen(r.status) : f === "signed" ? r.status === "completed" : f === "draft" ? r.status === "draft" : r.status === "declined" || r.status === "voided");
+
+/** Titles that suggest a document e-signature law doesn't cover, or that must be witnessed or notarized. */
+const NEEDS_INK = /\b(will|codicil|testament|testamentary|power of attorney|poa|deed|affidavit|notari[sz]ed|acknowledg(e)?ment)\b/i;
+
+/** The newest activity on a request: drafts sort by when they were last touched. */
+const lastTouched = (r: SignatureRequest) => r.events.at(-1)?.at ?? r.created_at;
 
 /**
- * Tools › Signatures: every document sent out for signature, as a sheet.
- * Drop a PDF to start a new one; open a row to place fields and send it.
+ * Tools › Signatures: every document sent out for signature, as a register:
+ * by entity, who has signed, and the signed copies. A sent or signed request
+ * is never deleted here: it is archived (owners and admins), kept whole. A
+ * PDF chosen from the header, or dropped anywhere on the page on a computer,
+ * starts a new request; its page places the fields and sends it.
  */
 export default function ToolsSignatures() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  useDocumentTitle("Signatures");
   const navigate = useNavigate();
+  const admin = isAdmin();
   const [rows, setRows] = useState<SignatureRequest[] | null>(null);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [archived, setArchived] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [entity, setEntity] = useState<string>("any");
+  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [voiding, setVoiding] = useState<SignatureRequest | null>(null);
+  const [archiving, setArchiving] = useState<SignatureRequest | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setRows(await signApi.list());
+      const got = await signApi.list(archived);
+      setRows(got.requests);
+      setNames(got.entityNames);
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't load signatures.");
-      setRows([]);
+      setError(err instanceof Error ? err.message : "Couldn’t load the signature requests.");
+      setRows((r) => r ?? []);
     }
-  }, []);
+  }, [archived]);
   useEffect(() => {
+    setRows(null);
     void load();
   }, [load]);
   // Statuses change as people sign; refresh while anything is still out.
@@ -44,366 +96,398 @@ export default function ToolsSignatures() {
     (rows ?? []).some((r) => isOpen(r.status)),
   );
 
-  const t2 = isDark ? "text-gray-400" : "text-gray-600";
-  const t3 = isDark ? "text-gray-500" : "text-gray-400";
-  const card = `rounded-2xl border ${isDark ? "border-white/10 bg-white/[0.02] glass-card" : "border-gray-200 bg-white glass-card"}`;
-  const line = isDark ? "border-white/[0.06]" : "border-gray-100";
+  const entityName = (r: SignatureRequest) => (r.asset_id ? (names[r.asset_id] ?? "An entity") : null);
 
+  const all = useMemo(() => rows ?? [], [rows]);
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.value, all.filter((r) => inFilter(r, f.value)).length])) as Record<Filter, number>, [all]);
+  const entityOptions = useMemo(() => {
+    const ids = [...new Set(all.map((r) => r.asset_id ?? ""))];
+    return [
+      { value: "any", label: "All entities" },
+      ...ids
+        .filter(Boolean)
+        .map((id) => ({ value: id, label: names[id] ?? "An entity" }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      ...(ids.includes("") ? [{ value: "none", label: "No entity" }] : []),
+    ];
+  }, [all, names]);
   const shown = useMemo(() => {
-    const list = rows ?? [];
-    if (filter === "waiting") return list.filter((r) => r.status === "sent" || r.status === "partial");
-    if (filter === "signed") return list.filter((r) => r.status === "completed");
-    if (filter === "draft") return list.filter((r) => r.status === "draft");
-    return list;
-  }, [rows, filter]);
-
-  const counts = useMemo(() => {
-    const list = rows ?? [];
-    return {
-      all: list.length,
-      waiting: list.filter((r) => r.status === "sent" || r.status === "partial").length,
-      signed: list.filter((r) => r.status === "completed").length,
-      draft: list.filter((r) => r.status === "draft").length,
-    };
-  }, [rows]);
+    const q = query.trim().toLowerCase();
+    return all
+      .filter((r) => inFilter(r, filter))
+      .filter((r) => entity === "any" || (entity === "none" ? !r.asset_id : r.asset_id === entity))
+      .filter((r) => !q || r.title.toLowerCase().includes(q) || r.parties.some((p) => `${p.name} ${p.entity ?? ""}`.toLowerCase().includes(q)))
+      .sort((a, b) => (a.status === "draft" && b.status === "draft" ? lastTouched(b).localeCompare(lastTouched(a)) : 0));
+  }, [all, filter, entity, query]);
 
   async function startFrom(file: File) {
     if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) {
       setError("Only PDFs can be sent for signature.");
       return;
     }
+    const title =
+      file.name
+        .replace(/\.pdf$/i, "")
+        .replace(/[_-]+/g, " ")
+        .trim() || "Document";
+    if (NEEDS_INK.test(title)) {
+      const ok = await confirm({
+        title: "Is e-signature right for this one?",
+        object: { name: title },
+        message: "Wills, codicils and testamentary trusts can’t be signed electronically, and powers of attorney, deeds and affidavits usually need a witness or a notary. Check before sending.",
+        confirmLabel: "Set it up anyway",
+        tone: "commit",
+      });
+      if (ok === false) return;
+    }
     setBusy("new");
     setError("");
     try {
-      const title =
-        file.name
-          .replace(/\.pdf$/i, "")
-          .replace(/[_-]+/g, " ")
-          .trim() || "Document";
       const created = await signApi.act("create", { title, parties: [{ role: "Party A" }, { role: "Party B" }] });
       await signApi.attach(created.id, file);
       navigate(`/tools/signatures/${created.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The upload failed.");
+      setError(err instanceof Error ? err.message : "The upload didn’t finish. Try again.");
       setBusy(null);
     }
   }
 
-  async function act(r: SignatureRequest, action: "remind" | "send-copy" | "download" | "delete" | "void") {
+  const replace = (next: SignatureRequest) => setRows((cur) => (cur ?? []).map((x) => (x.id === next.id ? next : x)));
+  const drop = (id: string) => setRows((cur) => (cur ?? []).filter((x) => x.id !== id));
+
+  async function act(r: SignatureRequest, action: "remind" | "send-copy" | "download" | "delete" | "unarchive") {
     // The tab opens inside the click, before anything is awaited.
     const tab = action === "download" ? blankTab() : null;
-    setBusy(r.id);
-    setNote("");
     setError("");
     try {
       if (tab) {
         tab.go(await signApi.download(r.id));
-      } else if (action === "delete") {
-        if (!(await confirmDialog({ title: `Delete "${r.title}"?`, message: "The document and its signatures are removed for good.", tone: "danger", confirmLabel: "Delete" }))) return;
-        await signApi.remove(r.id);
-        setRows((cur) => (cur ?? []).filter((x) => x.id !== r.id));
-      } else {
-        // As on the request's own page: a void can't be undone.
-        if (action === "void" && !(await confirmDialog({ title: `Void "${r.title}"?`, message: "The signing links stop working. Nobody is told.", tone: "danger", confirmLabel: "Void" }))) return;
-        const next = await signApi.act(action, { id: r.id });
-        setRows((cur) => (cur ?? []).map((x) => (x.id === next.id ? next : x)));
-        setNote(
-          action === "remind"
-            ? `Reminded ${next.parties
-                .filter((p) => p.status !== "signed")
-                .map((p) => p.name)
-                .join(" and ")}.`
-            : action === "send-copy"
-              ? `Sent the signed copy to ${next.parties.map((p) => p.name).join(" and ")}.`
-              : "Voided.",
-        );
+        return;
       }
+      if (action === "delete") {
+        if (!(await confirmDeleteDraft(r))) return;
+        setBusy(r.id);
+        await signApi.remove(r.id);
+        drop(r.id);
+        toast({ message: "Deleted the draft" });
+        return;
+      }
+      if (action === "send-copy" && !(await confirmSendCopy(r))) return;
+      setBusy(r.id);
+      const next = await signApi.act(action, { id: r.id });
+      if (action === "unarchive") {
+        drop(r.id);
+        toast({ message: `Restored ${r.title}` });
+        return;
+      }
+      replace(next);
+      toast({
+        message:
+          action === "remind"
+            ? `Reminded ${format.list(next.parties.filter((p) => p.status !== "signed" && p.status !== "declined").map((p) => p.name || p.role))}`
+            : `Emailed the signed copy to ${format.list(next.parties.map((p) => p.name || p.role))}`,
+      });
     } catch (err) {
       tab?.close();
-      setError(err instanceof Error ? err.message : "That didn't work.");
+      setError(err instanceof Error ? err.message : "That didn’t work. Try again.");
     } finally {
       setBusy(null);
     }
   }
 
-  const actions = (r: SignatureRequest) => (
-    <>
-      <Small isDark={isDark} onClick={() => navigate(`/tools/signatures/${r.id}`)}>
-        {r.status === "draft" ? "Set up" : "Open"}
-      </Small>
-      {(r.status === "sent" || r.status === "partial") && (
-        <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "remind")}>
+  /** The one action a row's state calls for, in the fixed right-hand column. */
+  const rowAction = (r: SignatureRequest) => {
+    if (archived) return null;
+    if (r.status === "draft")
+      return (
+        <Button size="sm" variant="quiet" onClick={() => navigate(`/tools/signatures/${r.id}`)}>
+          Set up
+        </Button>
+      );
+    if (isOpen(r.status))
+      return (
+        <Button size="sm" variant="quiet" busy={busy === r.id} busyLabel="Reminding…" onClick={() => act(r, "remind")}>
           Remind
-        </Small>
-      )}
-      {r.status === "completed" && (
-        <>
-          <Small isDark={isDark} primary disabled={busy === r.id} onClick={() => act(r, "send-copy")}>
-            Send to both parties
-          </Small>
-          <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "download")}>
-            Download
-          </Small>
-        </>
-      )}
-      {r.status !== "completed" && r.status !== "draft" && r.status !== "voided" && (
-        <Small isDark={isDark} disabled={busy === r.id} onClick={() => act(r, "void")}>
-          Void
-        </Small>
-      )}
-      <Small isDark={isDark} danger disabled={busy === r.id} onClick={() => act(r, "delete")}>
-        Delete
-      </Small>
-    </>
-  );
+        </Button>
+      );
+    if (r.status === "completed")
+      return (
+        <Button size="sm" variant="quiet" icon="download" onClick={() => act(r, "download")}>
+          Download
+        </Button>
+      );
+    return null;
+  };
 
-  const source = (r: SignatureRequest) => (
-    <span className={`block text-[11.5px] ${t3}`}>
-      {r.source === "contract" ? "MSA" : "Uploaded"}
-      {r.asset_id ? (
-        <>
-          {" · "}
-          <Link to={`/assets/${r.asset_id}/agreements`} className="hover:underline">
-            entity
-          </Link>
-        </>
-      ) : null}
-      {r.created_by_name ? ` · by ${r.created_by_name}` : ""}
-    </span>
-  );
+  const menu = (r: SignatureRequest): MenuItem[] => {
+    const items: MenuItem[] = [{ label: "Open", onSelect: () => navigate(`/tools/signatures/${r.id}`) }];
+    if (archived) {
+      items.push({ label: "Restore to the list", onSelect: () => act(r, "unarchive"), disabled: !admin, disabledReason: "Owners and admins" });
+      return items;
+    }
+    if (r.status === "completed") {
+      items.push({ label: r.copy_sent_at ? "Email signed copy again" : "Email signed copy", onSelect: () => act(r, "send-copy") });
+      items.push({ label: "Download signed copy", onSelect: () => act(r, "download") });
+    } else if (r.original_path) items.push({ label: "Download", onSelect: () => act(r, "download") });
+    if (isOpen(r.status)) items.push({ divider: true }, { label: "Void…", onSelect: () => setVoiding(r), danger: true });
+    if (r.status === "completed" || r.status === "declined" || r.status === "voided")
+      items.push({ divider: true }, { label: "Archive…", onSelect: () => setArchiving(r), disabled: !admin, disabledReason: "Owners and admins" });
+    if (r.status === "draft" && !r.sent_at) items.push({ divider: true }, { label: "Delete draft…", onSelect: () => act(r, "delete"), danger: true });
+    return items;
+  };
 
+  /** "Ledger Louise, LLC, by Alex Rivera, Manager · Signed" per party. */
   const partyList = (r: SignatureRequest) =>
     r.parties.length === 0 ? (
-      <span className={t3}>No parties yet</span>
+      <span className="text-ink-3">No parties yet</span>
     ) : (
-      <ul className="space-y-1">
+      <ul className="flex flex-col gap-1">
         {r.parties.map((p) => (
-          <li key={p.key} className="flex min-w-0 items-center gap-2">
-            <PartyDot status={p.status} />
-            <span className="truncate">{p.name || <span className={t3}>{p.role}</span>}</span>
-            <span className={`shrink-0 text-[11px] ${t3}`}>{PARTY_LABEL[p.status]}</span>
+          <li key={p.key} className="min-w-0">
+            <span className="break-words">{p.entity ? p.entity : p.name || <span className="text-ink-3">{p.role}</span>}</span>
+            <span className="text-small text-ink-2">
+              {p.entity ? ` · by ${p.name || "someone not named yet"}${p.title ? `, ${p.title}` : ""}` : ""} · {PARTY_LABEL[p.status]}
+            </span>
           </li>
         ))}
       </ul>
     );
 
-  const empty =
-    rows === null ? "Loading…" : shown.length === 0 ? (rows.length === 0 ? "Nothing sent for signature yet. Drop a PDF above, or open an MSA and request a signature." : "Nothing here.") : "";
-
-  return (
-    <div className="mx-auto max-w-[1400px] pb-16">
-      <header className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className={`text-[11px] font-medium uppercase tracking-[0.18em] ${t3}`}>Tools</p>
-          <h1 className="mt-1 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] sm:text-[22px]">Signatures</h1>
-          <p className={`mt-1 text-[12.5px] ${t2}`}>Everything sent out to be signed, who has signed, and the signed copies.</p>
-        </div>
-      </header>
-
-      <DropZone isDark={isDark} busy={busy === "new"} onFile={startFrom} />
-
-      {(error || note) && (
-        <p role="status" className={`mt-3 text-[12.5px] ${error ? "text-red-400" : isDark ? "text-emerald-300" : "text-emerald-700"}`}>
-          {error || note}
-        </p>
-      )}
-
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {(["all", "waiting", "signed", "draft"] as Filter[]).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setFilter(f)}
-            aria-pressed={filter === f}
-            className={`h-8 max-md:h-[44px] md:pointer-coarse:h-[44px] rounded-full px-3.5 text-[12px] font-medium transition-colors ${
-              filter === f
-                ? isDark
-                  ? "bg-white text-black"
-                  : "bg-gray-900 text-white"
-                : isDark
-                  ? "bg-white/[0.05] text-gray-300 hover:bg-white/10"
-                  : "bg-black/[0.04] text-gray-600 hover:bg-black/[0.08]"
-            }`}
-          >
-            {f === "all" ? "All" : f === "waiting" ? "Waiting" : f === "signed" ? "Signed" : "Drafts"} {counts[f]}
-          </button>
-        ))}
-      </div>
-
-      {/* A table where there's room for it; below that (a phone, an iPad beside the rail) each request is a card. */}
-      <section className={`@container mt-3 overflow-hidden ${card}`}>
-        <ul className="@min-[840px]:hidden">
-          {empty ? (
-            <li className={`px-4 py-8 text-center text-[12.5px] ${t3}`}>{empty}</li>
-          ) : (
-            shown.map((r) => (
-              <li key={r.id} className={`border-t px-4 py-3.5 text-[12.5px] first:border-t-0 ${line}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link to={`/tools/signatures/${r.id}`} className="block truncate font-medium hover:underline">
-                      {r.title}
-                    </Link>
-                    {source(r)}
-                  </div>
-                  <StatusChip status={r.status} isDark={isDark} />
-                </div>
-                <div className="mt-2.5">{partyList(r)}</div>
-                {(r.sent_at || r.completed_at) && (
-                  <p className={`mt-1.5 text-[11.5px] tabular-nums ${t3}`}>
-                    {r.sent_at ? `Sent ${when(r.sent_at)}` : ""}
-                    {r.sent_at && r.completed_at ? " · " : ""}
-                    {r.completed_at ? `Signed ${when(r.completed_at)}` : ""}
-                  </p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-2">{actions(r)}</div>
-              </li>
-            ))
-          )}
-        </ul>
-        <div className="hidden overflow-x-auto @min-[840px]:block">
-          <table className="w-full min-w-[840px] border-collapse text-[12.5px]">
-            <thead>
-              <tr className={`text-left text-[11px] font-medium uppercase tracking-[0.12em] ${t3}`}>
-                <th className="px-4 py-2.5 font-medium">Document</th>
-                <th className="px-3 py-2.5 font-medium">Parties</th>
-                <th className="px-3 py-2.5 font-medium">Status</th>
-                <th className="px-3 py-2.5 font-medium">Sent</th>
-                <th className="px-3 py-2.5 font-medium">Signed</th>
-                <th className="px-3 py-2.5 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows === null ? (
-                <tr>
-                  <td colSpan={6} className={`px-4 py-8 text-center ${t3}`}>
-                    Loading…
-                  </td>
-                </tr>
-              ) : shown.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className={`px-4 py-10 text-center ${t3}`}>
-                    {rows.length === 0 ? "Nothing sent for signature yet. Drop a PDF above, or open an MSA and request a signature." : "Nothing here."}
-                  </td>
-                </tr>
-              ) : (
-                shown.map((r) => (
-                  <tr key={r.id} className={`border-t ${line} ${isDark ? "hover:bg-white/[0.02]" : "hover:bg-gray-50"}`}>
-                    <td className="px-4 py-3 align-top">
-                      <Link to={`/tools/signatures/${r.id}`} className="block max-w-[320px] truncate font-medium hover:underline">
-                        {r.title}
-                      </Link>
-                      {source(r)}
-                    </td>
-                    <td className="px-3 py-3 align-top">{partyList(r)}</td>
-                    <td className="px-3 py-3 align-top">
-                      <StatusChip status={r.status} isDark={isDark} />
-                    </td>
-                    <td className={`px-3 py-3 align-top tabular-nums ${t2}`}>{when(r.sent_at) || "—"}</td>
-                    <td className={`px-3 py-3 align-top tabular-nums ${t2}`}>{when(r.completed_at) || "—"}</td>
-                    <td className="px-3 py-3 align-top">
-                      <div className="flex flex-wrap justify-end gap-1.5">{actions(r)}</div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-export function StatusChip({ status, isDark }: { status: RequestStatus; isDark: boolean }) {
-  const tone =
-    status === "completed"
-      ? isDark
-        ? "bg-emerald-500/15 text-emerald-300"
-        : "bg-emerald-50 text-emerald-700"
-      : status === "declined" || status === "voided"
-        ? isDark
-          ? "bg-red-500/15 text-red-300"
-          : "bg-red-50 text-red-700"
-        : status === "draft"
-          ? isDark
-            ? "bg-white/[0.06] text-gray-300"
-            : "bg-gray-100 text-gray-600"
-          : isDark
-            ? "bg-amber-500/15 text-amber-300"
-            : "bg-amber-50 text-amber-700";
-  return <span className={`inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full px-2.5 text-[11.5px] font-medium ${tone}`}>{STATUS_LABEL[status]}</span>;
-}
-
-export function PartyDot({ status }: { status: SignatureRequest["parties"][number]["status"] }) {
-  const c = status === "signed" ? "bg-emerald-400" : status === "declined" ? "bg-red-400" : status === "pending" ? "bg-gray-400" : "bg-amber-400";
-  return <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${c}`} />;
-}
-
-export function Small({
-  children,
-  isDark,
-  primary,
-  danger,
-  className = "",
-  ...rest
-}: { children: React.ReactNode; isDark: boolean; primary?: boolean; danger?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const tone = primary
-    ? isDark
-      ? "bg-white text-black hover:bg-gray-200"
-      : "bg-gray-900 text-white hover:bg-gray-700"
-    : danger
-      ? isDark
-        ? "text-red-300 hover:bg-red-500/10"
-        : "text-red-600 hover:bg-red-50"
-      : isDark
-        ? "bg-white/[0.06] text-gray-200 hover:bg-white/10"
-        : "bg-black/[0.04] text-gray-700 hover:bg-black/[0.08]";
-  return (
-    // A finger-sized target on a phone or a touch screen (an iPad).
-    <button
-      type="button"
-      {...rest}
-      className={`h-7 max-md:h-[44px] max-md:px-3.5 max-md:text-[14px] md:pointer-coarse:h-[44px] cursor-pointer whitespace-nowrap rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${tone} ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function DropZone({ isDark, busy, onFile, compact = false }: { isDark: boolean; busy: boolean; onFile: (file: File) => void; compact?: boolean }) {
-  const [over, setOver] = useState(false);
-  const input = useRef<HTMLInputElement | null>(null);
-  const pick = (list: FileList | null) => {
-    const f = list?.[0];
-    if (f) onFile(f);
+  /** The line under a title: the entity by name, and for drafts when they were made. */
+  const source = (r: SignatureRequest) => {
+    const name = entityName(r);
+    const later = supersededBy(r, all);
+    return (
+      <span className="block text-small text-ink-2">
+        {name ? (
+          <Link to={`/assets/${r.asset_id}/agreements`} onClick={(e) => e.stopPropagation()} className="text-accent hover:underline">
+            {name}
+          </Link>
+        ) : (
+          "No entity"
+        )}
+        {r.source === "contract" ? " · MSA" : ""}
+        {r.status === "draft" ? ` · created ${whenShort(r.created_at)}` : ""}
+        {later ? <span className="block text-warning">A later version was signed {whenShort(later.completed_at)}. Void this one?</span> : null}
+      </span>
+    );
   };
+
+  const completedCell = (r: SignatureRequest) =>
+    r.completed_at ? (
+      <span className="flex flex-col">
+        <span className="tabular-nums">{whenShort(r.completed_at)}</span>
+        <span className="text-small text-ink-2">{r.copy_sent_at ? `Copy sent ${whenShort(r.copy_sent_at)}` : "Copy not sent"}</span>
+      </span>
+    ) : (
+      <span className="text-ink-3">—</span>
+    );
+
+  /** A cell's controls: clicks and keys stay in the cell (the row opens the request). */
+  const actionsCell = (r: SignatureRequest) => (
+    <span className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      {rowAction(r)}
+      <Menu label={`More for ${r.title}`} align="end" items={menu(r)} trigger={<IconButton icon="more" label="More actions" />} />
+    </span>
+  );
+
+  const columns: Column<SignatureRequest>[] = [
+    {
+      key: "doc",
+      header: "Document",
+      render: (r) => (
+        <span className="flex flex-col">
+          <span className="font-medium break-words">{r.title}</span>
+          {source(r)}
+        </span>
+      ),
+    },
+    { key: "parties", header: "Parties", width: "28%", render: partyList },
+    { key: "status", header: "Status", width: "120px", render: (r) => <StatusChip status={r.status} /> },
+    { key: "sent", header: "Sent", width: "96px", render: (r) => (r.sent_at ? <span className="tabular-nums">{whenShort(r.sent_at)}</span> : <span className="text-ink-3">—</span>) },
+    { key: "completed", header: "Completed", width: "120px", render: completedCell },
+    { key: "actions", header: "", width: "152px", align: "right", render: actionsCell },
+  ];
+
+  const total = all.length;
+  const summary = archived
+    ? `${format.count(total, "archived request")}`
+    : `${format.count(total, "request", undefined, { zero: "numeral" })}: ${counts.waiting} waiting, ${counts.signed} signed, ${counts.draft} ${counts.draft === 1 ? "draft" : "drafts"}, ${counts.closed} declined or voided`;
+
   return (
     <div
+      className="contents"
       onDragOver={(e) => {
+        if (archived || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
-        setOver(true);
+        setDragging(true);
       }}
-      onDragLeave={() => setOver(false)}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target || !e.relatedTarget) setDragging(false);
+      }}
       onDrop={(e) => {
+        if (archived) return;
         e.preventDefault();
-        setOver(false);
-        pick(e.dataTransfer.files);
+        setDragging(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f) void startFrom(f);
       }}
-      className={`mt-5 flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed text-center transition-colors ${compact ? "px-4 py-5" : "px-4 py-8"} ${
-        over ? (isDark ? "border-white/40 bg-white/[0.05]" : "border-gray-500 bg-gray-50") : isDark ? "border-white/15 bg-white/[0.02]" : "border-gray-300 bg-white"
-      }`}
     >
-      <input ref={input} type="file" accept="application/pdf,.pdf" className="sr-only" aria-label="Choose a PDF to send for signature" onChange={(e) => pick(e.target.files)} />
-      <p className="text-[13.5px] font-medium">{busy ? "Uploading…" : "Drop a PDF here to send it for signature"}</p>
-      <p className={`text-[12px] ${isDark ? "text-gray-500" : "text-gray-500"}`}>You'll place the signature fields and say who signs on the next screen.</p>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => input.current?.click()}
-        className={`mt-1 h-9 max-md:h-[44px] md:pointer-coarse:h-[44px] cursor-pointer rounded-lg px-4 text-[12.5px] font-medium transition-colors disabled:opacity-50 ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"}`}
+      <Page
+        width="workspace"
+        header={
+          <PageHeader
+            title={archived ? "Archived signature requests" : "Signatures"}
+            back={archived ? { to: "/tools/signatures", label: "Signatures" } : undefined}
+            context={archived ? "Kept whole, out of the list. Times are Arizona time." : "Documents sent out to be signed, who has signed, and the signed copies. Times are Arizona time."}
+            create={archived ? undefined : { label: busy === "new" ? "Uploading…" : "Send for signature", onClick: () => fileInput.current?.click() }}
+            menu={[archived ? { label: "Back to the list", onSelect: () => setArchived(false) } : { label: "Archived requests", onSelect: () => setArchived(true) }]}
+          />
+        }
       >
-        Choose a PDF
-      </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="sr-only"
+          aria-label="Choose a PDF to send for signature"
+          tabIndex={-1}
+          onChange={(e) => e.target.files?.[0] && startFrom(e.target.files[0])}
+        />
+        {!archived && <p className="-mt-4 text-small text-ink-2">E-signature isn’t for wills, codicils or testamentary trusts, or anything that must be witnessed or notarized.</p>}
+
+        {error && (
+          <Banner
+            tone="negative"
+            onDismiss={() => setError("")}
+            action={
+              <Button variant="quiet" size="sm" onClick={() => void load()}>
+                Try again
+              </Button>
+            }
+          >
+            {error}
+          </Banner>
+        )}
+
+        <section className="flex flex-col gap-4">
+          <Toolbar
+            search={<SearchField value={query} onChange={setQuery} label="Search signature requests" placeholder="Search by title or party" />}
+            filters={<Select label="Entity" value={entity} onChange={setEntity} options={entityOptions} size="sm" />}
+            view={!archived ? <Segmented label="Show" value={filter} onChange={setFilter} options={FILTERS} /> : undefined}
+          />
+          {rows !== null && <p className="text-small text-ink-2 tabular-nums">{summary}</p>}
+          <Card flush>
+            <Table
+              caption="Signature requests"
+              columns={columns}
+              rows={shown}
+              rowKey={(r) => r.id}
+              loading={rows === null}
+              onRowClick={(r) => navigate(`/tools/signatures/${r.id}`)}
+              phoneRow={(r) => ({
+                title: r.title,
+                label: r.title,
+                secondary: [
+                  r.status === "completed" ? `Signed ${whenShort(r.completed_at)}` : r.sent_at ? `Sent ${whenShort(r.sent_at)}` : `Created ${whenShort(r.created_at)}`,
+                  entityName(r) ?? "No entity",
+                ].join(" · "),
+                meta: <StatusChip status={r.status} />,
+                to: `/tools/signatures/${r.id}`,
+                menu: menu(r),
+              })}
+              empty={
+                total === 0 ? (
+                  archived ? (
+                    <Empty size="section">Nothing is archived.</Empty>
+                  ) : (
+                    <Empty
+                      title="Nothing sent for signature yet"
+                      action={
+                        <Button variant="primary" onClick={() => fileInput.current?.click()}>
+                          Choose a PDF
+                        </Button>
+                      }
+                    >
+                      Choose a PDF to send it for signature, or open an entity’s agreement and send it from there. Only staff see this list.
+                    </Empty>
+                  )
+                ) : (
+                  <Empty size="section">
+                    {query.trim()
+                      ? `No requests match “${query.trim()}”.`
+                      : filter === "waiting"
+                        ? "Nothing is waiting on anyone."
+                        : filter === "signed"
+                          ? "Nothing signed yet."
+                          : filter === "draft"
+                            ? "No drafts."
+                            : filter === "closed"
+                              ? "Nothing declined or voided."
+                              : "Nothing for this entity."}{" "}
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      onClick={() => {
+                        setQuery("");
+                        setFilter("all");
+                        setEntity("any");
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  </Empty>
+                )
+              }
+            />
+          </Card>
+        </section>
+      </Page>
+
+      {dragging && (
+        <div aria-hidden className="ds pointer-events-none fixed inset-0 z-modal flex items-center justify-center bg-scrim p-6">
+          <div className="rounded-dialog border border-line-strong bg-overlay px-8 py-6 text-center shadow-(--elevation-2)">
+            <p className="text-title">Drop the PDF to send it for signature</p>
+            <p className="mt-1 text-body text-ink-2">You’ll place the fields and say who signs next.</p>
+          </div>
+        </div>
+      )}
+
+      {voiding && (
+        <VoidDialog
+          request={voiding}
+          open
+          onClose={() => setVoiding(null)}
+          onVoid={async (reason, notify) => {
+            const next = await signApi.act("void", { id: voiding.id, reason, notify });
+            replace(next);
+            setVoiding(null);
+            toast({ message: notify ? "Voided, and the parties were told" : "Voided. Its links stop working" });
+          }}
+        />
+      )}
+      {archiving && (
+        <ArchiveDialog
+          request={archiving}
+          open
+          onClose={() => setArchiving(null)}
+          onArchive={async (reason) => {
+            const r = archiving;
+            await signApi.act("archive", { id: r.id, reason });
+            drop(r.id);
+            setArchiving(null);
+            toast({
+              message: `Archived ${r.title}`,
+              action: {
+                label: "Undo",
+                run: () => {
+                  void signApi.act("unarchive", { id: r.id }).then(() => load());
+                },
+              },
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

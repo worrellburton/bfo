@@ -1,6 +1,6 @@
 import { ownerPercent, ownersTotal } from "../lib/formation-owners.js";
 
-export { emptyOwner, ownerName, ownerPercent, ownersTotal, parentOwnerId, personName } from "../lib/formation-owners.js";
+export { emptyOwner, ownerFilingName, ownerName, ownerPercent, ownersTotal, parentOwnerId, personName } from "../lib/formation-owners.js";
 
 /**
  * Forming a new entity through Palm: what the wizard collects (a Draft), and
@@ -69,8 +69,8 @@ export const US_STATES: ReadonlyArray<readonly [string, string]> = [
 
 export const stateName = (jurisdiction: string) => US_STATES.find(([abbr]) => `US-${abbr}` === jurisdiction)?.[1] ?? "";
 
-/** Where the IRS asks whether two LLC members are a married couple (Rev. Proc. 2002-69). */
-const COMMUNITY_PROPERTY = new Set(["AZ", "CA", "ID", "LA", "NM", "NV", "TX", "WA", "WI"]);
+/** Community-property states: where spouses can hold an LLC as community property (Rev. Proc. 2002-69). */
+export const COMMUNITY_PROPERTY = new Set(["AZ", "CA", "ID", "LA", "NM", "NV", "TX", "WA", "WI"]);
 
 export type FormationEntityType = "llc" | "corporation";
 
@@ -99,17 +99,33 @@ export type FormationParty = {
   address: FormationAddress | null;
   email: string;
   phone: string;
+  /** A company signing: the individual who signs for it, and in what capacity ("Manager"). */
+  signerName: string;
+  signerCapacity: string;
 };
 
 /** Someone who owns part of the new entity: an entity (one already in BFO, or another) or a person. */
 export type FormationOwner = {
   kind: "entity" | "person";
+  /** An entity owner: a company, or a trust (which holds title through its trustee). */
+  entityKind: "company" | "trust";
   /** An entity in BFO; blank for one that isn't. Picking one fills in entityName. */
   entityId: string;
   entityName: string;
+  /** A trust: its trustee, and the date of the trust instrument (YYYY-MM-DD). */
+  trustee: string;
+  trustDate: string;
+  /** A company: who signs for it (the operating agreement, consents), and in what capacity. */
+  signer: string;
+  signerTitle: string;
   name: PersonName;
-  /** Percent owned, as typed. */
+  /** Percent owned, as typed: capital, profits and votes in the same proportion. */
   percent: string;
+  /** The initial contribution: dollars as typed, cash or property, when, and what property. */
+  contribution: string;
+  contributionKind: "cash" | "property";
+  contributionDate: string;
+  contributionNote: string;
   title: string;
   address: FormationAddress | null;
   email: string;
@@ -169,6 +185,8 @@ export type FormationAgent =
       mailing: FormationAddress | null;
       email: string;
       phone: string;
+      /** The person filing confirms the agent agreed to serve and will sign the state's consent. */
+      consent: boolean;
     };
 
 /** One answer per follow-up question, keyed as Palm names them ("yes"/"no" for the yes-or-no ones). */
@@ -197,10 +215,25 @@ export type FormationEin = {
   mailing: FormationAddress | null;
   /** Blank: counted from the owners. */
   memberCount: string;
-  /** "" until asked; only for a two-member LLC in a community-property state. */
+  /** "" until asked; only for an LLC whose two members are people (spouses holding it as community property). */
   marriedCouple: "" | "yes" | "no";
   llcClassification: "" | "single_member" | "multi_member";
+  /** A special kind of corporation (personal service, REIT…); blank for an ordinary one. C or S comes from the draft's taxElection. */
   corporationSubtype: string;
+  /** When the responsible party isn't the person filing: the person filing confirms they agreed and gave their SSN for this. */
+  responsibleConsent: boolean;
+};
+
+/** How it's taxed: the IRS default (an LLC: disregarded or a partnership; a corporation: C), or an election. */
+export type TaxElection = "default" | "s_corp" | "c_corp";
+
+/** Who pays the formation cost (Palm bills the office's account), and how the new entity books it. */
+export type FormationPayer = {
+  /** An entity in BFO; blank for none chosen. */
+  entityId: string;
+  name: string;
+  /** contribution: the payer's capital contribution; advance: a loan the new entity repays (due to / due from). */
+  treatment: "contribution" | "advance";
 };
 
 export type FormationDraft = {
@@ -228,6 +261,16 @@ export type FormationDraft = {
   officers: FormationOfficer[];
   agent: FormationAgent;
   ein: FormationEin | null;
+  taxElection: TaxElection;
+  /** Whether it will do business in the principal office's state, when that isn't the state of formation. */
+  hostBusiness: "" | "yes" | "no" | "unsure";
+  payer: FormationPayer;
+  /**
+   * Whether the state's filing asks for the members (its requirement schema
+   * requires initial_governing_persons). False keeps the owners out of the
+   * request; undefined (an older draft) sends them as before.
+   */
+  membersRequired?: boolean;
   expeditedTier: string;
   /** For Palm's team to read before filing (a name reservation, say). */
   note: string;
@@ -255,6 +298,8 @@ export const emptyParty = (title: string, name: Partial<PersonName> = {}): Forma
   address: null,
   email: "",
   phone: "",
+  signerName: "",
+  signerCapacity: "",
 });
 
 export const emptyOfficial = (title = ""): FormationOfficial => ({ name: { ...EMPTY_NAME }, title, address: null, email: "", phone: "", ssn: "" });
@@ -285,6 +330,7 @@ export function emptyEin(): FormationEin {
     marriedCouple: "",
     llcClassification: "",
     corporationSubtype: "",
+    responsibleConsent: false,
   };
 }
 
@@ -310,6 +356,9 @@ export function emptyDraft(): FormationDraft {
     officers: [],
     agent: { provider: "palm" },
     ein: null,
+    taxElection: "default",
+    hostBusiness: "",
+    payer: { entityId: "", name: "", treatment: "contribution" },
     expeditedTier: "",
     note: "",
     extra: {},
@@ -395,6 +444,25 @@ export type FormationState = {
   documents: number;
   /** Cases Palm opened that need an answer. */
   openCases: number;
+  /** What was filed, as sent, with every SSN removed (lib/palm-formation.ts redactDraft). Set once, at submission. */
+  request?: FormationDraft;
+  /** The statements the person filing made when they filed (FilingAttestation). */
+  attestation?: FilingAttestation;
+};
+
+/** What the person filing affirmed on the review step, sent with the filing so the server can keep it. */
+export type FilingAttestation = {
+  version: string;
+  /** The words of each statement, as shown. */
+  articles: string;
+  ss4: string | null;
+  /** The responsible party agreed (when they aren't the person filing). */
+  responsibleConsent: boolean | null;
+  /** Your own registered agent agreed to serve. */
+  agentConsent: boolean | null;
+  /** The typed confirmation (the legal name). */
+  typed: string | null;
+  at: number;
 };
 
 export const isFormationDone = (s: FormationState | undefined | null) => !!s && (s.status === "completed" || s.status === "canceled");
@@ -706,16 +774,299 @@ export const einMemberCount = (d: FormationDraft) => {
   return typed >= 1 ? Math.floor(typed) : Math.max(1, d.owners.length);
 };
 
-/** Whether the IRS will ask if the two members are married: a two-member LLC in a community-property state. */
-export const asksMarried = (d: FormationDraft) => d.entityType === "llc" && einMemberCount(d) === 2 && COMMUNITY_PROPERTY.has(d.principal.region.trim().toUpperCase());
+/**
+ * Whether to ask if the two members are spouses holding the LLC as community
+ * property (Rev. Proc. 2002-69): an LLC with exactly two members, both people.
+ * It turns on the spouses' home state's law, not the office's, so the office's
+ * state doesn't decide it; two companies are never spouses.
+ */
+export const asksMarried = (d: FormationDraft) => d.entityType === "llc" && einMemberCount(d) === 2 && d.owners.length === 2 && d.owners.every((o) => o.kind === "person");
 
 export const hasName = (n: PersonName) => !!n.first.trim() && !!n.last.trim();
+
+// ── Tax ───────────────────────────────────────────────────────────────────
+
+/** The federal classifications the entity record uses (app/entity-paperwork.ts TAX_CLASSES). */
+export type FormationTaxClass = "Disregarded Entity" | "Partnership" | "S Corporation" | "C Corporation";
+
+export type TaxOutcome = {
+  value: FormationTaxClass;
+  /** Chosen by election rather than the IRS default. */
+  elected: boolean;
+  /** The IRS form the election takes, if any. */
+  form: "2553" | "8832" | null;
+};
+
+/**
+ * What it will be for federal tax. An LLC by default: one member (or a
+ * married couple who choose it) is disregarded; two or more file as a
+ * partnership. An LLC electing S files Form 2553 (which also elects
+ * corporate classification); electing C, Form 8832. A corporation is C unless
+ * it elects S on Form 2553.
+ */
+export function taxOutcome(d: FormationDraft): TaxOutcome {
+  if (d.entityType === "corporation") return d.taxElection === "s_corp" ? { value: "S Corporation", elected: true, form: "2553" } : { value: "C Corporation", elected: false, form: null };
+  if (d.taxElection === "s_corp") return { value: "S Corporation", elected: true, form: "2553" };
+  if (d.taxElection === "c_corp") return { value: "C Corporation", elected: true, form: "8832" };
+  const couple = asksMarried(d) && d.ein?.marriedCouple === "yes" && d.ein.llcClassification === "single_member";
+  return { value: einMemberCount(d) === 1 || couple ? "Disregarded Entity" : "Partnership", elected: false, form: null };
+}
+
+/** Calendar arithmetic on "YYYY-MM-DD", in UTC so a date never shifts. */
+export function addToDate(iso: string, o: { months?: number; days?: number }): string {
+  const [y, m, day] = iso.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + (o.months ?? 0), 1));
+  // Keep the day within the target month (Jan 31 + 1 month is Feb 28).
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last) + (o.days ?? 0));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Today as "YYYY-MM-DD" in the viewer's calendar. */
+export const todayIso = (now = new Date()) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+/**
+ * When an election must be filed to apply from the start: Form 2553 within 2
+ * months and 15 days of the first tax year's start (a year starting Jan 7 is
+ * due Mar 21); Form 8832 within 75 days, the furthest back it can reach.
+ * Counted from the effective date, or from `today` when it takes effect on
+ * acceptance (an estimate: the state's date can only be later).
+ */
+export function electionDeadline(d: FormationDraft, today = todayIso()): { form: "2553" | "8832"; dueBy: string; from: string; estimated: boolean } | null {
+  const t = taxOutcome(d);
+  if (!t.form) return null;
+  const dated = /^\d{4}-\d{2}-\d{2}$/.test(d.effectiveDate);
+  const from = dated ? d.effectiveDate : today;
+  const dueBy = t.form === "2553" ? addToDate(addToDate(from, { months: 2 }), { days: 14 }) : addToDate(from, { days: 75 });
+  return { form: t.form, dueBy, from, estimated: !dated };
+}
+
+/** Pass-through classifications generally must use their owners' tax year (§706(b), §1378): December, unless §444 or an IRS ruling says otherwise. */
+export const fiscalYearFollowsOwners = (d: FormationDraft) => taxOutcome(d).value !== "C Corporation";
+
+/** How the formation cost is treated for tax, by classification (§248 corporations, §709 partnerships). */
+export function organizationalCostNote(t: FormationTaxClass): string {
+  if (t === "Disregarded Entity") return "For tax it's its owner's organizational cost.";
+  const section = t === "Partnership" ? "§709" : "§248";
+  return `An organizational cost under ${section}: up to $5,000 deductible in the first year, the rest over 180 months.`;
+}
+
+// ── Dates ─────────────────────────────────────────────────────────────────
+
+/** How far ahead most states let articles take effect. */
+export const MAX_DELAY_DAYS = 90;
+
+/** What's wrong with a delayed effective date, or null: it can't be in the past or more than 90 days out. */
+export function effectiveDateProblem(iso: string, today = todayIso()): string | null {
+  if (!iso) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "Check the effective date.";
+  if (iso < today) return "The effective date can't be in the past.";
+  if (iso > addToDate(today, { days: MAX_DELAY_DAYS })) return `The effective date can be at most ${MAX_DELAY_DAYS} days ahead.`;
+  return null;
+}
+
+// ── Who signs ─────────────────────────────────────────────────────────────
+
+const words = (s: string | null | undefined) =>
+  (s ?? "")
+    .toLowerCase()
+    .replace(/[^\p{L}\s'-]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+/** Whether a name is the signed-in person's: the same first and last names (a middle name or suffix may differ). */
+export function isPersonFiling(n: { first: string; last: string }, me: { name?: string | null } | null): boolean {
+  const mine = words(me?.name);
+  if (mine.length < 2) return false;
+  const first = words(n.first)[0];
+  const last = words(n.last).at(-1);
+  return !!first && !!last && first === mine[0] && last === mine.at(-1);
+}
+
+/** The named organizers who aren't the person filing: they haven't authorized signing in their name, so they block filing. */
+export function absentSigners(d: FormationDraft, me: { name?: string | null } | null): string[] {
+  return d.organizers
+    .filter((o) => (o.kind === "person" ? hasName(o.name) && !isPersonFiling(o.name, me) : !!o.signerName.trim() && !isPersonFiling(splitName(o.signerName), me)))
+    .map((o) =>
+      o.kind === "person"
+        ? [o.name.first, o.name.middle, o.name.last, o.name.suffix]
+            .map((x) => x.trim())
+            .filter(Boolean)
+            .join(" ")
+        : o.signerName.trim(),
+    );
+}
+
+/** "Sam A. Sample" → first and last. */
+export function splitName(full: string): PersonName {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { first: parts[0] ?? "", middle: "", last: "", suffix: "" };
+  return { first: parts[0], middle: parts.slice(1, -1).join(" "), last: parts[parts.length - 1], suffix: "" };
+}
+
+/** The responsible party isn't the person filing: they must agree to be named, and to their SSN being sent. */
+export const responsibleIsSomeoneElse = (d: FormationDraft, me: { name?: string | null } | null) =>
+  !!d.ein && !!d.ein.responsible.first.trim() && !!d.ein.responsible.last.trim() && !isPersonFiling(d.ein.responsible, me);
+
+/** What stops the person filing from filing, beyond the draft's own gaps: signatures that aren't theirs to give. */
+export function signerProblems(d: FormationDraft, me: { name?: string | null } | null): DraftProblem[] {
+  const out: DraftProblem[] = [];
+  const word = d.entityType === "llc" ? "organizer" : "incorporator";
+  for (const name of absentSigners(d, me)) out.push({ step: "filers", text: `${name} must sign as ${word}. Name yourself, or have ${name} file it.` });
+  if (responsibleIsSomeoneElse(d, me) && !d.ein?.responsibleConsent) out.push({ step: "ein", text: "Confirm the responsible party agreed to be named." });
+  return out;
+}
+
+/** The statement the person filing makes about the articles (§11.4: the words they agree to are the words shown). */
+export function articlesStatement(d: FormationDraft, signer: string): string {
+  const doc = d.entityType === "llc" ? "articles of organization" : "articles of incorporation";
+  const role = d.entityType === "llc" ? "organizer" : "incorporator";
+  return `I am ${signer || `the ${role}`}, the ${role} named in these ${doc}. I authorize Palm to sign and file them in my name, and the information in them is true and correct.`;
+}
+
+/** The SS-4 declaration and the third-party designee authorization, when Palm applies for the EIN. */
+export function ss4Statement(d: FormationDraft): string {
+  const name = d.legalName.trim() || "the entity";
+  return `I'm authorized to sign Form SS-4 for ${name}. Under penalties of perjury, I declare that the application is true, correct and complete to the best of my knowledge, and I authorize Palm, as third-party designee, to receive its EIN and answer questions about the application.`;
+}
+
+/** The version of the statements above; the server keeps it with the filing. */
+export const ATTESTATION_VERSION = "2026-11-06";
+
+// ── Addresses ─────────────────────────────────────────────────────────────
+
+/** A mail-receiving address (a PMB, a P.O. box, a mailbox suite), which some states won't take as a principal office. */
+export function looksLikeMailbox(a: FormationAddress | null | undefined): boolean {
+  if (!a) return false;
+  const line = `${a.street1} ${a.street2}`;
+  return /\b(p\.?\s?o\.?\s?box|pmb|mailbox|private mailbox|box\s+\d+)\b/i.test(line) || /\b(ste|suite|unit|#)\s*#?\s*\d{5,}\b/i.test(line);
+}
+
+/** The state it's run from, when that isn't the state of formation ("AZ"), or null. */
+export function hostState(d: FormationDraft): string | null {
+  const host = d.principal.region.trim().toUpperCase();
+  const home = d.jurisdiction.slice(3);
+  return /^[A-Z]{2}$/.test(host) && /^[A-Z]{2}$/.test(home) && host !== home ? host : null;
+}
+
+// ── What it will cost beyond the filing ──────────────────────────────────
+
+type CostRow = { llc: number | null; corp: number | null; what: string };
+
+/**
+ * The states the office forms in most often, as of late 2026: each state's
+ * yearly filing, and what registering there as a foreign entity costs.
+ * Estimates for planning; the state's own fee schedule governs.
+ */
+const YEARLY: Record<string, CostRow> = {
+  WY: { llc: 60, corp: 60, what: "annual report and license tax (the minimum)" },
+  DE: { llc: 300, corp: 225, what: "annual tax (an LLC) or franchise tax and report (a corporation, the minimum)" },
+  NV: { llc: 350, corp: 650, what: "annual list and state business license" },
+  AZ: { llc: 0, corp: 45, what: "annual report (corporations only)" },
+};
+const FOREIGN: Record<string, CostRow> = {
+  AZ: { llc: 150, corp: 150, what: "foreign registration" },
+  NV: { llc: 425, corp: 725, what: "foreign registration, first annual list and business license" },
+  DE: { llc: 300, corp: 245, what: "foreign registration" },
+  WY: { llc: 150, corp: 150, what: "foreign registration" },
+};
+
+export type ExpectedCost = { label: string; dollars: number | null; per: "once" | "year" };
+
+/** What forming here commits it to, beyond the filing itself: the state's yearly filing, and a second state if it's run from one. */
+export function expectedCosts(d: FormationDraft): ExpectedCost[] {
+  const out: ExpectedCost[] = [];
+  const corp = d.entityType === "corporation";
+  const home = d.jurisdiction.slice(3);
+  const pick = (r: CostRow | undefined) => (r ? (corp ? r.corp : r.llc) : null);
+  if (/^[A-Z]{2}$/.test(home)) {
+    const y = YEARLY[home];
+    out.push({ label: `${stateName(d.jurisdiction)} ${y?.what ?? "yearly filing"}`, dollars: pick(y), per: "year" });
+  }
+  if (d.agent.provider === "palm") out.push({ label: "Registered agent (Palm's yearly fee)", dollars: null, per: "year" });
+  const host = hostState(d);
+  if (host && d.hostBusiness !== "no") {
+    const name = stateName(`US-${host}`);
+    out.push({ label: `${name} ${FOREIGN[host]?.what ?? "foreign registration"}, if it does business there`, dollars: pick(FOREIGN[host]), per: "once" });
+    const y = YEARLY[host];
+    if (pick(y) !== 0) out.push({ label: `${name} ${y?.what ?? "yearly filing"}, once registered`, dollars: pick(y), per: "year" });
+    out.push({ label: `A registered agent in ${name}`, dollars: null, per: "year" });
+  }
+  return out;
+}
+
+// ── Palm's price lines ───────────────────────────────────────────────────
+
+/**
+ * A plain name for a line of Palm's price, from its component type: never
+ * Palm's internal item name ("Default"). An unknown line says what share of
+ * the state's fee it is, so nobody has to guess what it is for.
+ */
+export function feeLabel(item: { kind: string; name: string; amount: number }, items: { kind: string; name: string; amount: number }[]): string {
+  const k = `${item.kind} ${item.name}`.toLowerCase();
+  if (/expedit|rush|priority/.test(k)) return "Expedited processing";
+  if (/agent/.test(k)) return "Registered agent";
+  if (/card|payment|processing|transaction|merchant/.test(k)) return "Card processing";
+  if (/service|platform|palm/.test(k)) return "Palm's service fee";
+  if (/state|government|filing|base|statutory|articles/.test(k)) return "State filing fee";
+  const base = items.find((i) => i !== item && /state|government|filing|base|statutory|articles/.test(`${i.kind} ${i.name}`.toLowerCase()));
+  const name = item.name.trim();
+  const plain = name && !/^default$/i.test(name) ? name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : "Other charge";
+  if (base && base.amount > 0) {
+    const pct = Math.round((item.amount / base.amount) * 1000) / 10;
+    return `${plain} (${pct}% of the state fee)`;
+  }
+  return plain;
+}
+
+/** Whether Palm's lines add up to its total, to the cent. */
+export const feeFoots = (total: number, items: { amount: number }[]) => Math.abs(Math.round(items.reduce((n, i) => n + i.amount, 0) * 100) - Math.round(total * 100)) < 1;
+
+// ── The state's own questions ────────────────────────────────────────────
+
+export type StateQuestionCopy = { label: string; hint: string; long?: boolean; preset?: unknown };
+
+/**
+ * Plain words for state-specific questions Palm's schema asks in its own
+ * terms. Matched on the schema's label and description, since the keys vary.
+ * A known election starts at "No" (the state's default) and says so.
+ */
+export function stateQuestionCopy(f: { key: string; label: string; description: string | null; type: string }, state: string): StateQuestionCopy {
+  const text = `${f.key} ${f.label} ${f.description ?? ""}`;
+  if (/close\s+(limited liability )?compan|close_llc|close_company/i.test(text) && f.type === "boolean") {
+    const statute = /W\.?\s?S\.?\s?17-25/i.test(text) ? " (W.S. 17-25-101 to 17-25-109)" : "";
+    return {
+      label: "Make it a close LLC?",
+      hint: `A close LLC${statute} restricts transferring or withdrawing a membership interest. It's usually chosen with counsel for estate planning and must agree with the operating agreement. Leave it at No unless your lawyer says otherwise.`,
+      preset: false,
+    };
+  }
+  if (f.type === "string" && /additional|other provisions|optional provisions|free.?text|articles/i.test(text)) {
+    return {
+      label: "Anything else for the articles",
+      hint: "Printed on the public articles. Have counsel draft anything here: where it conflicts with the operating agreement, the articles generally govern.",
+      long: true,
+    };
+  }
+  return { label: sentenceCase(f.label.replace(/\s*\((free text|optional|text)\)\s*/gi, " ")), hint: f.description ?? `${state} asks this on its filing.` };
+}
+
+const PROPER = new Set(US_STATES.flatMap(([, n]) => n.split(" ")));
+
+/** "Close Limited Liability Company Election" → "Close limited liability company election"; state names and acronyms keep their capitals. */
+export function sentenceCase(s: string): string {
+  return s
+    .trim()
+    .split(/\s+/)
+    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : /^[A-Z0-9.]{2,}$/.test(w) || PROPER.has(w) ? w : w.toLowerCase()))
+    .join(" ");
+}
 
 /** Where the request puts the people who sign the articles. */
 export const filersKey = (t: FormationEntityType) => (t === "llc" ? "organizers" : "incorporators");
 
 /** What's still missing before Palm is asked, by the wizard's step. `rules` adds what the state requires. */
-export function draftProblems(d: FormationDraft, rules: StateRules = {}, extras: { key: string; label: string; required: boolean }[] = []): DraftProblem[] {
+export function draftProblems(d: FormationDraft, rules: StateRules = {}, extras: { key: string; label: string; required: boolean }[] = [], today = todayIso()): DraftProblem[] {
   const out: DraftProblem[] = [];
   const add = (step: StepKey, text: string) => out.push({ step, text });
   const needs = (path: string) => !!rules[path]?.required;
@@ -745,7 +1096,8 @@ export function draftProblems(d: FormationDraft, rules: StateRules = {}, extras:
   // Entity
   if (!/^US-[A-Z]{2}$/.test(d.jurisdiction)) add("entity", "Choose a state.");
   if (d.legalName.trim().length < 3) add("entity", "Give the entity a name.");
-  if (d.effectiveDate && !/^\d{4}-\d{2}-\d{2}$/.test(d.effectiveDate)) add("entity", "Check the effective date.");
+  const dateProblem = effectiveDateProblem(d.effectiveDate, today);
+  if (dateProblem) add("entity", dateProblem);
 
   // Business
   if (blank(d.purpose)) add("business", "A purpose is required.");
@@ -760,8 +1112,12 @@ export function draftProblems(d: FormationDraft, rules: StateRules = {}, extras:
   d.owners.forEach((o, i) => {
     const n = d.owners.length > 1 ? `Owner ${i + 1}` : "The owner";
     if (o.kind === "person" ? !hasName(o.name) : blank(o.entityName)) add("ownership", `${n} needs a name.`);
+    if (o.kind === "entity" && o.entityKind === "trust" && blank(o.trustee)) add("ownership", `${n}: name the trustee who holds it.`);
     const pct = ownerPercent(o);
     if (!(pct > 0 && pct <= 100)) add("ownership", `${n} needs a percentage.`);
+    if (o.contribution?.trim() && Number.isNaN(num(o.contribution))) add("ownership", `${n}: check the contribution.`);
+    if (o.contribution?.trim() && o.contributionKind === "property" && blank(o.contributionNote)) add("ownership", `${n}: say what property is contributed.`);
+    if (o.contributionDate?.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(o.contributionDate)) add("ownership", `${n}: check the contribution date.`);
     if (llc) {
       if (o.address) addressCheck("ownership", o.address, n, "initial_governing_persons.address");
       contactCheck("ownership", o, n, "initial_governing_persons");
@@ -802,6 +1158,8 @@ export function draftProblems(d: FormationDraft, rules: StateRules = {}, extras:
   d.organizers.forEach((o, i) => {
     const n = d.organizers.length > 1 ? `${filerWord} ${i + 1}` : `The ${filerWord.toLowerCase()}`;
     if (o.kind === "person" ? !hasName(o.name) : blank(o.entityName)) add("filers", `${n} needs a name.`);
+    if (o.kind === "entity" && blank(o.signerName)) add("filers", `${n}: who signs for the company?`);
+    if (o.kind === "entity" && blank(o.signerCapacity)) add("filers", `${n}: in what capacity they sign (Manager, President…)`);
     if (o.kind === "entity" && needs(`${filers}.entity_type`) && blank(o.entityType)) add("filers", `${n}: what kind of entity (the state asks)`);
     if (needs(`${filers}.title`) && blank(o.title)) add("filers", `${n}: title (the state asks for it)`);
     if (o.address) addressCheck("filers", o.address, n, `${filers}.address`);
@@ -816,6 +1174,7 @@ export function draftProblems(d: FormationDraft, rules: StateRules = {}, extras:
     if (a.address.region && `US-${a.address.region.toUpperCase()}` !== d.jurisdiction) add("agent", "The registered office must be in the state of formation.");
     if (a.mailing) addressCheck("agent", a.mailing, "Agent's mailing address", "registered_agent.mailing_address");
     contactCheck("agent", a, "Registered agent", "registered_agent");
+    if (!a.consent) add("agent", "Confirm the agent has agreed to serve.");
   }
 
   // EIN

@@ -225,7 +225,11 @@ async function update(load: () => Promise<Row | null>, plan: (row: Row) => Parti
   throw new Refuse(409, "busy", "Something else changed this at the same moment. Try again.");
 }
 
-const event = (kind: string, extra: Omit<SignEvent, "at" | "kind"> = {}): SignEvent => ({ at: new Date().toISOString(), kind, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined)) });
+const event = (kind: string, extra: Omit<SignEvent, "at" | "kind"> = {}): SignEvent => ({
+  at: new Date().toISOString(),
+  kind,
+  ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined)),
+});
 
 /** Who did it, for an office event: the id (and the name, so the history reads without a lookup). */
 const by = (me: AppUser) => ({ by: me.id, byName: me.name || undefined });
@@ -347,7 +351,13 @@ async function fileSignedCopy(row: Row, me: AppUser | null): Promise<Row> {
     () => rowById(row.id),
     (r) => ({ filed_path: path, events: [...r.events, event("filed", { ...(me ? by(me) : {}), note: "with the entity's documents" })] }),
   );
-  await audit({ actor: me ?? "system", action: "signature.file", target: { type: "signature_request", id: row.id, label: row.title }, summary: `Filed the signed copy of ${row.title} with the entity's documents`, detail: { assetId: row.asset_id, path } });
+  await audit({
+    actor: me ?? "system",
+    action: "signature.file",
+    target: { type: "signature_request", id: row.id, label: row.title },
+    summary: `Filed the signed copy of ${row.title} with the entity's documents`,
+    detail: { assetId: row.asset_id, path },
+  });
   return next;
 }
 
@@ -383,7 +393,7 @@ async function sendSignedCopy(me: AppUser | null, load: () => Promise<Row | null
   );
 }
 
-/** Two names that agree on their first and last words ("Alex Rivera" and "Alex J. Rivera"). */
+/** Two names that agree on their first and last words ("Alex Rivera" and "Alex J. Rivera"), or on the first when one is a single word. */
 export function sameName(a: string, b: string): boolean {
   const words = (s: string) =>
     s
@@ -393,7 +403,9 @@ export function sameName(a: string, b: string): boolean {
       .filter(Boolean);
   const x = words(a);
   const y = words(b);
-  return !!x.length && !!y.length && x[0] === y[0] && x[x.length - 1] === y[y.length - 1];
+  if (!x.length || !y.length || x[0] !== y[0]) return false;
+  // A one-word name ("Alex") agrees with any full name that starts with it.
+  return x.length === 1 || y.length === 1 || x[x.length - 1] === y[y.length - 1];
 }
 
 /** A party's link going to whoever presses Send, when that person isn't the party: refused, so nobody can sign for someone else. */
@@ -439,7 +451,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const [row] = await sb<Row[]>("signature_requests", {
         method: "POST",
         prefer: "return=representation",
-        body: { title, source: contractId ? "contract" : "upload", asset_id: assetId, contract_id: contractId, brand, mode, created_by: me.id, created_by_name: me.name, parties, events: [event("created", by(me))] },
+        body: {
+          title,
+          source: contractId ? "contract" : "upload",
+          asset_id: assetId,
+          contract_id: contractId,
+          brand,
+          mode,
+          created_by: me.id,
+          created_by_name: me.name,
+          parties,
+          events: [event("created", by(me))],
+        },
       });
       return res.status(200).json({ request: toView(row) });
     }
@@ -600,7 +623,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const next = await update(fresh, (r) => {
           const now = archiveBlocker(r);
           if (now) throw new Refuse(409, "not_archivable", now);
-          return { archived_at: new Date().toISOString(), archived_by: me.id, archived_by_name: me.name ?? null, archived_reason: reason, events: [...r.events, event("archived", { ...by(me), note: reason })] };
+          return {
+            archived_at: new Date().toISOString(),
+            archived_by: me.id,
+            archived_by_name: me.name ?? null,
+            archived_reason: reason,
+            events: [...r.events, event("archived", { ...by(me), note: reason })],
+          };
         });
         if (!next.archived_at) return fail(res, 503, "not_ready", "Archiving needs a database update that hasn't been applied yet. Nothing was changed.");
         await audit({ actor: me, action: "signature.archive", target: label, summary: `Archived ${row.title}`, detail: { reason, status: row.status } });
@@ -686,9 +715,13 @@ async function officeOne(req: VercelRequest, res: VercelResponse, id: string) {
     const emails = [...new Set(row.parties.map((p) => p.email.trim().toLowerCase()).filter(Boolean))];
     const byIds = [...new Set(row.events.map((e) => e.by).filter((v): v is string => !!v && UUID_RE.test(v)))];
     const [users, actors, versions] = await Promise.all([
-      emails.length ? sb<Array<{ email: string | null; role: string; status: string }>>(`app_users?email=in.(${emails.map((e) => encodeURIComponent(`"${e}"`)).join(",")})&select=email,role,status`) : [],
+      emails.length
+        ? sb<Array<{ email: string | null; role: string; status: string }>>(`app_users?email=in.(${emails.map((e) => encodeURIComponent(`"${e}"`)).join(",")})&select=email,role,status`)
+        : [],
       byIds.length ? sb<Array<{ id: string; name: string | null }>>(`app_users?id=in.(${byIds.join(",")})&select=id,name`) : [],
-      sb<Row[]>(`signature_requests?title=eq.${encodeURIComponent(row.title)}&asset_id=${row.asset_id ? `eq.${encodeURIComponent(row.asset_id)}` : "is.null"}&id=neq.${row.id}&select=*&order=created_at.desc&limit=20`),
+      sb<Row[]>(
+        `signature_requests?title=eq.${encodeURIComponent(row.title)}&asset_id=${row.asset_id ? `eq.${encodeURIComponent(row.asset_id)}` : "is.null"}&id=neq.${row.id}&select=*&order=created_at.desc&limit=20`,
+      ),
     ]);
     for (const p of row.parties) {
       const u = (users ?? []).find((x) => (x.email ?? "").toLowerCase() === p.email.trim().toLowerCase() && x.status === "approved");
@@ -879,7 +912,17 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
   if (row.status === "voided") {
     if (req.method !== "GET") return fail(res, 409, "voided", "This request was withdrawn. Nothing more is needed from you.");
     const voided = [...row.events].reverse().find((e) => e.kind === "voided");
-    return res.status(200).json({ title: row.title, brand: row.brand, status: "voided", voidedAt: voided?.at ?? null, replaced: !!row.replaced_by, sentBy: row.created_by_name, you: { key: you.key, name: you.name, status: you.status } });
+    return res
+      .status(200)
+      .json({
+        title: row.title,
+        brand: row.brand,
+        status: "voided",
+        voidedAt: voided?.at ?? null,
+        replaced: !!row.replaced_by,
+        sentBy: row.created_by_name,
+        you: { key: you.key, name: you.name, status: you.status },
+      });
   }
   if (linkExpired(you)) return fail(res, 410, "expired", `This link has expired. Ask ${sender} to send a new one.`);
 
@@ -944,7 +987,13 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     await sendEmail(you.email, ...receipt(declineReceiptEmail(row, you, at)), undefined, undefined, { fromName: row.brand ?? undefined }).catch((err) =>
       console.error("sign: the decline receipt didn't go out", err instanceof Error ? err.message : err),
     );
-    await audit({ actor: null, action: "signature.decline", target: { type: "signature_request", id: row.id, label: row.title }, summary: `${you.name} declined ${row.title}`, detail: { party: you.key } });
+    await audit({
+      actor: null,
+      action: "signature.decline",
+      target: { type: "signature_request", id: row.id, label: row.title },
+      summary: `${you.name} declined ${row.title}`,
+      detail: { party: you.key },
+    });
     await entityLog(row, null, `${you.name} declined to sign “${row.title}”`);
     return res.status(200).json({ ok: true });
   }
@@ -1019,7 +1068,12 @@ async function signer(req: VercelRequest, res: VercelResponse, token: string, bo
     const events = [
       ...r.events,
       event("consented", { party: p0.key, note: `disclosure of ${consentVersion}`, ip, device }),
-      event("signed", { party: p0.key, ip, device, note: [method === "typed" ? "typed" : method === "drawn" ? "drawn" : "", via === "game" ? `after the ${MODE_WORDS[r.mode ?? "normal"]}` : ""].filter(Boolean).join(", ") || undefined }),
+      event("signed", {
+        party: p0.key,
+        ip,
+        device,
+        note: [method === "typed" ? "typed" : method === "drawn" ? "drawn" : "", via === "game" ? `after the ${MODE_WORDS[r.mode ?? "normal"]}` : ""].filter(Boolean).join(", ") || undefined,
+      }),
     ];
     const changes: Partial<Row> = { parties, status, current_path: "", events };
     let signedPath: string | null = null;

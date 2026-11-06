@@ -128,33 +128,44 @@ const ledger = [
 ];
 
 describe("report=pnl", () => {
-  it("groups the year into revenue, operating, other, transfers and intercompany", async () => {
+  it("files the year into revenue, expenses, uncategorized and the flow groups, by month and by entity", async () => {
     routes.unshift(rows(ledger), [/^GET book_loans/, () => [{ id: LOAN, name: "Family Loan" }]]);
     const r = await get({ report: "pnl", year: "2026" });
     expect(r.status).toBe(200);
-    expect(r.json).toMatchObject({ year: 2026, entity: "all", basis: "cash", transaction_count: 7, eliminated_count: 1 });
-    expect(r.json.revenue).toEqual([
-      { label: "4000 Rental Income", monthly: [1000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], total: 1000 },
-      // Uncategorized money-in lands in revenue by sign.
-      { label: "Income", monthly: [0, 0, 0, 80, 0, 0, 0, 0, 0, 0, 0, 0], total: 80 },
+    expect(r.json).toMatchObject({ year: 2026, entity: "all", basis: "cash", transaction_count: 7 });
+    const block = (key: string) => r.json.sections.find((b: any) => b.key === key);
+    expect(block("revenue").lines).toEqual([
+      expect.objectContaining({ label: "4000 Rental Income", code: "4000", name: "Rental Income", figures: expect.objectContaining({ total: 1000, exact: 1000 }) }),
     ]);
-    expect(r.json.operating).toEqual([{ label: "6100 Professional Fees", monthly: [300, 700, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], total: 1000 }]);
-    expect(r.json.other[0]).toMatchObject({ label: "7100 Interest Expense", total: 50 });
-    expect(r.json.net_total).toBe(1080 - 1000 - 50);
-    expect(r.json.transfers).toMatchObject({ total: -500, rows: [{ label: "9100 Transfers", total: -500 }] });
-    expect(r.json.intercompany.total).toBe(0);
+    expect(block("revenue").lines[0].figures.monthly[0]).toBe(1000);
+    expect(block("operating").total).toMatchObject({ total: 1000, monthly: [300, 700, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
+    // Other income (expense) reads money in positive: an expense is negative.
+    expect(block("other").total.total).toBe(-50);
+    // Uncategorized money in is beside the statement, not in revenue.
+    expect(r.json.uncategorized).toMatchObject({ count: 1, in: 80 });
+    expect(r.json.net.total).toBe(1000 - 1000 - 50);
+    expect(r.json.receipts).toBe(1000);
+    expect(r.json.disbursements).toBe(1050);
+    // The intercompany leg's other side is in Books and selected: eliminated.
+    expect(r.json.eliminated).toMatchObject({ out: 200, count: 1 });
+    expect(r.json.flows.find((b: any) => b.key === "flow:own").total.total).toBe(-500);
+    // Columns by entity, names cleaned, adding to the total.
+    expect(r.json.columns.entities.map((e: any) => e.name)).toEqual(["Alpha LLC", "Beta Trust"]);
+    expect(block("operating").total.by_entity).toEqual([1000, 0]);
+    expect(r.json.period).toEqual({ from: "2026-01-01", to: expect.any(String) });
     // Year filter and hidden-account exclusion are pushed to the database.
-    expect(calls[1].path).toContain("&date=gte.2026-01-01&date=lte.2026-12-31");
-    expect(calls[1].path).toContain('account_id=not.in.("acc-hid")');
+    const q = calls.find((c) => c.path.startsWith("book_transactions?select=*"))!.path;
+    expect(q).toContain("&date=gte.2026-01-01&date=lte.2026-12-31");
+    expect(q).toContain('account_id=not.in.("acc-hid")');
   });
 
   it("under a partial selection the intercompany leg shows instead of being eliminated", async () => {
     routes.unshift(rows(ledger), [/^GET book_loans/, () => []]);
     const r = await get({ report: "pnl", year: "2026", entity: ENT_A });
     expect(r.json.entity).toBe(ENT_A);
-    expect(r.json.eliminated_count).toBe(0);
-    expect(r.json.intercompany.out[2]).toBe(200);
-    expect(calls[1].path).toContain('account_id=in.("acc-a1")');
+    expect(r.json.eliminated.count).toBe(0);
+    expect(r.json.flows.find((b: any) => b.key === "flow:intercompany").total.monthly[2]).toBe(-200);
+    expect(calls.find((c) => c.path.startsWith("book_transactions?select=*"))!.path).toContain('account_id=in.("acc-a1")');
   });
 
   it("defaults a bad year to the current one", async () => {
@@ -166,56 +177,64 @@ describe("report=pnl", () => {
 describe("report=cell", () => {
   beforeEach(() => routes.unshift(rows(ledger), [/^GET book_loans/, () => []]));
 
-  it("returns the rows behind one account × month, newest first", async () => {
+  it("returns the rows behind one account × month, newest first, and the figure they tie to", async () => {
     const r = await get({ report: "cell", year: "2026", section: "operating", label: "6100 Professional Fees" });
     expect(r.json.count).toBe(2);
     expect(r.json.transactions.map((t: BookTxn) => t.transaction_id)).toEqual(["e2", "e1"]);
+    expect(r.json).toMatchObject({ net: 1000, shown: 1000, basis: "cash", locked: 0 });
     const feb = await get({ report: "cell", year: "2026", section: "operating", label: "6100 Professional Fees", month: "2" });
     expect(feb.json.transactions.map((t: BookTxn) => t.transaction_id)).toEqual(["e2"]);
+    expect(feb.json.shown).toBe(700);
   });
 
-  it("knows the net, transfers and intercompany sections", async () => {
-    expect((await get({ report: "cell", year: "2026", section: "net" })).json.count).toBe(5);
+  it("knows the net, uncategorized, flow and intercompany sections", async () => {
+    expect((await get({ report: "cell", year: "2026", section: "net" })).json.count).toBe(4);
+    expect((await get({ report: "cell", year: "2026", section: "uncategorized" })).json.transactions[0].transaction_id).toBe("u1");
+    expect((await get({ report: "cell", year: "2026", section: "flow:own" })).json.transactions[0].transaction_id).toBe("x1");
     expect((await get({ report: "cell", year: "2026", section: "transfers" })).json.transactions[0].transaction_id).toBe("x1");
     expect((await get({ report: "cell", year: "2026", section: "intercompany" })).json.count).toBe(0);
+    expect((await get({ report: "cell", year: "2026", section: "eliminated" })).json.count).toBe(1);
     expect((await get({ report: "cell", year: "2026", section: "intercompany", entity: ENT_A })).json.count).toBe(1);
-    expect((await get({ report: "cell", year: "2026", section: "bogus" })).json).toEqual({ transactions: [], count: 0 });
+    expect((await get({ report: "cell", year: "2026", section: "bogus" })).json).toMatchObject({ transactions: [], count: 0 });
+  });
+
+  it("narrows to one entity's column", async () => {
+    const r = await get({ report: "cell", year: "2026", section: "operating", col: ENT_B });
+    expect(r.json.count).toBe(0);
   });
 });
 
 describe("report=statements", () => {
-  it("builds the trial balance and the cash-flow summary", async () => {
+  it("builds a cash flow that ties to the P&L and a trial balance that balances", async () => {
     routes.unshift(rows(ledger));
     const r = await get({ report: "statements", year: "2026" });
     expect(r.json).toMatchObject({ year: 2026, basis: "cash" });
-    expect(r.json.trial_balance).toEqual([
-      { account: "4000 Rental Income", section: "revenue", debit: 0, credit: 1000, net: -1000 },
-      { account: "6100 Professional Fees", section: "operating", debit: 1000, credit: 0, net: 1000 },
-      { account: "7100 Interest Expense", section: "other", debit: 50, credit: 0, net: 50 },
-      { account: "9000 Intercompany", section: "flow", debit: 200, credit: 0, net: 200 },
-      { account: "9100 Transfers", section: "flow", debit: 500, credit: 0, net: 500 },
-      { account: "Income", section: "uncategorized", debit: 0, credit: 80, net: -80 },
-    ]);
-    expect(r.json.totals).toEqual({ debit: 1750, credit: 1080 });
-    expect(r.json.cash_flow).toEqual({ operating: -50, financing: -700, uncategorized: 80, net_change: -670 });
+    expect(r.json.cash_flow.ties_to_pnl).toBe(true);
+    expect(r.json.cash_flow.blocks.find((b: any) => b.key === "operating").total).toBe(-50);
+    // Every row: 1,000 + 80 in, 300 + 700 + 50 + 500 + 200 out.
+    expect(r.json.cash_flow.net_change_exact).toBe(-670);
+    expect(r.json.trial_balance.totals.debit).toBe(r.json.trial_balance.totals.credit);
+    expect(r.json.trial_balance.rows[0]).toMatchObject({ account: "Ops •• 1234", group: "Bank and card accounts", detail: "Alpha LLC" });
+    expect(r.json.trial_balance.rows.find((x: any) => x.account === "Income")).toMatchObject({ group: "Uncategorized", credit: 80 });
   });
 });
 
 describe("report=tax1099", () => {
-  it("totals payments to service vendors at or above the $600 threshold", async () => {
+  it("lists payees over the year's threshold, with wages and exclusions apart", async () => {
     routes.unshift(
       rows([
         ...ledger,
-        txn({ transaction_id: "c1", amount: 599, book_category: "6150 Contract Services", merchant_name: "Small Fry" }),
-        txn({ transaction_id: "c2", amount: 1200, book_category: "6150 Contract Services", merchant_name: "Builder", type_override: "transfer" }),
+        txn({ transaction_id: "c1", amount: 1999, book_category: "6150 Contract Services", merchant_name: "Small Fry" }),
+        txn({ transaction_id: "c2", amount: 2400, book_category: "6150 Contract Services", merchant_name: "Builder" }),
+        txn({ transaction_id: "w1", amount: 900, book_category: "6000 Salaries & Wages", merchant_name: "Pat" }),
       ]),
     );
     const r = await get({ report: "tax1099", year: "2026" });
-    expect(r.json).toEqual({
-      year: 2026,
-      threshold: 600,
-      vendors: [{ vendor: "Lawyer", entity: "Alpha LLC", paid: 1000, count: 2, account: "6100 Professional Fees" }],
-    });
+    expect(r.json).toMatchObject({ year: 2026, threshold: 2000, below_threshold: 2 });
+    expect(r.json.candidates).toEqual([expect.objectContaining({ payee: "Builder", entity: "Alpha LLC", form: "NEC", paid: 2400, count: 1 })]);
+    expect(r.json.wages).toEqual([expect.objectContaining({ payee: "Pat", paid: 900 })]);
+    const last = await get({ report: "tax1099", year: "2025" });
+    expect(last.json.threshold).toBe(600);
   });
 
   it("scopes to the selected entity", async () => {
@@ -228,13 +247,13 @@ describe("report=tax1099", () => {
   it("applies the threshold per paying entity", async () => {
     routes.unshift(
       rows([
-        txn({ transaction_id: "p1", amount: 400, book_category: "6150 Contract Services", merchant_name: "Painter" }),
-        txn({ transaction_id: "p2", amount: 400, book_category: "6150 Contract Services", merchant_name: "painter ", account_id: "acc-b1" }),
-        txn({ transaction_id: "p3", amount: 300, book_category: "6150 Contract Services", merchant_name: "Painter", account_id: "acc-b1" }),
+        txn({ transaction_id: "p1", amount: 1400, book_category: "6150 Contract Services", merchant_name: "Painter" }),
+        txn({ transaction_id: "p2", amount: 1400, book_category: "6150 Contract Services", merchant_name: "painter ", account_id: "acc-b1" }),
+        txn({ transaction_id: "p3", amount: 700, book_category: "6150 Contract Services", merchant_name: "Painter", account_id: "acc-b1" }),
       ]),
     );
     const r = await get({ report: "tax1099", year: "2026" });
-    expect(r.json.vendors).toEqual([{ vendor: "painter", entity: "Beta Trust", paid: 700, count: 2, account: "6150 Contract Services" }]);
+    expect(r.json.candidates).toEqual([expect.objectContaining({ payee: "painter", entity: "Beta Trust", paid: 2100, count: 2 })]);
   });
 });
 
@@ -426,20 +445,33 @@ describe("report=balance-sheet", () => {
   it("sorts accounts into cash, investments and liabilities and adds the loan book", async () => {
     const r = await get({ report: "balance-sheet" });
     expect(r.json.as_of).toBe("2026-10-27T01:00:00Z");
+    expect(r.json.earliest_as_of).toBe("2026-10-25T01:00:00Z");
     expect(r.json.entity).toBe("all");
-    expect(r.json.sections.cash).toEqual({ rows: [{ label: "Alpha LLC", detail: "Chase · ····1234 · checking", balance: 1000 }], total: 1000 });
-    expect(r.json.sections.investments.rows).toEqual([{ label: "Nest egg", detail: "Schwab · brokerage", balance: 5000 }]);
-    expect(r.json.sections.credit.rows).toEqual([{ label: "Beta Trust", detail: "Amex · ····9 · credit card", balance: -300 }]);
-    expect(r.json.sections.loans).toEqual({ rows: [{ label: "Family Loan", detail: "loan receivable", balance: 1000 }], total: 1000 });
-    expect(r.json).toMatchObject({ total_assets: 7000, total_liabilities: -300, net_worth: 7300 });
+    const section = (key: string) => r.json.sections.find((s: any) => s.key === key);
+    expect(section("cash").rows).toEqual([expect.objectContaining({ name: "Ops", mask: "1234", institution: "Chase", type: "Checking", entity: "Alpha LLC", balance: 1000, shown: 1000 })]);
+    expect(section("cash").total).toBe(1000);
+    expect(section("investments").rows).toEqual([expect.objectContaining({ name: "Nest egg", type: "Brokerage", balance: 5000 })]);
+    expect(section("liabilities").rows).toEqual([expect.objectContaining({ type: "Credit card", entity: "Beta Trust", balance: -300 })]);
+    expect(section("loans").rows).toEqual([expect.objectContaining({ name: "Family Loan", balance: 1000, notes: ["Holder not recorded"] })]);
+    expect(r.json).toMatchObject({ total_assets: 7000, total_liabilities: -300, net_worth: 7300, unavailable: 0 });
   });
 
-  it("a single entity's sheet leaves the family-level loans out", async () => {
+  it("a single entity's sheet leaves out loans with no holder, and says so", async () => {
     const r = await get({ report: "balance-sheet", entity: ENT_A });
     expect(r.json.entity).toBe(ENT_A);
-    expect(r.json.sections.loans).toEqual({ rows: [], total: 0 });
-    expect(r.json.sections.credit.rows).toEqual([]);
+    expect(r.json.sections.find((s: any) => s.key === "loans").rows).toEqual([]);
+    expect(r.json.sections.find((s: any) => s.key === "liabilities").rows).toEqual([]);
     expect(r.json.total_assets).toBe(6000);
+    expect(r.json.unassigned_loans).toBe(1);
+  });
+
+  it("lists an account with no reading as unavailable instead of dropping it", async () => {
+    routes.unshift([/^GET plaid_account_state/, () => states.filter((s) => s.account_id !== "acc-b1")]);
+    const r = await get({ report: "balance-sheet" });
+    const card = r.json.sections.find((s: any) => s.key === "liabilities").rows[0];
+    expect(card).toMatchObject({ balance: null, notes: ["Balance unavailable"] });
+    expect(r.json.unavailable).toBe(1);
+    expect(r.json.total_liabilities).toBe(0);
   });
 });
 

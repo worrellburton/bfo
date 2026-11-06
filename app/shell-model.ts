@@ -240,7 +240,7 @@ export function buildPlaces(nav: NavEntry[], o: { role: Role | null | undefined;
   }
   if (!isStaff(o.role)) return list;
   list.push(
-    { to: "/books/reports", label: "Profit & loss", section: "Books", keywords: "p&l income statement reports", glyph: "books" },
+    { to: "/books/reports?view=pnl", label: "Profit & loss", section: "Books", keywords: "p&l income statement reports", glyph: "books" },
     { to: "/books/reports?view=balance", label: "Balance sheet", section: "Books", keywords: "assets liabilities equity net worth reports", glyph: "books" },
     { to: "/books/reports?view=statements", label: "Statements", section: "Books", keywords: "trial balance cash flow 1099 general ledger reports", glyph: "books" },
     { to: "/estate-map", label: "Estate map", section: "Entities", keywords: "structure ownership tree", glyph: "map" },

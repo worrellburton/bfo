@@ -1,160 +1,295 @@
-import { useEffect, useState } from "react";
-import { canWrite } from "../auth";
-import { confirmDialog } from "../confirm-dialog";
-import { useTheme } from "../theme";
+/**
+ * Notes: the office's shared notes, for context that doesn't belong to one
+ * entity (or does: a note can name an entity and a tax year). Each note
+ * carries its author and time, stamped by the server (api/tree.ts). Notes
+ * are kept: deleting moves one to Deleted, where it can be restored, and
+ * only its author or an owner or admin may delete it. Who can read them is
+ * said under the title: the office team, never partners.
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
+import { canWrite, getUser, isAdmin } from "../auth";
+import { Banner, Button, Card, Checkbox, Empty, Field, Input, Page, PageHeader, Segmented, Select, Sheet, Skeleton, Textarea, Toolbar, format, toast, useDocumentTitle, usePhone, type MenuItem } from "../ui";
 
 export function meta() {
-  return [{ title: "BFO - Notes" }];
+  return [{ title: "Notes · BFO" }];
 }
+
+type Person = { id?: string | null; name?: string | null } | null;
 
 interface Note {
   id: string;
   title: string;
   body: string;
   createdAt: number;
+  createdBy?: Person;
+  entityId?: string | null;
+  taxYear?: number | null;
+  privileged?: boolean;
+  deletedAt?: number | null;
+  deletedBy?: Person;
 }
 
+const ALL = "all";
+
 export default function Notes() {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
+  useDocumentTitle("Notes");
+  const phone = usePhone();
   // Viewers read notes; the server refuses their writes (api/tree.ts), so they aren't offered any.
   const writer = canWrite();
+  const me = getUser();
+  const admin = isAdmin();
 
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Note[] | null>(null);
+  const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [composing, setComposing] = useState(false);
+  const [shelf, setShelf] = useState<"notes" | "deleted">("notes");
+  const [entityF, setEntityF] = useState<string>(ALL);
 
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-
-    async function setup() {
-      const { db, authReady } = await import("../store");
-      await authReady;
-      const { ref, onValue } = await import("../store");
-
-      const notesRef = ref(db, "notes");
-      unsubscribe = onValue(notesRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const notesArray = Object.entries(data).map(([id, value]) => ({
-            id,
-            ...(value as Omit<Note, "id">),
-          }));
-          notesArray.sort((a, b) => b.createdAt - a.createdAt);
-          setNotes(notesArray);
-        } else {
-          setNotes([]);
-        }
-        setLoading(false);
-      });
-    }
-
-    setup();
-    return () => unsubscribe?.();
+    const offs: (() => void)[] = [];
+    let alive = true;
+    void (async () => {
+      const { db, ref, onValue } = await import("../store");
+      if (!alive) return;
+      offs.push(
+        onValue(
+          ref(db, "notes"),
+          (snap) => {
+            const data = (snap.val() ?? {}) as Record<string, Omit<Note, "id">>;
+            setNotes(
+              Object.entries(data)
+                .filter(([, v]) => v && typeof v === "object")
+                .map(([id, v]) => ({ ...v, id, title: v.title ?? "", body: v.body ?? "", createdAt: v.createdAt ?? 0 }))
+                .sort((a, b) => b.createdAt - a.createdAt),
+            );
+            setLoadError("");
+          },
+          () => setLoadError("Couldn't load the notes. Check your connection and try again."),
+        ),
+      );
+      offs.push(
+        onValue(ref(db, "assets"), (snap) => {
+          const data = (snap.val() ?? {}) as Record<string, { name?: string }>;
+          setEntities(
+            Object.entries(data)
+              .filter(([, v]) => v?.name)
+              .map(([id, v]) => ({ id, name: v.name! }))
+              .sort((a, b) => a.name.localeCompare(b.name)),
+          );
+        }),
+      );
+    })();
+    return () => {
+      alive = false;
+      for (const off of offs) off();
+    };
   }, []);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !body.trim()) return;
+  const nameOf = useMemo(() => new Map(entities.map((e) => [e.id, e.name])), [entities]);
+  const kept = (notes ?? []).filter((n) => !n.deletedAt);
+  const deleted = (notes ?? []).filter((n) => !!n.deletedAt);
+  const shown = (shelf === "deleted" ? deleted : kept).filter((n) => entityF === ALL || n.entityId === entityF);
+  const linked = [...new Set((notes ?? []).map((n) => n.entityId).filter((v): v is string => !!v && nameOf.has(v)))];
+  const mayChange = (n: Note) => writer && (admin || (!!me && n.createdBy?.id === me.id));
 
-    const { db } = await import("../store");
-    const { push, ref } = await import("../store");
-
+  async function setDeleted(n: Note, on: boolean) {
+    const { db, ref, update } = await import("../store");
     try {
+      await update(ref(db, `notes/${n.id}`), { deletedAt: on ? Date.now() : null });
+      toast({
+        message: on ? `Deleted the note “${n.title}”` : `Restored the note “${n.title}”`,
+        action: on ? { label: "Undo", run: () => void setDeleted(n, false) } : undefined,
+      });
+    } catch (err) {
+      setLoadError((err as Error).message || "Couldn't change the note. Try again.");
+    }
+  }
+
+  const byline = (n: Note) =>
+    [n.createdBy?.name ?? "Author not recorded", n.createdAt ? format.dateTime(new Date(n.createdAt), { zone: true }) : ""].filter(Boolean).join(" · ");
+
+  const composer = <Composer entities={entities} onClose={() => setComposing(false)} phone={phone} />;
+
+  return (
+    <Page
+      width="reading"
+      header={
+        <PageHeader
+          title="Notes"
+          context="Shared with the office team: owners, admins, staff and read-only viewers. Partners can't see notes."
+          create={writer ? { label: "New note", onClick: () => setComposing(true) } : undefined}
+        />
+      }
+    >
+      {loadError && <Banner tone="negative">{loadError}</Banner>}
+      {composing && !phone && composer}
+      {phone && (
+        <Sheet open={composing} onClose={() => setComposing(false)} side="full" title="New note">
+          {composer}
+        </Sheet>
+      )}
+      {(deleted.length > 0 || linked.length > 0) && (
+        <Toolbar
+          filters={
+            linked.length > 0 ? (
+              <Select
+                size="sm"
+                label="Entity"
+                value={entityF}
+                onChange={setEntityF}
+                options={[{ value: ALL, label: "All entities" }, ...linked.map((id) => ({ value: id, label: nameOf.get(id)! }))]}
+              />
+            ) : undefined
+          }
+          view={
+            deleted.length > 0 ? (
+              <Segmented
+                label="Notes"
+                value={shelf}
+                onChange={setShelf}
+                options={[
+                  { value: "notes", label: "Notes" },
+                  { value: "deleted", label: `Deleted · ${deleted.length}` },
+                ]}
+              />
+            ) : undefined
+          }
+        />
+      )}
+      {notes === null ? (
+        <Skeleton kind="card" rows={3} />
+      ) : shown.length === 0 ? (
+        shelf === "deleted" ? (
+          <Empty size="section">No deleted notes{entityF !== ALL ? " for this entity" : ""}.</Empty>
+        ) : (
+          <Empty
+            title="No notes yet"
+            size="page"
+            action={
+              writer && !composing ? (
+                <Button variant="primary" icon="plus" onClick={() => setComposing(true)}>
+                  New note
+                </Button>
+              ) : undefined
+            }
+          >
+            Notes are for context the office needs to keep: decisions, instructions, who said what. Each one shows who wrote it and when. Only the office team can see them.
+          </Empty>
+        )
+      ) : (
+        <div className="flex flex-col gap-4">
+          {shown.map((n) => {
+            const menu: MenuItem[] = mayChange(n) ? [n.deletedAt ? { label: "Restore", onSelect: () => void setDeleted(n, false) } : { label: "Delete", danger: true, onSelect: () => void setDeleted(n, true) }] : [];
+            return (
+              <Card key={n.id} title={n.title || "Untitled note"} menu={menu.length ? menu : undefined}>
+                <div className="flex flex-col gap-3">
+                  {n.privileged && <Banner tone="info">Privileged and confidential: attorney-client communication.</Banner>}
+                  {n.body && <p className="text-reading break-words whitespace-pre-wrap text-ink">{n.body}</p>}
+                  <p className="text-small text-ink-2">
+                    {byline(n)}
+                    {n.entityId && nameOf.has(n.entityId) && (
+                      <>
+                        {" · "}
+                        <Link to={`/assets/${n.entityId}`} className="text-accent underline underline-offset-[3px] hover:text-accent-hover">
+                          {nameOf.get(n.entityId)}
+                        </Link>
+                      </>
+                    )}
+                    {n.taxYear ? ` · Tax year ${n.taxYear}` : ""}
+                  </p>
+                  {n.deletedAt && (
+                    <p className="text-small text-ink-2">
+                      Deleted {format.dateTime(new Date(n.deletedAt), { zone: true })}
+                      {n.deletedBy?.name ? ` by ${n.deletedBy.name}` : ""}.
+                    </p>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </Page>
+  );
+}
+
+/** The new-note form: inline on desktop, a full sheet on a phone. */
+function Composer({ entities, onClose, phone }: { entities: { id: string; name: string }[]; onClose: () => void; phone: boolean }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [entityId, setEntityId] = useState<string>("");
+  const [taxYear, setTaxYear] = useState<string>("");
+  const [privileged, setPrivileged] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const ready = !!title.trim() && !!body.trim();
+  const year = new Date().getFullYear();
+
+  async function save() {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { db, ref, push } = await import("../store");
+      // The server stamps the author and the time; createdAt here only orders the note until it does.
       await push(ref(db, "notes"), {
         title: title.trim(),
         body: body.trim(),
         createdAt: Date.now(),
+        ...(entityId ? { entityId } : {}),
+        ...(taxYear ? { taxYear: Number(taxYear) } : {}),
+        ...(privileged ? { privileged: true } : {}),
       });
+      toast({ message: "Added the note" });
+      onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
-      return;
-    }
-
-    setError(null);
-    setTitle("");
-    setBody("");
-  }
-
-  async function handleDelete(id: string) {
-    const note = notes.find((n) => n.id === id);
-    if (!(await confirmDialog({ title: `Delete “${note?.title ?? "this note"}”?`, message: "This can't be undone.", tone: "danger" }))) return;
-    const { db } = await import("../store");
-    const { ref, remove } = await import("../store");
-    try {
-      await remove(ref(db, "notes/" + id));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
+      setError((err as Error).message || "Couldn't add the note. Check your connection and try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  return (
-    <div>
-      <h1 className="text-3xl font-bold mb-6">Notes</h1>
-
-      {writer && (
-        <form onSubmit={handleCreate} className="mb-8 space-y-3 max-w-lg">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-            aria-label="Note title"
-            required
-            className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg max-sm:min-h-[44px] max-sm:text-[16px] ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"}`}
+  const fields = (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <Field label="Title">
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+      </Field>
+      <Field label="Note">
+        <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="What happened, what was decided, who asked…" />
+      </Field>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Entity" optional>
+          <Select label="Entity" value={entityId || null} placeholder="None" onChange={setEntityId} options={[{ value: "", label: "None" }, ...entities.map((e) => ({ value: e.id, label: e.name }))]} />
+        </Field>
+        <Field label="Tax year" optional>
+          <Select
+            label="Tax year"
+            value={taxYear || null}
+            placeholder="None"
+            onChange={setTaxYear}
+            options={[{ value: "", label: "None" }, ...Array.from({ length: 6 }, (_, i) => String(year - i + 1)).map((y) => ({ value: y, label: y }))]}
           />
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Write your note..."
-            aria-label="Note"
-            required
-            rows={3}
-            className={`w-full px-4 py-2 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg max-sm:min-h-[44px] max-sm:text-[16px] ${isDark ? "text-white" : "text-gray-900"} placeholder-gray-500 focus:outline-none ${isDark ? "focus:border-white/30" : "focus:border-gray-400"} resize-none`}
-          />
-          <button
-            type="submit"
-            className={`px-5 py-2 max-sm:min-h-[40px] ${isDark ? "bg-white text-black hover:bg-gray-200" : "bg-gray-900 text-white hover:bg-gray-700"} font-medium rounded-lg transition-colors cursor-pointer`}
-          >
-            Add Note
-          </button>
-          {error && (
-            <p role="alert" className={`text-sm ${isDark ? "text-red-400" : "text-red-600"}`}>
-              {error}
-            </p>
-          )}
-        </form>
-      )}
-
-      {loading ? (
-        <p className="text-gray-500">Loading...</p>
-      ) : notes.length === 0 ? (
-        <p className="text-gray-500">No notes yet.</p>
-      ) : (
-        <div className="space-y-3 max-w-lg">
-          {notes.map((note) => (
-            <div key={note.id} className={`p-4 ${isDark ? "bg-white/5" : "bg-black/5"} border ${isDark ? "border-white/10" : "border-gray-200"} rounded-lg`}>
-              <div className="flex justify-between items-start gap-3">
-                <h3 className="font-semibold min-w-0 break-words">{note.title}</h3>
-                {writer && (
-                  <button
-                    onClick={() => handleDelete(note.id)}
-                    aria-label={`Delete ${note.title}`}
-                    className={`shrink-0 text-sm cursor-pointer max-sm:-my-2.5 max-sm:-mr-2 max-sm:min-h-[40px] max-sm:px-2 ${isDark ? "text-gray-400 hover:text-red-400" : "text-gray-500 hover:text-red-600"}`}
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-              {note.body && <p className={`${isDark ? "text-gray-400" : "text-gray-600"} text-sm mt-1 whitespace-pre-wrap break-words`}>{note.body}</p>}
-              <small className={`text-xs mt-2 block ${isDark ? "text-gray-500" : "text-gray-500"}`}>{new Date(note.createdAt).toLocaleDateString()}</small>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+        </Field>
+      </div>
+      <Checkbox checked={privileged} onChange={setPrivileged} label="Privileged and confidential: attorney-client communication" hint="Marks the note so everyone reading it knows; it's still shared with the office team." />
+      {error && <Banner tone="negative">{error}</Banner>}
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button onClick={onClose}>Cancel</Button>
+        <Button type="submit" variant="primary" busy={busy} busyLabel="Adding…" disabled={!ready} disabledReason={ready ? undefined : "Add a title and a note to continue"}>
+          Add note
+        </Button>
+      </div>
+      {!ready && <p className="-mt-2 text-small text-ink-2 sm:text-right">Add a title and a note to continue.</p>}
+    </form>
   );
+  return phone ? fields : <Card title="New note">{fields}</Card>;
 }

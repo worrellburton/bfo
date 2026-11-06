@@ -4,6 +4,10 @@ import { fetchAll } from "./db-pages.js";
 /**
  * The loan ledger, shared by the Books Loans page and the Treasury report.
  *
+ * HTTP surface: none; read by lib/books/reports.ts (?report=loans), the
+ * balance sheet and the Treasury report.
+ * Who may call it: server code. Env: SUPABASE_URL and SUPABASE_SERVICE_KEY (through sb and fetchAll).
+ *
  * A loan's balance = starting_balance + advances − repayments, where the
  * moving parts come from transactions linked by loan_id or carrying the
  * intercompany loan class. (The old "Name (loan)" category convention is
@@ -28,6 +32,24 @@ export type LoanTxn = {
 export type Loan = {
   id: string | null; // null = implicit (category-only, not yet registered)
   name: string;
+  /** receivable (owed to the family) or payable; null until recorded. */
+  direction: string | null;
+  /** The entity that holds the loan. */
+  holder_entity_name: string | null;
+  counterparty: string | null;
+  rate: number | null;
+  start_date: string | null;
+  maturity_date: string | null;
+  /** The day the starting balance was counted as of. */
+  starting_balance_as_of: string | null;
+  hidden_reason: string | null;
+  notes: string | null;
+  /**
+   * Rows filed to 9300 Loans with no loan attached whose payee names this
+   * loan's borrower: shown as "not attached yet", never counted until a
+   * person attaches them.
+   */
+  unattached: LoanTxn[];
   show_on_report: boolean;
   starting_balance: number;
   advanced: number;
@@ -41,9 +63,8 @@ export type Loan = {
 const cleanName = (category: string) => category.replace(/\s*\(loan\)\s*$/i, "").trim();
 
 export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding: number }> {
-  const registry = await sb<Array<{ id: string; name: string; starting_balance: number; show_on_report: boolean; archived_at: string | null }>>(
-    "book_loans?archived_at=is.null&select=id,name,starting_balance,show_on_report,archived_at&order=created_at.asc",
-  );
+  // select=* so the terms added by migration 20261107 come through once applied.
+  const registry = await sb<Array<Record<string, any> & { id: string; name: string; starting_balance: number; show_on_report: boolean; archived_at: string | null }>>("book_loans?archived_at=is.null&select=*&order=created_at.asc");
 
   // Every page: a balance summed from the first 1,000 rows is silently wrong.
   const txns = await fetchAll<LoanTxn>(
@@ -70,6 +91,16 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
     loans.set(row.name.toLowerCase(), {
       id: row.id,
       name: row.name,
+      direction: row.direction ?? null,
+      holder_entity_name: row.holder_entity_name ?? null,
+      counterparty: row.counterparty ?? null,
+      rate: row.rate === null || row.rate === undefined ? null : Number(row.rate),
+      start_date: row.start_date ?? null,
+      maturity_date: row.maturity_date ?? null,
+      starting_balance_as_of: row.starting_balance_as_of ?? null,
+      hidden_reason: row.hidden_reason ?? null,
+      notes: row.notes ?? null,
+      unattached: [],
       show_on_report: row.show_on_report !== false,
       starting_balance: Number(row.starting_balance) || 0,
       advanced: 0,
@@ -93,6 +124,16 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
         loan = {
           id: null,
           name: name || "Loan",
+          direction: null,
+          holder_entity_name: null,
+          counterparty: null,
+          rate: null,
+          start_date: null,
+          maturity_date: null,
+          starting_balance_as_of: null,
+          hidden_reason: null,
+          notes: null,
+          unattached: [],
           show_on_report: true,
           starting_balance: 0,
           advanced: 0,
@@ -113,9 +154,37 @@ export async function computeLoans(): Promise<{ loans: Loan[]; totalOutstanding:
     loan.transactions.push(t);
   }
 
+  // 9300 rows on no loan: listed under the loan whose borrower they name.
+  const loose = await unassignedLoanRows();
+  for (const t of loose) {
+    (t as any).entity_name = prefByAccount.get(t.account_id)?.entity_name ?? null;
+    const loan = [...loans.values()].find((l) => l.id && namesBorrower(l, t));
+    if (loan) loan.unattached.push(t);
+  }
+
   const list = [...loans.values()];
   for (const loan of list) loan.outstanding = loan.starting_balance + loan.advanced - loan.repaid;
   list.sort((a, b) => b.outstanding - a.outstanding);
 
   return { loans: list, totalOutstanding: list.reduce((s, l) => s + l.outstanding, 0) };
+}
+
+/** Posted rows filed to 9300 Loans that aren't attached to a loan (every page). */
+export async function unassignedLoanRows(): Promise<LoanTxn[]> {
+  return fetchAll<LoanTxn>("book_transactions?select=*&pending=eq.false&loan_id=is.null&book_category=like.9300*&order=date.desc,transaction_id.asc");
+}
+
+const WORDS = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 5 && !["national", "limited", "company", "holdings", "group", "services", "recovery", "trust"].includes(w));
+
+/** Whether a row's payee names this loan's borrower (a distinctive word of its name or counterparty). Pure. */
+export function namesBorrower(loan: Pick<Loan, "name" | "counterparty">, t: Pick<LoanTxn, "name" | "merchant_name">): boolean {
+  const words = new Set([...WORDS(loan.name), ...WORDS(loan.counterparty ?? "")]);
+  if (!words.size) return false;
+  const text = WORDS(`${t.merchant_name ?? ""} ${t.name ?? ""}`);
+  return text.some((w) => words.has(w));
 }

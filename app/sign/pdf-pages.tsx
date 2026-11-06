@@ -3,6 +3,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 /**
  * Every page of a PDF drawn to a canvas at the width it's given, each with a
  * layer on top for whatever the caller wants to place (signature fields).
+ * Pages are paper in both themes (docs/DESIGN.md §2.5). Each page holds its
+ * final size from the start (from `pages` when the caller knows them), with a
+ * quiet page-shaped placeholder until it's drawn, so nothing jumps.
  * pdf.js loads on first use and stays off every other page's bundle.
  */
 
@@ -26,6 +29,8 @@ export function PdfPages({
   width,
   overlay,
   onPages,
+  onDrawn,
+  pages: known,
   className = "",
 }: {
   /** A URL (signed, blob or data) or the PDF's bytes. */
@@ -35,15 +40,21 @@ export function PdfPages({
   /** What to draw over a page: fields, markers. Receives the page number (1-based) and its drawn size. */
   overlay?: (page: number, size: { w: number; h: number }) => ReactNode;
   onPages?: (sizes: PageSize[]) => void;
+  /** Called once the first page is on screen. */
+  onDrawn?: () => void;
+  /** The page sizes when already known (a request stores them): placeholders hold their size before the PDF loads. */
+  pages?: PageSize[];
   className?: string;
 }) {
-  const [sizes, setSizes] = useState<PageSize[]>([]);
+  const [loaded, setSizes] = useState<PageSize[]>([]);
+  const [drawn, setDrawn] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const canvases = useRef<Array<HTMLCanvasElement | null>>([]);
 
   useEffect(() => {
     if (!src) return;
     let alive = true;
+    setDrawn(new Set());
     let doc: import("pdfjs-dist").PDFDocumentProxy | null = null;
     (async () => {
       try {
@@ -76,6 +87,9 @@ export function PdfPages({
           const ctx = canvas.getContext("2d");
           if (!ctx) continue;
           await page.render({ canvasContext: ctx, viewport }).promise;
+          if (!alive) return;
+          setDrawn((d) => new Set(d).add(i));
+          if (i === 1) onDrawn?.();
         }
       } catch (err) {
         if (alive) setError(err instanceof Error ? err.message : "The PDF couldn't be drawn.");
@@ -89,26 +103,37 @@ export function PdfPages({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, width]);
 
-  if (error) return <p className="px-4 py-6 text-center text-[13px] text-red-400">{error}</p>;
-  if (!src || !sizes.length) {
+  const sizes = loaded.length ? loaded : (known ?? []);
+  if (error)
     return (
-      <div className={`flex flex-col gap-4 ${className}`} aria-busy>
-        <div className="mx-auto animate-pulse rounded-sm bg-white/[0.06]" style={{ width, height: width * 1.294 }} />
+      <p role="alert" className="ds px-4 py-6 text-center text-body text-negative">
+        This document couldn’t be shown here. Use Download to open it.
+      </p>
+    );
+  if (!sizes.length) {
+    return (
+      <div className={`ds flex flex-col gap-4 ${className}`} aria-busy>
+        <div className="mx-auto rounded-mark bg-paper" style={{ width, height: width * 1.294 }} />
       </div>
     );
   }
   return (
-    <div className={`flex flex-col gap-4 ${className}`}>
+    <div
+      className={`ds flex flex-col gap-4 ${className}`}
+      role="group"
+      aria-label={`Document preview, ${sizes.length} page${sizes.length === 1 ? "" : "s"}. Download it as a PDF for an accessible copy.`}
+    >
       {sizes.map((s, i) => {
         const h = (width * s.h) / s.w;
         return (
-          <div key={i} className="relative mx-auto shadow-[0_8px_30px_rgba(0,0,0,0.35)]" style={{ width, height: h }}>
+          <div key={i} data-page={i + 1} className="relative mx-auto bg-paper shadow-(--elevation-1)" style={{ width, height: h }}>
             <canvas
               ref={(el) => {
                 canvases.current[i] = el;
               }}
-              className="block rounded-sm bg-white"
-              aria-label={`Page ${i + 1}`}
+              className="block"
+              style={{ width, height: h, opacity: drawn.has(i + 1) ? 1 : 0 }}
+              aria-label={`Page ${i + 1} of ${sizes.length}`}
             />
             <div className="absolute inset-0">{overlay?.(i + 1, { w: width, h })}</div>
           </div>

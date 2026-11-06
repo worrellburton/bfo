@@ -162,9 +162,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const before = String(req.query.before ?? "");
       const older = ISO.test(before) ? `&received_at=lt.${encodeURIComponent(before)}` : "";
       const rows =
-        (await sb<Row[] | null>(
-          `sms_messages?select=id,from_number,to_number,body,code,received_at,read_at,direction,status,error,sent_by${older}&order=received_at.desc,id.desc&limit=${PAGE}`,
-        )) ?? [];
+        (await sb<Row[] | null>(`sms_messages?select=id,from_number,to_number,body,code,received_at,read_at,direction,status,error,sent_by${older}&order=received_at.desc,id.desc&limit=${PAGE}`)) ??
+        [];
       const [names, access] = await Promise.all([namesFor(rows.map((r) => r.sent_by ?? "")), codeAccessFor(rows.filter((r) => r.code).map((r) => r.id))]);
       const now = Date.now();
       return res.status(200).json({ number: textNumber(), texts: rows.map((r) => presentText(r, now, names, access)), more: rows.length === PAGE });

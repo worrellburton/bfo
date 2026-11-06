@@ -21,20 +21,20 @@ vi.mock("../lib/storage.js", () => ({
 }));
 vi.mock("../lib/tree.js", () => ({ readCollection: async () => [] }));
 
-import { matchEntity, normName, saveMail, type StableMailItem } from "../lib/stable";
+import { centsOf, checksOf, entityKey, matchEntity, normName, saveMail, type StableMailItem } from "../lib/stable";
 import webhook from "../api/stable-webhook";
 
 const entities = [
-  { id: "louise", name: "Ledger Louise, LLC" },
-  { id: "swiss", name: "Swisshelm Mountain Ventures, LLC" },
-  { id: "sun", name: "Sundown Investments, L.L.C." },
+  { id: "north", name: "Northwind Holdings, LLC" },
+  { id: "alder", name: "Alder Ridge Ventures, LLC" },
+  { id: "sun", name: "Sundial Investments, L.L.C." },
 ];
 const item = (over: Partial<StableMailItem> = {}): StableMailItem => ({
   id: "mi_123456",
   from: "Nevada Secretary of State",
   createdAt: "2026-10-21T10:00:00Z",
   imageUrl: "https://stable/envelope",
-  recipients: { line1: { text: "LEDGER LOUISE LLC" }, line2: { text: "Robert Burton" } },
+  recipients: { line1: { text: "NORTHWIND HOLDINGS LLC" }, line2: { text: "A Rivera" } },
   scanDetails: null,
   checks: [],
   ...over,
@@ -56,15 +56,59 @@ afterEach(() => {
 });
 
 describe("which entity a piece is for", () => {
-  it("compares names without punctuation or the entity ending", () => {
-    expect(normName("Sundown Investments, L.L.C.")).toBe("sundown investments");
-    expect(matchEntity(item(), entities)).toBe("louise");
-    expect(matchEntity(item({ recipients: { line1: { text: "Robert Burton" }, line2: { text: "Sundown Investments LLC" } } }), entities)).toBe("sun");
+  it("compares full names, entity type included, without punctuation", () => {
+    expect(normName("Sundial Investments, L.L.C.")).toBe("sundial investments");
+    expect(entityKey("Sundial Investments, L.L.C.")).toBe("sundial investments llc");
+    expect(entityKey("The Alder Ridge Trust")).toBe("alder ridge trust");
+    expect(entityKey("Northwind Holdings Incorporated")).toBe("northwind holdings inc");
+    expect(matchEntity(item(), entities)).toBe("north");
+    expect(matchEntity(item({ recipients: { line1: { text: "A Rivera" }, line2: { text: "Sundial Investments LLC" } } }), entities)).toBe("sun");
   });
 
-  it("finds an entity inside a longer line, and nothing when no name is there", () => {
-    expect(matchEntity(item({ recipients: { line1: { text: "Swisshelm Mountain Ventures LLC c/o Robert Burton" } } }), entities)).toBe("swiss");
+  it("finds a full name inside a longer line, and nothing when no name is there", () => {
+    expect(matchEntity(item({ recipients: { line1: { text: "Alder Ridge Ventures LLC c/o A Rivera" } } }), entities)).toBe("alder");
     expect(matchEntity(item({ recipients: { line1: { text: "Current Resident" } } }), entities)).toBeNull();
+  });
+
+  it("files nothing on a name without its entity type", () => {
+    expect(matchEntity(item({ recipients: { line1: { text: "NORTHWIND HOLDINGS" } } }), entities)).toBeNull();
+  });
+
+  it("files nothing when two entities share a name once the type is set aside", () => {
+    const twins = [...entities, { id: "north-trust", name: "Northwind Holdings Trust" }];
+    expect(matchEntity(item(), twins)).toBeNull();
+    expect(matchEntity(item({ recipients: { line1: { text: "NORTHWIND HOLDINGS TRUST" } } }), twins)).toBeNull();
+  });
+
+  it("files nothing when the envelope names two different entities", () => {
+    expect(matchEntity(item({ recipients: { line1: { text: "Northwind Holdings LLC" }, line2: { text: "Sundial Investments LLC" } } }), entities)).toBeNull();
+  });
+});
+
+describe("checks inside a piece", () => {
+  it("reads each check's details, and an amount only when its unit is plain", () => {
+    const [a, b, c] = checksOf({
+      checks: [
+        { amountCents: 124000, payerName: "Acme Tenant Co", checkNumber: 1042, checkDate: "2026-10-28", payee: "Northwind Holdings LLC", depositDetails: { status: "completed", depositedAt: "2026-10-30", account: "Operating •• 4821" } },
+        { amount: "$1,250.50", from: { name: "Second Payer" } },
+        { amount: 5000 },
+      ],
+    });
+    expect(a).toEqual({
+      amountCents: 124000,
+      payer: "Acme Tenant Co",
+      payee: "Northwind Holdings LLC",
+      number: "1042",
+      date: "2026-10-28",
+      status: "completed",
+      depositedAt: "2026-10-30",
+      account: "Operating •• 4821",
+    });
+    expect(b).toMatchObject({ amountCents: 125050, payer: "Second Payer" });
+    // A bare whole number could be dollars or cents: not guessed.
+    expect(c.amountCents).toBeNull();
+    expect(centsOf({ amount: 12.5 })).toBe(1250);
+    expect(checksOf(null)).toEqual([]);
   });
 });
 
@@ -75,21 +119,30 @@ describe("keeping a piece", () => {
     const row = sbCalls.find((c) => c.method === "POST")!.body[0];
     expect(row).toMatchObject({
       id: "mi_123456",
-      asset_id: "louise",
+      asset_id: "north",
       assigned: "auto",
       from_name: "Nevada Secretary of State",
-      recipient: "LEDGER LOUISE LLC",
+      recipient: "NORTHWIND HOLDINGS LLC",
       summary: "Annual list due",
       checks: 1,
       scan_status: "completed",
     });
   });
 
+  it("unfiles an automatic match that today's rules don't make, but keeps the old one when the entity list can't be read", async () => {
+    existing = [{ id: "mi_123456", asset_id: "alder", assigned: "auto", envelope_path: "stable/mi_123456/envelope.jpg", scan_path: null, read_at: null }];
+    await saveMail([item({ recipients: { line1: { text: "Current Resident" } } })], entities);
+    expect(sbCalls.find((c) => c.method === "POST")!.body[0]).toMatchObject({ asset_id: null, assigned: "auto" });
+    sbCalls.length = 0;
+    await saveMail([item({ recipients: { line1: { text: "Current Resident" } } })], []);
+    expect(sbCalls.find((c) => c.method === "POST")!.body[0]).toMatchObject({ asset_id: "alder" });
+  });
+
   it("keeps a choice made by hand, and doesn't copy files twice", async () => {
-    existing = [{ id: "mi_123456", asset_id: "swiss", assigned: "hand", envelope_path: "stable/mi_123456/envelope.jpg", scan_path: null, read_at: "2026-10-21T11:00:00Z" }];
+    existing = [{ id: "mi_123456", asset_id: "alder", assigned: "hand", envelope_path: "stable/mi_123456/envelope.jpg", scan_path: null, read_at: "2026-10-21T11:00:00Z" }];
     await saveMail([item()], entities);
     expect(uploads).toEqual([]);
-    expect(sbCalls.find((c) => c.method === "POST")!.body[0]).toMatchObject({ asset_id: "swiss", assigned: "hand", read_at: "2026-10-21T11:00:00Z" });
+    expect(sbCalls.find((c) => c.method === "POST")!.body[0]).toMatchObject({ asset_id: "alder", assigned: "hand", read_at: "2026-10-21T11:00:00Z" });
   });
 });
 

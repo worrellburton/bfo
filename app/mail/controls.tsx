@@ -1,99 +1,22 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Icon, useTone } from "../entity/ui";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
+import { Count, SearchField, cx } from "../ui";
+import type { MailFolder } from "../mail-client";
 import { Star } from "./glyphs";
 import { tap } from "./helpers";
-import { Segmented as UiSegmented } from "../ui";
-
-/** The appearance button: Mail's own light/dark switch. A sun in the dark, a moon in the light. */
-export function ThemeButton({ dark, onToggle, className = "", iconClassName = "h-5 w-5" }: { dark: boolean; onToggle: () => void; className?: string; iconClassName?: string }) {
-  return (
-    <button
-      type="button"
-      aria-label={dark ? "Appearance: dark. Switch to light" : "Appearance: light. Switch to dark"}
-      title={dark ? "Switch to light" : "Switch to dark"}
-      onClick={onToggle}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-90 ${className}`}
-    >
-      <span key={dark ? "sun" : "moon"} className="theme-icon-in inline-flex">
-        {dark ? (
-          <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 2.5v2M12 19.5v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2.5 12h2M19.5 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-          </svg>
-        ) : (
-          <svg viewBox="0 0 24 24" className={iconClassName} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M20.5 14.5A8.5 8.5 0 019.5 3.5a8.5 8.5 0 1011 11z" />
-          </svg>
-        )}
-      </span>
-    </button>
-  );
-}
-
-/** Open/closed with an exit: `shown` stays true for `ms` after closing so the exit animation can play; `leaving` marks that stretch. */
-export function useExit(open: boolean, ms: number): { shown: boolean; leaving: boolean } {
-  const [shown, setShown] = useState(open);
-  const [leaving, setLeaving] = useState(false);
-  useEffect(() => {
-    if (open) {
-      setShown(true);
-      setLeaving(false);
-      return;
-    }
-    if (!shown) return;
-    setLeaving(true);
-    const id = window.setTimeout(() => {
-      setShown(false);
-      setLeaving(false);
-    }, ms);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  return { shown, leaving };
-}
-
-// ── Controls ─────────────────────────────────────────────────────────────
-
-/** A row of choices where one is on: the system's Segmented (app/ui). With `iconsOnly` the labels name the icons. */
-export function Segmented<K extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  iconsOnly = false,
-  stretch = false,
-  className = "",
-}: {
-  label: string;
-  value: K;
-  options: { key: K; label: string; icon?: ReactNode }[];
-  onChange: (next: K) => void;
-  iconsOnly?: boolean;
-  /** Fill the row, each choice the same width (phones). */
-  stretch?: boolean;
-  className?: string;
-}) {
-  return (
-    <UiSegmented
-      label={label}
-      value={value}
-      onChange={onChange}
-      full={stretch}
-      className={className}
-      options={options.map((o) => ({ value: o.key, label: o.label, icon: o.icon, iconOnly: iconsOnly && !!o.icon }))}
-    />
-  );
-}
 
 /**
- * The search box: what's typed is searched after a short pause (or at once on
- * Enter), and the URL keeps the term. Esc or the × clears it.
+ * Mail's small controls on the system's parts: the search box (the system's
+ * SearchField, searching after a short pause), the pick box and the star in
+ * a row, and the folder tabs (the system's Tabs, matched on ?f= rather than
+ * the path).
  */
-export function SearchField({ value, onSearch, className = "" }: { value: string; onSearch: (term: string) => void; className?: string }) {
-  const t = useTone();
+
+/** What's typed is searched after a short pause (or at once on Enter); the URL keeps the term. Esc or × clears it. */
+export function MailSearch({ value, onSearch, className }: { value: string; onSearch: (term: string) => void; className?: string }) {
   const [term, setTerm] = useState(value);
-  const ref = useRef<HTMLInputElement>(null);
   const timer = useRef<number | null>(null);
+  const box = useRef<HTMLDivElement>(null);
   // Back/forward or a cleared search: the box follows the URL.
   useEffect(() => setTerm(value), [value]);
   useEffect(
@@ -102,74 +25,37 @@ export function SearchField({ value, onSearch, className = "" }: { value: string
     },
     [],
   );
+  // "/" (the shortcut sheet's "Search this page") finds the box by this mark.
+  useEffect(() => {
+    box.current?.querySelector("input")?.setAttribute("data-page-search", "");
+  }, []);
   function change(next: string) {
     setTerm(next);
     if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => onSearch(next), 350);
-  }
-  function submit(next: string) {
-    if (timer.current) window.clearTimeout(timer.current);
-    onSearch(next);
+    timer.current = window.setTimeout(() => onSearch(next), next ? 350 : 0);
   }
   return (
-    <div
-      role="search"
-      className={`flex items-center gap-2 rounded-full border px-3.5 transition-colors pill-glass max-md:h-[48px] max-md:px-5 md:h-9 md:rounded-xl md:px-3 ${
-        t.dark ? "md:border-white/[0.08] md:bg-white/[0.04] md:focus-within:border-white/20 md:focus-within:bg-white/[0.06]" : "md:border-gray-200 md:bg-white md:focus-within:border-gray-400"
-      } ${className}`}
-    >
-      <svg className={`h-[18px] w-[18px] shrink-0 md:h-4 md:w-4 ${t.muted}`} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="11" cy="11" r="7" />
-        <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
-      </svg>
-      <input
-        ref={ref}
-        type="search"
-        enterKeyHint="search"
-        autoComplete="off"
-        spellCheck={false}
-        aria-label="Search mail"
-        placeholder="Search mail"
-        data-page-search
+    <div ref={box} className={cx("min-w-0", className)}>
+      <SearchField
         value={term}
-        onChange={(e) => change(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit(term);
-          else if (e.key === "Escape") {
-            setTerm("");
-            submit("");
-            ref.current?.blur();
-          }
+        onChange={change}
+        onSubmit={(v) => {
+          if (timer.current) window.clearTimeout(timer.current);
+          onSearch(v);
         }}
-        style={{ outline: "none" }}
-        className={`min-w-0 flex-1 bg-transparent text-[16px] placeholder:text-gray-500 md:text-[13px] [&::-webkit-search-cancel-button]:hidden ${t.text}`}
+        placeholder="Search mail"
+        label="Search mail"
       />
-      {term && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => {
-            setTerm("");
-            submit("");
-            ref.current?.focus();
-          }}
-          className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:-mr-2 max-md:h-[40px] max-md:w-[40px] ${t.dark ? "text-gray-400 hover:bg-white/[0.08] hover:text-white" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
-        >
-          <Icon name="x" className="h-3.5 w-3.5" strokeWidth={2} />
-        </button>
-      )}
     </div>
   );
 }
 
-/** Star toggle for a row: quiet until hovered, unless it's on. Stops the click reaching the row. */
 /**
- * Picking a message: a round box that pops as it fills and draws its check
- * (a dash when only some are picked). Shift-click picks the range from the
- * last one picked.
+ * Picking a message for a bulk action: the system's checkbox (16px, 20 on
+ * touch, accent when on, a dash when some are picked) in a hit area of the
+ * control size. Shift-click picks the range from the last one picked.
  */
-export function SelectBox({ on, mixed = false, onToggle, label, className = "" }: { on: boolean; mixed?: boolean; onToggle: (shift: boolean) => void; label: string; className?: string }) {
-  const t = useTone();
+export function SelectBox({ on, mixed = false, onToggle, label, className }: { on: boolean; mixed?: boolean; onToggle: (shift: boolean) => void; label: string; className?: string }) {
   const filled = on || mixed;
   return (
     <button
@@ -177,7 +63,6 @@ export function SelectBox({ on, mixed = false, onToggle, label, className = "" }
       role="checkbox"
       aria-checked={mixed ? "mixed" : on}
       aria-label={label}
-      title={label}
       // Shift-click shouldn't select the text between.
       onMouseDown={(e) => e.shiftKey && e.preventDefault()}
       onClick={(e) => {
@@ -185,71 +70,89 @@ export function SelectBox({ on, mixed = false, onToggle, label, className = "" }
         onToggle(e.shiftKey);
       }}
       onKeyDown={(e) => e.stopPropagation()}
-      className={`group/pick inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full max-md:h-[40px] max-md:w-[40px] md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${className}`}
+      className={cx("inline-flex size-(--control-sm) shrink-0 cursor-pointer items-center justify-center rounded-control", className)}
     >
       <span
-        key={filled ? "on" : "off"}
-        className={`relative grid h-[17px] w-[17px] place-items-center rounded-full border-[1.5px] transition-[background-color,border-color,box-shadow] duration-200 ${filled ? "pick-pop" : ""} ${
-          filled
-            ? "border-(--mail-accent) bg-(--mail-accent-deep) shadow-[0_0_0_3px_rgba(129,140,248,0.18)]"
-            : t.dark
-              ? "border-white/25 group-hover/pick:border-white/60"
-              : "border-gray-300 group-hover/pick:border-gray-500"
-        }`}
+        aria-hidden="true"
+        className={cx("inline-flex size-[16px] items-center justify-center rounded-mark border-[1.5px] touch:size-[20px]", filled ? "border-accent bg-accent text-on-accent" : "border-edge bg-field")}
       >
-        <svg viewBox="0 0 12 12" className="h-[9px] w-[9px]" fill="none" stroke="white" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          {mixed ? <path d="M3 6h6" /> : <path d="M2.5 6.3l2.3 2.3 4.7-5" style={{ strokeDasharray: 12, strokeDashoffset: on ? 0 : 12, transition: "stroke-dashoffset 220ms ease 60ms" }} />}
-        </svg>
+        {filled && (
+          <svg viewBox="0 0 16 16" className="size-[12px] touch:size-[14px]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            {mixed ? <path d="M4 8h8" /> : <path d="M3.5 8.5l3 3 6-7" />}
+          </svg>
+        )}
       </span>
     </button>
   );
 }
 
-export function StarButton({ on, onToggle, className = "", alwaysOnPhones = false }: { on: boolean; onToggle: (next: boolean) => void; className?: string; alwaysOnPhones?: boolean }) {
-  const t = useTone();
-  const [pop, setPop] = useState(false);
+/**
+ * A row's star. On: always shown, amber. Off: only on desktop hover or focus
+ * (`reveal`), never as a row of empty outlines; on touch a swipe stars.
+ */
+export function StarButton({ on, onToggle, reveal = false, className }: { on: boolean; onToggle: (next: boolean) => void; reveal?: boolean; className?: string }) {
+  if (!on && !reveal) return null;
   return (
     <button
       type="button"
       aria-label={on ? "Unstar" : "Star"}
       aria-pressed={on}
-      title={on ? "Unstar" : "Star"}
+      title={on ? "Unstar (s)" : "Star (s)"}
       onClick={(e) => {
         e.stopPropagation();
-        if (!on) {
-          setPop(true);
-          setTimeout(() => setPop(false), 400);
-          tap();
-        }
+        if (!on) tap();
         onToggle(!on);
       }}
       // Enter/Space press the star, not the row it sits in.
       onKeyDown={(e) => e.stopPropagation()}
-      className={`inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors max-md:h-[40px] max-md:w-[40px] md:pointer-coarse:h-[40px] md:pointer-coarse:w-[40px] ${
-        on ? "" : `${t.faint} md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${alwaysOnPhones ? "" : "max-md:hidden"} ${t.dark ? "hover:text-gray-200" : "hover:text-gray-700"}`
-      } ${className}`}
+      className={cx(
+        "inline-flex size-(--control-sm) shrink-0 cursor-pointer items-center justify-center rounded-control text-ink-3 hover:bg-hover hover:text-ink",
+        !on && "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 touch:hidden",
+        className,
+      )}
     >
-      <Star on={on} className={`h-3.5 w-3.5 max-md:h-[18px] max-md:w-[18px] ${pop ? "star-pop" : ""}`} strokeWidth={on ? 1.6 : 1.4} />
+      <Star on={on} />
     </button>
   );
 }
 
-/** Phones: a thin line across the top that fills as you read down a message. */
-export function ReadingProgress() {
-  const [pct, setPct] = useState(0);
-  useEffect(() => {
-    const onScroll = () => {
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      setPct(max > 40 ? Math.min(100, Math.max(0, (window.scrollY / max) * 100)) : 0);
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, []);
-  if (pct <= 0) return null;
-  return <div aria-hidden="true" className="read-progress md:hidden" style={{ width: `${pct}%`, top: "env(safe-area-inset-top)" }} />;
+/** One folder tab: its label, its count (the things in it that need the person), and where it goes. */
+export type FolderTab = { key: MailFolder; label: string; to: string; count?: number; title?: string };
+
+/**
+ * The folder tabs: the system's Tabs (§8.11), 40px, body 500, the current
+ * one ink with a 2px ink underline on the bar's hairline. Mail's folders live
+ * on one path, told apart by ?f=, so the current tab is named outright.
+ */
+export function FolderTabs({ items, current, onChoose }: { items: FolderTab[]; current: MailFolder; onChoose: (f: MailFolder) => void }) {
+  return (
+    <nav aria-label="Folders" className="ds min-w-0">
+      <ul className="-mb-px flex gap-6 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {items.map((t) => {
+          const on = t.key === current;
+          return (
+            <li key={t.key} className="shrink-0">
+              <Link
+                to={t.to}
+                aria-current={on ? "page" : undefined}
+                title={t.title}
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                  e.preventDefault();
+                  onChoose(t.key);
+                }}
+                className={cx(
+                  "flex h-10 items-center gap-2 border-b-2 text-body font-medium whitespace-nowrap touch:h-11",
+                  on ? "border-ink text-ink" : "border-transparent text-ink-2 hover:text-ink",
+                )}
+              >
+                {t.label}
+                {t.count ? <Count n={t.count} label={`${t.count} unread`} /> : null}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
 }
